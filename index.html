@@ -32,6 +32,9 @@
   #prompt .s.cur { background: #24304a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   #prompt .r { color: #5a5a5a; }
   #prompt .c { text-decoration: underline 3px #8af; text-underline-offset: 6px; }
+  /* 키워드로 어림한 위치: 어절 밑줄 대신 문장 전체에 점선 */
+  #prompt .s.approx { text-decoration: underline dotted 3px #8af; text-underline-offset: 6px; }
+  #prompt .s.approx .c { text-decoration: none; }
 
   /* 질의응답 */
   body.qa #prompt, body.qa footer, body:not(.qa) #qa { display: none; }

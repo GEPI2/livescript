@@ -1,4 +1,4 @@
-// 라이브스크립트 화면. match.js(전역 norm, normMap, locate)를 먼저 불러온다.
+// 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow)를 먼저 불러온다.
 import { cleanPack, prepare, rank, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
 import { keyStore, keyOk, qaPrompt, generatePack, parsePack } from './claude.js';
 
@@ -9,7 +9,8 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 
-let S = { s: '' }, words = [], sents = [], cur = 0, pending = null;
+let S = { s: '' }, A = null, words = [], sents = [], cur = 0, pending = null;
+let approx = null;  // 문장 키워드로 옮겨서 위치가 어림값이면 그 키워드 문장 번호. 글자 비교가 다시 맞으면 null.
 
 // 대본을 문장 > 어절 span으로 만든다. 어절마다 정규화 기준 시작/끝(n0, n1)을 기록.
 function build(text) {
@@ -39,11 +40,13 @@ function build(text) {
     w.textContent = m[0];
     w.dataset.i = words.length;
     sEl.append(w);
-    words.push({ el: w, s: sents.length - 1, n0: toNorm[m.index], n1: toNorm[m.index + m[0].length] });
+    words.push({ el: w, t: m[0], s: sents.length - 1, n0: toNorm[m.index], n1: toNorm[m.index + m[0].length] });
     if (/[.?!…。]["'”’)\]]*$/.test(m[0])) newSent = true;
     last = re.lastIndex;
   }
   root.append(text.slice(last));
+  A = anchors(S.s, words);
+  approx = null;
   cur = Math.min(+store.get('ls.cur') || 0, S.s.length);
 }
 
@@ -59,7 +62,10 @@ function render() {
     const k = i < c ? 'r' : i === c ? 'c' : '';
     if (w.el.className !== k) w.el.className = k;
   });
-  sents.forEach((x, i) => x.el.classList.toggle('cur', i === s));
+  sents.forEach((x, i) => {
+    x.el.classList.toggle('cur', i === s);
+    x.el.classList.toggle('approx', approx !== null && i === s);
+  });
   store.set('ls.cur', cur);
 
   // 지금 줄을 화면 위에서 1/3 지점에 둔다
@@ -70,7 +76,7 @@ function render() {
   }
 }
 
-// by: 누가 옮겼나('voice', 'tap', 'prev', 'next'). 있으면 기록에 남긴다.
+// by: 누가 옮겼나('voice', 'anchor', 'tap', 'prev', 'next'). 있으면 기록에 남긴다.
 function setCur(n, by) {
   n = Math.max(0, Math.min(n, S.s.length));
   if (by) note({ from: cur, to: n, by });
@@ -79,7 +85,7 @@ function setCur(n, by) {
 }
 
 // 손으로 옮기면 들은 말을 비워서 예전 말에 다시 끌려가지 않게 한다
-function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMatch = Date.now(); setCur(n, by); }
+function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMatch = Date.now(); approx = null; setCur(n, by); }
 
 function sentStart(i) { return words[sents[i].first].n0; }
 function prev() {
@@ -96,23 +102,27 @@ function next() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NO_SR = '이 브라우저는 음성 인식이 안 돼요. Chrome이나 Safari를 쓰세요. 손으로 넘기기는 됩니다.';
 let rec, listening = false, errored = false, lock = null;
-let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0;
+let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0;
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
 let said = 0;  // 마지막으로 커서를 옮긴 뒤 새로 들은 글자 수 (말 속도용)
 
+// 어디로 옮길지는 match.js follow()가 정한다 (node match.js 시뮬레이션과 같은 규칙)
 function onHeard(h) {
-  const r = locate(S.s, h, cur, S.end);
-  if (!r) return;
-  lastMatch = Date.now();
-  const d = r.pos - cur;
-  // 뒤로 가거나 멀리 뛰는 건, 이어서 한 말도 그 위치에서 앞으로 맞아야 반영
-  if (d < -2 || d > 30) {
-    if (pending !== null && r.pos > pending && r.pos - pending <= 20) { pending = null; voiceMove(r.pos); }
-    else if (pending === null || r.pos !== pending) pending = r.pos;
-    return;
+  const f = follow(S, A, h, cur, pending, approx);
+  pending = f.pending;
+  if (f.how === 'anchor') {
+    // 키워드로 옮긴 곳은 어림 위치다. jump()처럼 들은 말을 비운다. 글자가 맞은 것은 아니므로
+    // lastMatch는 그대로 두고, 말 속도에도 넣지 않는다(그동안 말한 시간도 lastMatch가 그대로라 빠진다).
+    heard = ''; cut = sessionNorm.length; said = 0; approx = f.sent; lastAnchor = Date.now();
+    return setCur(f.pos, 'anchor');
   }
-  pending = null;
-  if (d > 0) voiceMove(r.pos);
+  if (!f.how) return;
+  lastMatch = Date.now();
+  if (f.how === 'wait') return;
+  const was = approx !== null;
+  approx = null;  // 글자 비교가 다시 맞았다
+  if (f.pos !== cur) voiceMove(f.pos);
+  else if (was) render();
 }
 
 // 말 속도에는 목소리로 앞으로 간 글자만 센다. 건너뛴 대본은 말하지 않았으므로 새로 들은 만큼까지만.
@@ -232,7 +242,8 @@ setInterval(() => {
   if (document.body.classList.contains('editing')) { $('status').textContent = ''; return; }
   const sec = t0 ? Math.floor((Date.now() - t0) / 1000) : 0;
   const pct = S.s.length ? Math.round(cur / S.s.length * 100) : 0;
-  const off = !qaMode && listening && lastHeard - lastMatch > 3000;
+  // 키워드로 막 따라간 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 키워드 이동에 안 바꾼다)
+  const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor) > 3000;
   // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
   const items = off ? ['<span id="off">대본&nbsp;밖</span>'] : [];
   if (target) {
@@ -253,7 +264,7 @@ $('target').oninput = () => {
 
 // ---- 기록 내려받기 ----
 // 인식 결과 원문, 목소리로 옮긴 위치, 손으로 고친 위치. 나중에 매처를 고칠 때 쓴다(10분당 손 보정 횟수 등).
-const VERSION = 2;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다.
+const VERSION = 3;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다.
 const LOG_MAX = 20000;
 let log = [];
 function note(x) {

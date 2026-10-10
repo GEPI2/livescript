@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.hf.co; img-src 'self' data:">
+<title>라이브스크립트</title>
+<style>
+  :root { --fs: 28px; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: #111; color: #eee; font: 16px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  button { font: inherit; color: inherit; background: #2a2a2a; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  button:disabled { opacity: .4; }
+  header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 8px 16px; background: #111e; }
+  header { top: 0; padding-top: max(8px, env(safe-area-inset-top)); }
+  footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .grow { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #status { font-size: 13px; color: #999; }
+  #off { color: #fb4; }
+  #mic.on { background: #c33; }
+  #heard { font-size: 13px; color: #888; text-align: center; }
+  body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
+  @media (max-width: 420px) { header { gap: 6px; padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
+
+  #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 16px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
+  #prompt { max-width: 900px; margin: 0 auto; padding: 72px 16px 70vh; font-size: var(--fs); line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  #prompt .s.cur { background: #24304a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  #prompt .r { color: #5a5a5a; }
+  #prompt .c { text-decoration: underline 3px #8af; text-underline-offset: 6px; }
+
+  /* 질의응답 */
+  body.qa #prompt, body.qa footer, body:not(.qa) #qa { display: none; }
+  #qaBtn.hot { background: #8af; color: #111; }
+  #qa { max-width: 900px; margin: 0 auto; padding: 72px 16px 40vh; word-break: keep-all; overflow-wrap: anywhere; }
+  .small { font-size: 13px; color: #999; margin: 6px 0; }
+  #ask { display: block; width: 100%; margin: 8px 0; padding: 20px; font-size: 24px; background: #24304a; }
+  #ask.on { background: #c33; }
+  .chip { display: block; width: 100%; margin: 6px 0; padding: 12px; text-align: left; font-size: 18px; }
+  .chip.none { color: #999; }
+  #card { margin: 12px 0; padding: 12px 16px; border-radius: 12px; background: #1b2233; }
+  #cardQ { margin: 4px 0 8px; font-size: 20px; }
+  #cardA { margin: 0; padding-left: 1.2em; font-size: var(--fs); line-height: 1.5; }
+  .warn { display: inline-block; padding: 0 8px; border-radius: 6px; background: #fb4; color: #111; font-size: 13px; }
+  #qa input { margin: 8px 0; }
+  #all { scroll-margin-top: 64px; }
+  #all summary { padding: 8px 0; cursor: pointer; }
+
+  /* 창 */
+  dialog { width: min(720px, calc(100% - 16px)); max-width: none; max-height: calc(100dvh - 16px); padding: 16px; border: 0; border-radius: 12px; background: #1b1b1b; color: #eee; }
+  dialog::backdrop { background: #000b; }
+  dialog h2 { margin: 0 0 8px; font-size: 20px; }
+  dialog h3 { margin: 20px 0 4px; font-size: 16px; }
+  dialog label { display: block; margin: 8px 0; }
+  dialog input, dialog textarea, #qa input { display: block; width: 100%; font: inherit; color: inherit; background: #111; border: 1px solid #333; border-radius: 8px; padding: 8px; }
+  dialog input[type=checkbox] { display: inline; width: auto; }
+  dialog textarea { resize: vertical; field-sizing: content; max-height: 50vh; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
+  .primary { background: #24304a; }
+  #prepMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
+  .qitem { margin: 10px 0; padding: 10px; border: 1px solid #333; border-radius: 10px; }
+  .qitem.check { border-color: #fb4; }
+  .qitem label { margin: 6px 0; }
+  .qitem .chk { padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+  .qitem.check .chk { background: #fb4; color: #111; }
+  .bottom { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: #1b1b1b; }
+</style>
+</head>
+<body class="editing">
+<header>
+  <button id="mode">발표</button>
+  <button class="e-only" id="prepBtn">Q&amp;A 준비</button>
+  <button class="e-only" id="keyBtn">AI 키</button>
+  <button class="p-only" id="smaller" aria-label="글자 작게">가-</button>
+  <button class="p-only" id="bigger" aria-label="글자 크게">가+</button>
+  <span class="grow" id="status"></span>
+  <button class="p-only" id="qaBtn">Q&amp;A</button>
+  <button class="p-only" id="mic">● 시작</button>
+</header>
+
+<textarea class="e-only" id="text" placeholder="대본을 붙여넣으세요. 자동으로 저장됩니다."></textarea>
+<main class="p-only" id="prompt"></main>
+
+<section class="p-only" id="qa">
+  <div class="row"><span class="small grow" id="qaState"></span><button id="qaRetry" hidden>다시 시도</button></div>
+  <button id="ask">질문</button>
+  <p class="small" id="live"></p>
+  <div id="chips"></div>
+  <p class="small" id="qaTime"></p>
+  <div id="card" hidden>
+    <p class="small" id="cardHeard"></p>
+    <h2 id="cardQ"></h2>
+    <span class="warn" id="cardCheck" hidden>직접 확인</span>
+    <ul id="cardA"></ul>
+    <div id="cardMore"></div>
+  </div>
+  <input id="qaText" type="search" enterkeyhint="search" autocomplete="off" placeholder="채팅 질문을 붙여넣고 Enter">
+  <details id="all">
+    <summary>전체 질문 목록</summary>
+    <input id="allQ" type="search" autocomplete="off" placeholder="검색">
+    <div id="allList"></div>
+  </details>
+</section>
+
+<footer class="p-only">
+  <button id="prev" aria-label="이전 문장">◀</button>
+  <span class="grow" id="heard"></span>
+  <button id="next" aria-label="다음 문장">▶</button>
+</footer>
+
+<dialog id="prep">
+  <h2>Q&amp;A 준비</h2>
+  <p class="small">지금 대본으로 예상 질문과 답을 만듭니다. 만든 뒤에는 꼭 읽어 보고 고친 다음 저장하세요.</p>
+  <label>주제 <input id="topic" autocomplete="off"></label>
+  <label>청중 <input id="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
+  <label>질문 수 <input id="count" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
+  <div class="row">
+    <button id="gen" class="primary">AI로 만들기</button>
+    <button id="copyPrompt">프롬프트 복사</button>
+    <button id="pasteBtn">결과 붙여넣기</button>
+  </div>
+  <p class="small" id="keyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn2">AI 키 넣기</button></p>
+  <textarea id="promptOut" rows="6" readonly hidden></textarea>
+  <div id="pasteBox" hidden>
+    <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
+    <div class="row"><button id="pasteApply">적용</button></div>
+  </div>
+  <p id="prepMsg" role="status"></p>
+
+  <h3>질문 <span id="qCount">0</span>개</h3>
+  <div id="qList"></div>
+  <button id="addQ">질문 추가</button>
+
+  <h3>판정 모델</h3>
+  <p class="small" id="modelMsg"></p>
+  <button id="getModel">모델 받기 (약 163MB, 와이파이 권장)</button>
+
+  <div class="row bottom">
+    <button id="savePack" class="primary">저장</button>
+    <button id="exportPack">내보내기</button>
+    <button id="importBtn">가져오기</button>
+    <input id="importFile" type="file" accept=".json,application/json" hidden>
+    <span class="grow"></span>
+    <button id="closePrep">닫기</button>
+  </div>
+</dialog>
+
+<dialog id="keyDlg">
+  <h2>AI 키</h2>
+  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송됩니다.</p>
+  <p class="small" id="keyState"></p>
+  <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
+  <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워집니다)</label>
+  <div class="row">
+    <button id="keySave" class="primary">저장</button>
+    <button id="keyClear">키 지우기</button>
+    <span class="grow"></span>
+    <button id="keyClose">닫기</button>
+  </div>
+</dialog>
+
+<script src="match.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

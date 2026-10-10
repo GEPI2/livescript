@@ -1,0 +1,19 @@
+vendor/ 파일 출처 (2026-10-10, npm pack으로 공식 패키지를 받아 압축을 풀고 필요한 파일만 복사)
+
+@huggingface/transformers 4.3.1 (Apache-2.0, LICENSE-transformers.txt)
+  tarball sha256 0325441d6bd7bc7697fccb32ee6e5febc7f89691e42402d071adc678237b8015
+  dist/transformers.min.js            586230 bytes  sha256 8d6716d9086f57c30a4bf367dba61b887593573c770c454465e8019b2703e743
+  (dist/transformers.web.min.js는 번들러용이라 브라우저에서 바로 불러오면 모듈 경로 오류가 난다. 쓰지 않는다.)
+
+onnxruntime-web 1.31.0-dev.20260914-8d85527a0 (MIT; transformers 4.3.1 package.json이 이 버전을 고정)
+  tarball sha256 0de27582f3e3189dec4a2082513a0af1ea79ae7fd3039bbfe634a526e173cbe0
+  dist/ort-wasm-simd-threaded.asyncify.mjs     53057 bytes  sha256 0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611
+  dist/ort-wasm-simd-threaded.asyncify.wasm 26861777 bytes  sha256 49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082
+  dist/ort-wasm-simd-threaded.mjs              24381 bytes  sha256 c57ca56328877353a575e51bbca6f18450027d6c9bf2307a2cb2c41363b4de9f
+  dist/ort-wasm-simd-threaded.wasm          14264838 bytes  sha256 06ba057753da3847e4c24f02d91ab133455b0817c69a44993a9a53a2146df9e3
+  (transformers는 Safari 26 미만이면서 WebGPU가 없을 때 asyncify가 아닌 쪽을 고른다. 기기마다 한 쌍만 받는다.)
+
+모델(여기에 두지 않음, 기기마다 Hugging Face에서 한 번 받음)
+  Xenova/multilingual-e5-small, revision 761b726dd34fb83930e26aab4e9ac3899aa1fa78, onnx/model_quantized.onnx (q8), 원본 MIT
+
+다시 받을 때: npm pack @huggingface/transformers@4.3.1 onnxruntime-web@1.31.0-dev.20260914-8d85527a0 후 위 sha256과 비교

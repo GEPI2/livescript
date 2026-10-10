@@ -134,7 +134,8 @@ export function loadModel(onProgress) {
 
 // 이 기기에 모델 파일이 받아져 있나 (없으면 자동으로 163MB를 받지 않는다)
 export async function modelCached() {
-  try { return !!(await (await caches.open('transformers-cache')).match(MODEL_FILE)); } catch { return false; }
+  // 확인만 할 때 빈 캐시를 만들지 않도록 has()부터 본다
+  try { return await caches.has('transformers-cache') && !!(await (await caches.open('transformers-cache')).match(MODEL_FILE)); } catch { return false; }
 }
 
 // e5는 'query: '를 붙여야 한다. 질문끼리 비교하므로 양쪽 다 query.

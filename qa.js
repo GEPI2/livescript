@@ -59,6 +59,17 @@ export function rank(pack, sents, text, qv = null, V = null) {
     .sort((x, y) => y.score - x.score);
 }
 
+// 답 카드 자동 열기와 '확신 낮음' 표시의 기준 (e5 + 0.1 × 음절 점수일 때만 쓴다)
+// 준비 질문 20개, 시험 질문 40개(준비된 30, 상관없는 10)로 잰 값: 1등 점수 0.95 이상이고 2등보다 0.07 이상 높으면
+// 카드를 열어 맞은 카드 7/30, 엉뚱한 카드 0/40. 가장 가까운 엉뚱한 1등은 0.988점에 차이 0.055였다.
+// 확신 낮음(0.92 미만이거나 차이 0.02 미만)은 틀린 1등과 상관없는 질문 16개 중 13개, 맞은 1등 3개에 붙었다.
+// ponytail: 시험 질문 40개로 맞춘 값이라 낙관적이다. 기록(qa: 'judge', 'pick')으로 실제 질문을 모아 다시 맞춘다.
+export const AUTO_T1 = 0.95, AUTO_GAP = 0.07, LOW_SCORE = 0.92, LOW_GAP = 0.02;
+export function confidence(top) {
+  const s = top[0]?.score ?? 0, gap = s - (top[1]?.score ?? 0);
+  return { sure: s >= AUTO_T1 && gap >= AUTO_GAP, low: s < LOW_SCORE || gap < LOW_GAP };
+}
+
 // 벡터에 영향을 주는 부분(질문과 바꿔 묻는 말)만으로 만든 해시. 답을 고쳐도 다시 계산하지 않는다.
 export function packHash(pack) {
   const s = JSON.stringify(pack.questions.map(q => [q.q, q.alts]));
@@ -113,19 +124,24 @@ export function cleanPack(obj) {
 // ---- 모델 (브라우저 전용) ----
 let modelP = null;
 
+// transformers 설정. JEV 워커(jev-worker.js)도 같은 설정을 쓴다. rev: 그 모델의 고정 revision
+export function setup(env, rev) {
+  const wasm = env.backends.onnx.wasm;
+  // transformers가 기기에 맞게 고른 ORT 파일(Safari 26 미만은 asyncify가 아닌 빌드)을 CDN 대신 vendor/에서 받는다.
+  // 상대 경로를 주면 /vendor/vendor/를 요청하므로 절대 URL로 준다.
+  const local = u => new URL('./vendor/' + u.split('/').pop(), import.meta.url).href;
+  wasm.wasmPaths = { mjs: local(wasm.wasmPaths.mjs), wasm: local(wasm.wasmPaths.wasm) };
+  wasm.numThreads = 1;
+  // 켜 두면 .mjs를 blob: URL로 바꿔 불러오는데, CSP(script-src 'self')가 막는다
+  env.useWasmCache = false;
+  // 'main'을 묻는 요청도 고정한 revision으로 보낸다. 받아 둔 모델이 있으면 Hugging Face에 묻지 않고 바로 불러온다.
+  env.remotePathTemplate = `{model}/resolve/${rev}/`;
+}
+
 export function loadModel(onProgress) {
   modelP ??= (async () => {
     const { pipeline, env } = await import('./vendor/transformers.min.js');
-    const wasm = env.backends.onnx.wasm;
-    // transformers가 기기에 맞게 고른 ORT 파일(Safari 26 미만은 asyncify가 아닌 빌드)을 CDN 대신 vendor/에서 받는다.
-    // 상대 경로를 주면 /vendor/vendor/를 요청하므로 절대 URL로 준다.
-    const local = u => new URL('./vendor/' + u.split('/').pop(), import.meta.url).href;
-    wasm.wasmPaths = { mjs: local(wasm.wasmPaths.mjs), wasm: local(wasm.wasmPaths.wasm) };
-    wasm.numThreads = 1;
-    // 켜 두면 .mjs를 blob: URL로 바꿔 불러오는데, CSP(script-src 'self')가 막는다
-    env.useWasmCache = false;
-    // 'main'을 묻는 요청도 고정한 revision으로 보낸다. 받아 둔 모델이 있으면 Hugging Face에 묻지 않고 바로 불러온다.
-    env.remotePathTemplate = `{model}/resolve/${REV}/`;
+    setup(env, REV);
     return pipeline('feature-extraction', MODEL, { device: 'wasm', dtype: 'q8', revision: REV, progress_callback: onProgress });
   })();
   modelP.catch(() => { modelP = null; });
@@ -192,6 +208,16 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(Math.abs(r[0].score - (0.85 + 0.1 * 1)) < 1e-6, '점수 = e5 + 0.1 × bigram');
   assert.ok(Math.abs(r[1].score - (0.9 + 0.1 * r[1].b)) < 1e-6);
   assert.equal(rank(pack, sents, '점심 메뉴', qv, V).length, 3, '후보는 모든 질문');
+
+  // 자동 카드와 확신 낮음
+  const conf = (a, b) => confidence([{ score: a }, { score: b }]);
+  assert.deepEqual(conf(0.97, 0.89), { sure: true, low: false });
+  assert.deepEqual(conf(0.988, 0.933), { sure: false, low: false }, '시험에서 엉뚱했던 1등(차이 0.055)은 열지 않는다');
+  assert.deepEqual(conf(0.94, 0.80), { sure: false, low: false }, '점수가 모자라면 열지 않는다');
+  assert.deepEqual(conf(0.91, 0.80), { sure: false, low: true }, '낮은 점수');
+  assert.deepEqual(conf(0.96, 0.95), { sure: false, low: true }, '2등과 거의 같음');
+  assert.equal(confidence([{ score: 0.96 }]).sure, true, '질문이 하나뿐이면 차이는 그 점수');
+  assert.equal(confidence([]).low, true);
 
   const h = packHash(pack);
   assert.equal(packHash(cleanPack(JSON.parse(JSON.stringify(pack)))), h, '같은 팩이면 같은 해시');

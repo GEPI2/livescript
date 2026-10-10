@@ -1,7 +1,9 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
 import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js';
 import { diff, paras, paraRange, around, addVersion, hashText, cleanScript } from './lib.js';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js';
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -32,7 +34,8 @@ let S = { s: '' }, A = null, words = [], sents = [], cur = 0, pending = null;
 let approx = null;  // 문장 키워드로 옮겨서 위치가 어림값이면 그 키워드 문장 번호. 글자 비교가 다시 맞으면 null.
 
 // 대본을 문장 > 어절 span으로 만든다. 어절마다 정규화 기준 시작/끝(n0, n1)을 기록.
-function build(text) {
+// cuts: 자동 줄이기로 문장을 숨긴 단위의 자리 [{ a, b, lv }] (shrink.js shrunk). 그 문장들은 div.cut 안에 넣는다.
+function build(text, cuts = []) {
   text = text.normalize('NFC');
   S = normMap(text);
   const toNorm = [];
@@ -42,16 +45,25 @@ function build(text) {
   const root = $('prompt');
   root.textContent = '';
   words = []; sents = [];
-  let sEl = null, newSent = true, last = 0, m;
+  let sEl = null, newSent = true, last = 0, m, host = root, ci = 0;
   const re = /\S+/g;
   while ((m = re.exec(text))) {
-    const gap = text.slice(last, m.index);
+    let gap = text.slice(last, m.index);
     if (gap.includes('\n')) newSent = true;
     if (newSent) {
-      root.append(gap);
+      // 줄인 단위는 문장 경계에서 시작하고 끝난다. 블록이 줄을 바꾸므로 블록 뒤 첫 줄바꿈은 뺀다(빈 줄 수를 원문과 같게).
+      if (host !== root && m.index >= cuts[ci].b) { host = root; ci++; gap = gap.replace('\n', ''); }
+      if (host === root && cuts[ci] && m.index >= cuts[ci].a) {
+        root.append(gap); gap = '';
+        host = document.createElement('div');
+        host.className = 'cut';
+        host.dataset.l = LABEL[cuts[ci].lv];
+        root.append(host);
+      }
+      host.append(gap);
       sEl = document.createElement('span');
       sEl.className = 's';
-      root.append(sEl);
+      host.append(sEl);
       sents.push({ el: sEl, first: words.length });
       newSent = false;
     } else sEl.append(gap);
@@ -205,8 +217,10 @@ async function keepAwake() {
 function start() {
   if (!rec) initRec();
   listening = true;
-  if (!t0 || cur === 0) resetTalk(Date.now());
+  if (!t0 || cur === 0) { resetTalk(Date.now()); baseLevels(); }
   else if (Date.now() - seen > 30 * 6e4) t0 += Date.now() - seen;  // 30분 넘게 쉬었다가 이어 하면 쉰 시간은 경과 시간에서 뺀다
+  // 기록의 위치는 보이는 대본 기준이라 시작할 때마다 단계를 남긴다 (새로고침 뒤 이어 할 때도 기록만으로 위치를 읽을 수 있게)
+  if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
   lastMatch = Date.now();
   try { rec.start(); } catch {}
   keepAwake();
@@ -233,7 +247,12 @@ function setMode(editing) {
   document.body.classList.toggle('editing', editing);
   $('mode').textContent = editing ? '발표' : '편집';
   if (editing) { stop(); scrollTo(0, 0); updEst(); }
-  else { snapshot('발표 시작') || tell(FULL); build($('text').value); render(); prepareTalk(); }
+  else {
+    shrinkUnits(); baseLevels();
+    if (!snapshot('발표 시작')) tell(FULL);
+    else if (shr.on && target && !U) tell(NEED_PREP);  // 발표 준비 뒤에 대본을 고쳤으면 줄이지 못한다
+    show(); render(); prepareTalk(); askShrink();
+  }
 }
 
 function fontSize(delta) {
@@ -274,6 +293,8 @@ setInterval(() => {
   const pct = S.s.length ? Math.round(cur / S.s.length * 100) : 0;
   // 키워드로 막 따라간 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 키워드 이동에 안 바꾼다)
   const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor) > 3000;
+  // 대본 밖이거나 질의응답 중에는 다시 계산하지 않는다. render() 안에서 하지 않는 것은 다시 그리다가 또 그리지 않게.
+  if (listening && !off && !qaMode && t0 && target && shr.on && U) autoShrink(sec);
   // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
   const items = off ? ['<span id="off">대본&nbsp;밖</span>'] : [];
   if (target) {
@@ -300,14 +321,117 @@ $('gMin').oninput = () => setTarget($('gMin').value);
 function updEst() {
   clearTimeout(updEst.h);
   updEst.h = setTimeout(() => {
-    const s = Math.round(spoken($('text').value) / rate());
-    $('est').textContent = `예상 ${mmss(s)}` + (target ? ` / 목표 ${mmss(Math.round(target * 60))}` : '');
+    const s = Math.round(spoken($('text').value) / rate()), e = $('est'), w = document.createElement('span');
+    e.textContent = `예상 ${mmss(s)}`;
+    w.className = 'wide';
+    if (target) { w.textContent = ` / 목표 ${mmss(Math.round(target * 60))}`; e.append(w); }
   }, 150);
+  $('shrinkBox').hidden = !target;
 }
+
+// ---- 늦어지면 자동 줄이기 (shrink.js, PLAN 4-2 2차) ----
+// sk('shrink') = { on, h: 대본 해시, pt: 발표 준비를 한 때, lv: 단위마다 단계(0 원문, 1 줄임, 2 요약), asked: 미리 줄인 대본을 물어본 대본,
+//   pre: 미리 줄인 대본으로 연습하기로 했으면 그 단계(처음부터 발표할 때마다 이 단계로 시작) }
+// 단계는 대본과 '발표 준비' 결과가 그대로일 때만 쓴다. 저장해 두어서 새로고침해도 같은 글이 보인다.
+const SHR0 = { on: false, h: '', pt: 0, lv: [], asked: '', pre: null };
+const NEED_PREP = "자동 줄이기는 지금 대본으로 한 '발표 준비' 결과가 있어야 해요. 대본을 고쳤다면 AI 도구의 '발표 준비'를 다시 해 주세요.";
+let shr = { ...SHR0 }, U = null, uAt = -1;  // U: 줄이기 단위(지금 대본으로 한 발표 준비가 없으면 null), uAt: 마지막으로 계산한 때의 단위
+function loadShrink() {
+  try {
+    const v = JSON.parse(store.get(sk('shrink')));
+    const lvs = a => a.map(x => [1, 2].includes(x) ? x : 0);
+    shr = { on: v.on === true, h: String(v.h || ''), pt: +v.pt || 0, lv: Array.isArray(v.lv) ? lvs(v.lv) : [], asked: String(v.asked || ''), pre: Array.isArray(v.pre) ? lvs(v.pre) : null };
+  } catch { shr = { ...SHR0 }; }
+  U = null;
+  $('shrinkOn').checked = shr.on;
+}
+const saveShrink = () => store.set(sk('shrink'), JSON.stringify(shr));
+function shrinkUnits() {
+  const text = $('text').value, h = hashText(text), p = loadPrep();
+  U = p?.h === h ? units(text, p.paras, spoken) : null;
+  if (U && (shr.h !== h || shr.pt !== p.t || shr.lv.length !== U.length)) {
+    if (shr.h === h && shr.lv.some(Boolean)) store.set(sk('cur'), 0);  // 같은 대본으로 발표 준비를 다시 했으면 옛 단계로 잰 위치는 맞지 않는다
+    Object.assign(shr, { h, pt: p.t, lv: U.map(() => 0), pre: null });
+    saveShrink();
+  }
+}
+
+// 발표 화면에 들어갈 때와 처음부터 시작할 때. 목표가 없으면 원문으로, 처음부터면 지난 발표에서 줄인 단계를 버리고
+// 미리 줄인 대본을 골랐으면 그 단계로 돌아간다. 편집 화면에서는 위치가 메모리에 없을 수 있어서 저장된 위치를 쓴다.
+function baseLevels() {
+  if (!shr.on || !U) return;
+  cur = +store.get(sk('cur')) || 0;
+  const L0 = U.map(() => 0), lv = !target ? L0 : cur ? shr.lv : shr.pre?.length === U.length ? shr.pre : L0;
+  if (lv.some((l, i) => l !== shr.lv[i])) setLevels(lv, 'reset');
+}
+
+// 발표 화면의 대본. 자동 줄이기가 켜져 있으면 숨긴 문장을 뺀 글이다.
+function show() {
+  const text = $('text').value, d = shr.on && U ? shrunk(text, U, shr.lv) : { text, cut: [] };
+  build(d.text, d.cut);
+  uAt = U ? unitAt(U, shr.lv, cur) : -1;
+}
+
+// 지금 단위가 바뀔 때만 다시 계산한다. 말 속도는 상태줄의 예상 종료와 같은 값(목소리로 따라간 글자 ÷ 대본 위에서 말한 시간).
+function autoShrink(sec) {
+  const u = unitAt(U, shr.lv, cur);
+  if (u === uAt) return;
+  uAt = u;
+  const p = plan(U, shr.lv, cur, sec, (matched + R0 * 30) / (onSec + 30), target * 60);
+  if (p.lv.some((l, i) => l !== shr.lv[i])) setLevels(p.lv, 'plan', p.over);
+}
+
+// 단계를 바꾸고 대본을 다시 그린다. 지금 위치는 같은 문장의 같은 자리로 옮긴다.
+// 발표 중에는 지금 위치에서 300자 뒤부터만 바뀌므로 위치, 들은 말, 어림 상태가 그대로 맞다. 확인을 기다리던 먼 위치만 버린다.
+function setLevels(lv, why, over = 0) {
+  const c = remap(U, shr.lv, lv, cur), moved = c !== cur, a = moved ? null : approx;
+  note({ shrink: lv, why, over, at: cur });
+  shr.lv = lv;
+  saveShrink();
+  pending = null;
+  if (moved) { heard = ''; cut = sessionNorm.length; said = 0; }
+  store.set(sk('cur'), c);
+  cur = c;
+  if (document.body.classList.contains('editing')) return;
+  show();  // build()가 어림 상태를 지운다
+  approx = a;
+  render();
+}
+
+$('shrinkOn').onchange = () => {
+  shrinkUnits();
+  if (!$('shrinkOn').checked && U && shr.lv.some(Boolean)) setLevels(U.map(() => 0), 'off');
+  shr.on = $('shrinkOn').checked;
+  shr.asked = ''; shr.pre = null;
+  saveShrink();
+  if (shr.on && !U) tell(NEED_PREP);
+};
+
+// 처음부터 발표할 때 원문이 목표보다 길면 미리 줄인 대본으로 연습할지 묻는다 (대본과 준비 결과마다 한 번).
+// 편집 화면의 예상 시간과 같은 말 속도를 쓰고, 300자 고정 없이 처음부터 줄인다.
+let pre = null;
+function askShrink() {
+  if (!shr.on || !U || !target || cur || shr.lv.some(Boolean) || shr.asked === shr.h + ':' + shr.pt) return;
+  const r = rate(), goal = target * 60, L0 = U.map(() => 0);
+  const est = lv => Math.round(U.reduce((x, u, i) => x + u.len[lv[i]], 0) / r), s0 = est(L0);
+  if (s0 <= goal) return;
+  const p = plan(U, L0, 0, 0, r, goal, 0);
+  if (!p.lv.some(Boolean)) return;
+  pre = p.lv;
+  $('shrinkMsg').textContent = `지금 대본은 예상 ${mmss(s0)}로 목표 ${mmss(Math.round(goal))}보다 ${mmss(Math.round(s0 - goal))} 길어요. 줄인 대본은 예상 ${mmss(est(pre))}입니다.` +
+    (p.over ? ` 다 줄여도 ${mmss(p.over)} 넘어요.` : '');
+  showDiff($('shrinkDiff'), '', '', strikes($('text').value, U, pre));
+  $('shrinkDlg').showModal();
+}
+const shrinkAsked = () => { shr.asked = shr.h + ':' + shr.pt; saveShrink(); $('shrinkDlg').close(); };
+$('shrinkYes').onclick = () => { shr.pre = pre; shrinkAsked(); setLevels(pre, 'pre'); };
+$('shrinkNo').onclick = shrinkAsked;
 
 // ---- 기록 내려받기 ----
 // 인식 결과 원문, 목소리로 옮긴 위치, 손으로 고친 위치. 나중에 매처를 고칠 때 쓴다(10분당 손 보정 횟수 등).
-const VERSION = 4;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다. (4: [확인 필요] 표시를 비교에서 뺌, 발표 준비의 다른 말을 키워드로)
+// 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다. (4: [확인 필요] 표시를 비교에서 뺌, 발표 준비의 다른 말을 키워드로
+// 5: 자동 줄이기 { shrink: 단계, why, over, at }와 prep, 질의응답 판정 { qa: 'judge', j, q, ms, top, jev, low, auto }과 고른 칩 { qa: 'pick', j, id, how, rank })
+const VERSION = 5;
 const LOG_MAX = 20000;
 let log = [];
 function note(x) {
@@ -330,6 +454,7 @@ $('saveLog').onclick = () => {
     app: 'livescript', version: VERSION, userAgent: navigator.userAgent,
     start: t0 ? new Date(t0).toISOString() : null, target, onSec, matched, cur,
     script: text, normLength: norm(text).length, events: log,
+    prep: shr.on && loadPrep()?.h === hashText(text) ? loadPrep().paras : null,  // 자동 줄이기 단계(shrink)로 보이는 대본을 다시 만들 때
   }));
 };
 
@@ -384,7 +509,10 @@ addEventListener('keydown', e => {
 let pack = null, qsents = [], V = null, vecKey = '', pipe = null, busy = false;
 let modelState = store.get('ls.embLoading') ? 'crashed' : 'off';  // off | loading | ready | failed | crashed
 let modelErr = '', modelJob = null, vecJob = null;
-const AUTO_T1 = Infinity;  // 이 점수 이상이면 카드를 바로 연다. 실제 질문으로 평가해 정하기 전까지 끈다.
+// 이 기기 설정: 답 카드 자동 열기(기본 꺼짐, 기준값은 qa.js confidence), JEV 모드(실험, 기본 꺼짐, WebGPU가 있는 기기에만 보임)
+let autoCard = store.get('ls.autoCard') === '1', jevOn = store.get('ls.jev') === '1';
+let jev = null, jevJob = null, jevState = store.get('ls.jevLoading') ? 'crashed' : 'off';  // off | loading | ready | failed | nogpu | crashed
+const HAS_GPU = !!navigator.gpu;
 
 function setPack(p) { pack = p; qsents = p ? prepare(p) : []; V = null; vecKey = ''; }
 
@@ -409,7 +537,48 @@ function loadJudge(onProgress) {
   return modelJob;
 }
 // 새로고침이나 페이지 이동은 강제 종료가 아니다. 탭이 죽을 때는 pagehide가 오지 않으므로 그때는 표시가 남는다.
-addEventListener('pagehide', () => { if (modelJob) store.del('ls.embLoading'); });
+addEventListener('pagehide', () => { if (modelJob) store.del('ls.embLoading'); if (jevJob) store.del('ls.jevLoading'); });
+
+// JEV 모델(Kev-0.6B, 워커에서 돈다). e5처럼 불러오다 탭이 죽으면 표시가 남아 다음에는 자동으로 불러오지 않는다.
+// 실패하면 e5만으로 판정한다. WebGPU가 없거나 f16 셰이더가 안 되면 jev.js가 받기 전에 멈춘다.
+function loadJudgeJev(onProgress) {
+  jevJob ??= (async () => {
+    jevState = 'loading'; showJev(); showModel();
+    store.set('ls.jevLoading', '1');
+    try { jev = await loadJev(onProgress); jevState = 'ready'; }
+    catch (e) { console.warn('JEV 오류', e); jev = null; jevState = e.message === 'nogpu' ? 'nogpu' : 'failed'; }
+    finally { store.del('ls.jevLoading'); jevJob = null; showJev(); showModel(); }
+  })();
+  return jevJob;
+}
+// 받아 둔 모델이 있을 때만 불러온다 (350MB를 저절로 받지 않는다)
+const jevNow = () => jevOn && HAS_GPU && jevState === 'off' && jevCached().then(c => c && loadJudgeJev(() => {}));
+
+function showJev() {
+  $('jevBox').hidden = !HAS_GPU;
+  $('jevOn').checked = jevOn;
+  $('jevMsg').textContent = !jevOn ? `JEV 모델(${JEV_SIZE})은 처음 한 번만 받습니다. WebGPU가 되는 기기(PC Chrome 등)에서만 쓰고, 실패하면 e5로 판정합니다.` : {
+    off: `모델이 없으면 e5로만 판정합니다. 와이파이에서 한 번 받아 두면 이 기기에서 계속 씁니다.`,
+    loading: 'JEV 모델을 불러오는 중…',
+    ready: 'JEV 준비됨 (Kev-0.6B, 이 기기의 WebGPU로 계산)',
+    failed: 'JEV를 쓸 수 없어요. e5로 판정합니다.',
+    nogpu: '이 기기의 WebGPU로는 JEV를 쓸 수 없어요(f16 셰이더가 필요해요). e5로 판정합니다.',
+    crashed: '지난번에 JEV 모델을 불러오다 멈췄어요. 이 기기에서는 자동으로 불러오지 않아요.',
+  }[jevState];
+  $('getJev').hidden = !jevOn || jevState === 'ready' || jevState === 'nogpu';
+  $('getJev').disabled = jevState === 'loading';
+  $('getJev').textContent = jevState === 'failed' || jevState === 'crashed' ? 'JEV 다시 시도' : `JEV 모델 받기 (${JEV_SIZE}, 와이파이 권장)`;
+}
+$('getJev').onclick = () => loadJudgeJev(p => p.status === 'progress_total' && ($('jevMsg').textContent = 'JEV 모델 받는 중' + pctText(p)));
+$('jevOn').onchange = () => {
+  jevOn = $('jevOn').checked;
+  jevOn ? store.set('ls.jev', '1') : store.del('ls.jev');
+  if (!jevOn && jevState === 'ready') { closeJev(); jev = null; jevState = 'off'; }  // GPU 메모리를 비운다. 다시 켜면 받아 둔 파일로 불러온다.
+  showJev(); showModel();
+  jevNow();
+};
+$('autoCard').checked = autoCard;
+$('autoCard').onchange = () => { autoCard = $('autoCard').checked; autoCard ? store.set('ls.autoCard', '1') : store.del('ls.autoCard'); };
 
 // 불러오기나 계산이 실패하면 음절 비교로 돌아간다. 실행이 한 번 실패하면 transformers의 실행 순서가 막혀
 // 이후 계산도 모두 실패하므로(새로고침해야 풀림) 모델을 더 쓰지 않는다.
@@ -459,6 +628,7 @@ async function prepareTalk() {
     if (pipe || modelState === 'loading' || await modelCached()) {
       const job = loadJudge(p => p.status === 'progress_total' && say('판정 모델 불러오는 중' + pctText(p)))
         .then(() => vectors((i, n) => say(`질문 준비 중 ${i}/${n}`)));
+      job.then(() => pipe && jevNow(), () => {});  // JEV는 e5 후보를 다시 고르므로 e5 다음에. 워커에서 불러오므로 마이크를 막지 않는다.
       // 모델 불러오기가 10초를 넘으면(네트워크가 느리거나 멈춤) 마이크를 막지 않는다. 불러오기는 뒤에서 계속된다.
       const slow = new Promise(r => setTimeout(r, 10000)).then(() => modelState === 'loading' ? null : job);
       await Promise.race([job, slow]);
@@ -479,9 +649,10 @@ function showModel() {
   $('getModel').hidden = ready;
   $('getModel').disabled = modelState === 'loading';
   $('getModel').textContent = stuck ? '다시 시도' : '모델 받기 (약 163MB, 와이파이 권장)';
+  const j = !jevOn || !HAS_GPU ? '' : jev ? ' + JEV' : { loading: ' · JEV 준비 중', off: ' · JEV 모델 없음' }[jevState] || ' · JEV 없이';
   $('qaState').textContent = !pack ? "준비된 질문이 없어요. 편집 화면의 'Q&A 준비'에서 만들어 주세요."
     : modelState === 'loading' || vecJob ? '판정 모델 준비 중… 그동안은 간단 비교로 동작 중'
-    : ready && V ? `질문 ${pack.questions.length}개 · e5 판정` : `질문 ${pack.questions.length}개 · 간단 비교로 동작 중`;
+    : ready && V ? `질문 ${pack.questions.length}개 · e5 판정${j}` : `질문 ${pack.questions.length}개 · 간단 비교로 동작 중`;
   $('qaRetry').hidden = !stuck;
   $('ask').disabled = busy || !pack;
 }
@@ -501,6 +672,7 @@ $('qaRetry').onclick = async () => {
 // ---- 질의응답 화면 ----
 let qaMode = false, qSeg = null;  // qSeg: '질문'을 누른 뒤 모으는 중인 말 { from, done, cur }
 let asked = '';  // 마지막으로 판정한 질문. 전체 목록에서 고른 카드에도 보여 준다.
+let judgeN = 0;  // 판정 번호. 기록에서 판정(qa: 'judge')과 고른 칩(qa: 'pick')을 잇고, 새 질문을 시작하면 늘려서 늦게 끝난 판정을 버린다.
 
 function setQa(on) {
   qaMode = on; qSeg = null;
@@ -520,8 +692,8 @@ function askBtn() {
 function ask() {
   if (!qSeg) {
     qSeg = { from: listening ? resFinal : 0, done: '', cur: '' };
-    asked = '';
-    $('card').hidden = true; $('chips').textContent = ''; $('qaTime').textContent = '';
+    asked = ''; judgeN++;
+    $('card').hidden = true; $('chips').textContent = ''; $('qaTime').textContent = ''; $('qaLow').hidden = true;
     $('live').textContent = SR ? '질문을 따라 말한 뒤 한 번 더 누르세요.' : NO_SR;
     if (!listening && SR) start();
   } else {
@@ -543,18 +715,47 @@ function onQuestion(q) {
   if (text) chips(rank(pack, qsents, text).slice(0, 3), text, false);
 }
 
-// 두 번째 탭이나 입력칸 Enter: e5 + 음절 비교로 판정
+// 두 번째 탭이나 입력칸 Enter: e5 + 음절 비교로 판정. JEV 모드면 Kev가 e5 후보 5개와 '해당 없음' 가운데 다시 고른다.
+// 자동 열기를 켰으면 e5 1등이 확실할 때(JEV가 있으면 JEV도 같은 1등일 때)만 카드를 바로 연다. 판정마다 기록에 남긴다.
 async function judge(text) {
   if (!pack) return;
-  const t = performance.now();
+  const n = ++judgeN, t = performance.now();
   asked = text;
   let qv = null;
   try { if (pipe && V) qv = await embed(pipe, [text]); } catch (e) { modelBroke(e); }
-  const top = rank(pack, qsents, text, qv, V).slice(0, 3);
-  chips(top, text, true);
-  $('qaTime').textContent = `판정 ${Math.round(performance.now() - t)}ms · ${qv ? 'e5 + 음절 비교' : '간단 비교'}`;
+  if (n !== judgeN) return;
+  const all = rank(pack, qsents, text, qv, V), ms = Math.round(performance.now() - t);
+  let top = all.slice(0, 3), jv = null, jmsg = '';
+  if (qv && jev && jevOn) {
+    const t1 = performance.now(), five = all.slice(0, 5);
+    try {
+      const late = new Promise((_, no) => setTimeout(() => no(new Error('timeout')), JEV_TIMEOUT));
+      // 질문은 끝 300자까지만 (붙여넣은 긴 채팅 글로 입력이 수천 토큰이 되지 않게)
+      jv = { ...rerank(five, await Promise.race([jev(text.slice(-300), five.map(r => r.q.q)), late])), ms: Math.round(performance.now() - t1) };
+      top = jv.chips;
+    } catch (e) {
+      // 늦은 것도 오류처럼 닫는다. 워커는 한 번에 하나씩 처리하므로 멈춘 판정 뒤의 판정도 모두 늦어진다. 'JEV 다시 시도'로 다시 연다.
+      const slow = e.message === 'timeout';
+      if (!slow) console.warn('JEV 오류', e);
+      closeJev(); jev = null; jevState = 'failed'; showJev(); showModel();
+      jmsg = slow ? ' · JEV가 늦어 e5로' : ' · JEV 오류로 e5로';
+    }
+    if (n !== judgeN) return;
+  }
+  const c = qv ? confidence(all) : null;
+  const auto = autoCard && c?.sure && !jv?.noneFirst && (!jv || jv.top[0].q === all[0].q);
+  const r3 = x => Math.round(x * 1000) / 1000;
+  note({
+    qa: 'judge', j: n, q: text, ms, how: qv ? 'e5' : 'simple', low: !!c?.low, auto: auto ? all[0].q.id : null,
+    top: all.slice(0, 3).map(r => ({ id: r.q.id, s: r3(r.score), e: qv ? r3(r.e) : null, b: r3(r.b) })),
+    ...(jv && { jev: { ms: jv.ms, none: r3(jv.none), top: jv.top.slice(0, 3).map(r => ({ id: r.q.id, p: r3(r.p) })) } }),
+    ...(jmsg && { jevFail: jmsg }),
+  });
+  chips(top, text, true, jv?.noneFirst);
+  $('qaLow').hidden = !c?.low;
+  $('qaTime').textContent = `판정 ${ms}ms · ${qv ? 'e5 + 음절 비교' : '간단 비교'}` + (jv ? ` · JEV ${jv.ms}ms` : '') + jmsg;
   $('live').textContent = '';
-  if (top[0]?.score >= AUTO_T1) openCard(top[0].q, top, text);
+  if (auto) openCard(all[0].q, top, text, 'auto', 0);
 }
 
 function chip(label, fn, cls = '') {
@@ -565,17 +766,25 @@ function chip(label, fn, cls = '') {
   return b;
 }
 
-function chips(top, text, final) {
+// noneFirst: JEV가 '해당 없음'을 높은 확률로 골랐으면 맨 앞에
+function chips(top, text, final, noneFirst = false) {
   const box = $('chips');
   box.textContent = '';
-  for (const r of top) box.append(chip(r.q.q, () => openCard(r.q, top, text)));
-  if (final) box.append(chip('해당 없음', () => { box.textContent = ''; $('all').open = true; $('all').scrollIntoView(); }, 'none'));
+  const none = final && chip('해당 없음', () => {
+    note({ qa: 'pick', j: judgeN, id: null, how: 'none' });
+    box.textContent = ''; $('qaLow').hidden = true; $('all').open = true; $('all').scrollIntoView();
+  }, 'none');
+  if (none && noneFirst) box.append(none);
+  top.forEach((r, i) => box.append(chip(r.q.q, () => openCard(r.q, top, text, final ? 'chip' : 'live', i))));
+  if (none && !noneFirst) box.append(none);
 }
 
 // 카드는 다음 '질문'을 누를 때까지 저절로 바뀌지 않는다
-function openCard(q, top = [], text = '') {
+// how: 어떻게 열었나('chip', 'live' 말하는 중의 칩, 'more' 카드 아래 칩, 'list' 전체 목록, 'auto' 자동). rank: 후보 중 몇째(0부터)
+function openCard(q, top = [], text = '', how = '', rank = -1) {
+  if (how) note({ qa: 'pick', j: judgeN, id: q.id, how, rank });
   qSeg = null; askBtn();
-  $('chips').textContent = ''; $('live').textContent = '';
+  $('chips').textContent = ''; $('live').textContent = ''; $('qaLow').hidden = true;
   $('cardHeard').textContent = text ? '인식한 질문: ' + text : '';
   $('cardQ').textContent = q.q;
   $('cardCheck').hidden = !q.check;
@@ -588,7 +797,7 @@ function openCard(q, top = [], text = '') {
   }
   const more = $('cardMore');
   more.textContent = '';
-  for (const r of top) if (r.q !== q) more.append(chip(r.q.q, () => openCard(r.q, top, text)));
+  top.forEach((r, i) => r.q !== q && more.append(chip(r.q.q, () => openCard(r.q, top, text, 'more', i))));
   $('card').hidden = false;
 }
 
@@ -599,7 +808,7 @@ function renderAll() {
   box.textContent = '';
   for (const q of pack?.questions || [])
     if (!f || plain([q.q, ...q.alts].join(' ')).includes(f))
-      box.append(chip(q.q, () => { $('all').open = false; openCard(q, [], asked); }));
+      box.append(chip(q.q, () => { $('all').open = false; openCard(q, [], asked, 'list'); }));
 }
 $('allQ').oninput = renderAll;
 
@@ -697,7 +906,7 @@ function showKey() {
 
 function openQa() {
   if (!draft.length && pack) draft = copyQs(pack.questions);
-  fillInfo(); renderDraft(); showKey(); showModel();
+  fillInfo(); renderDraft(); showKey(); showModel(); showJev();
   $('prep').showModal();
 }
 $('prepBtn').onclick = openQa;
@@ -832,6 +1041,7 @@ function loadScript() {
   try { const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; } catch {}
   try { pinfo = JSON.parse(store.get(sk('qaInfo'))) || {}; } catch { pinfo = {}; }
   try { setPack(cleanPack(JSON.parse(store.get(sk('pack'))))); } catch { setPack(null); }  // 질문 팩도 대본마다 (첫 대본은 예전 ls.pack)
+  loadShrink();
   draft = [];
   aiRes = null; aiJob = null; undo = null; sel = null;
   renderLib(); updEst(); updAlt();
@@ -870,7 +1080,7 @@ $('mRename').onclick = () => {
 $('mDel').onclick = () => {
   const e = entry();
   if (!confirm(`'${e.name}' 대본과 그 버전 기록을 지울까요? 되돌릴 수 없어요.`)) return;
-  for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep']) store.del(sk(k));
+  for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink']) store.del(sk(k));
   lib.list = lib.list.filter(x => x !== e);
   if (!lib.list.length) lib.list.push({ id: Date.now().toString(36), name: '대본 1', src: '' });
   lib.cur = lib.list[0].id;
@@ -955,9 +1165,9 @@ $('verRestore').onclick = () => {
 };
 
 // 어절 단위 비교를 그린다. 길게 같은 부분은 앞뒤만 보이고 눌러야 펼친다(30분 대본도 휴대폰에서 읽을 수 있게).
-function showDiff(box, a, b) {
+// d: 이미 나눈 결과가 있으면 그것을 그린다(미리 줄이기 창)
+function showDiff(box, a, b, d = diff(a, b)) {
   box.textContent = '';
-  const d = diff(a, b);
   d.forEach(({ t, v }, i) => {
     if (t === '=' && v.length > 240) {
       const head = i ? v.slice(0, 80) : '', tail = i < d.length - 1 ? v.slice(-80) : '';
@@ -1049,13 +1259,15 @@ function jobFor(tab, paste = false) {
 }
 
 // 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop }] (문장 번호 0부터, lib.js paras() 기준), kw }
-// ponytail: paras는 다음 단계(늦어지면 줄이기)가 쓴다. h가 지금 대본과 다르면 그 문장 번호는 믿을 수 없다.
+// paras는 늦어지면 줄이기(shrink.js)가 쓴다. h가 지금 대본과 다르면 그 문장 번호는 믿을 수 없어서 쓰지 않는다.
 function loadPrep() {
   try {
     const p = JSON.parse(store.get(sk('prep')));
     if (!p || !Array.isArray(p.paras)) return null;
     // anchors()가 받는 모양만 남긴다 (저장된 값이 깨져도 발표 화면이 멈추지 않게)
     p.kw = Object.fromEntries(Object.entries(p.kw && typeof p.kw === 'object' ? p.kw : {}).filter(([, v]) => Array.isArray(v) && v.every(x => typeof x === 'string')));
+    const ints = v => Array.isArray(v) ? v.filter(Number.isInteger) : [];  // shrink.js units()가 받는 모양
+    p.paras = p.paras.map(x => ({ imp: [1, 2, 3].includes(x?.imp) ? x.imp : 2, keep: ints(x?.keep), drop: ints(x?.drop) }));
     return p;
   } catch { return null; }
 }

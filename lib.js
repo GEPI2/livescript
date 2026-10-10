@@ -102,12 +102,22 @@ export function paraSpans(text) {
   return out;
 }
 
-// 문단마다 문장 목록. 문장은 app.js build()와 같은 규칙으로 나눈다: 어절 끝의 . ? ! … 。(뒤 따옴표·괄호 포함) 또는 줄바꿈.
-// '발표 준비'의 문장 번호(문단 안에서 0부터)가 이 나눔을 따른다.
+// 문단마다 문장 [시작, 끝] (원문 위치, 앞뒤 공백 제외). 문장은 app.js build()와 같은 규칙으로 나눈다:
+// 어절 끝의 . ? ! … 。(뒤 따옴표·괄호 포함) 또는 줄바꿈. '발표 준비'의 문장 번호(문단 안에서 0부터)가 이 나눔을 따른다.
+export function sentSpans(text) {
+  return paraSpans(text).map(([a, b]) => {
+    const p = text.slice(a, b), re = /[^\n]*?[.?!…。]["'”’)\]]*(?=\s|$)|[^\n]+/g, out = [];
+    let m;
+    while ((m = re.exec(p))) {
+      const t = m[0].trim();
+      if (t) { const s = a + m.index + m[0].search(/\S/); out.push([s, s + t.length]); }
+    }
+    return out;
+  });
+}
 export function paras(text) {
   text = text.normalize('NFC');
-  return paraSpans(text).map(([a, b]) => text.slice(a, b)
-    .match(/[^\n]*?[.?!…。]["'”’)\]]*(?=\s|$)|[^\n]+/g).map(s => s.trim()).filter(Boolean));
+  return sentSpans(text).map(p => p.map(([a, b]) => text.slice(a, b)));
 }
 
 // 선택한 [a, b)에 걸친 문단 전체의 [시작, 끝]. 문단에 안 걸치면(공백만 골랐으면) null

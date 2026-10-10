@@ -38,6 +38,14 @@
   /* 키워드로 어림한 위치: 어절 밑줄 대신 문장 전체에 점선 */
   #prompt .s.approx { text-decoration: underline dotted 3px #8af; text-underline-offset: 6px; }
   #prompt .s.approx .c { text-decoration: none; }
+  /* 자동 줄이기로 문장을 숨긴 문단: 왼쪽 줄과 작은 표시 */
+  #prompt .cut { border-left: 3px solid #34425e; padding-left: 10px; margin-left: -13px; }
+  #prompt .cut::before { content: attr(data-l); margin-right: 6px; font-size: 13px; color: #8a9bbd; vertical-align: 0.3em; }
+  .sw { white-space: nowrap; font-size: 14px; }
+  @media (max-width: 420px) {
+    #est .wide { display: none; }  /* 목표는 바로 옆 입력칸에 보인다 */
+    footer:has(#altBtn:not([hidden])) .sw { display: none; }  /* 고른 말이 있는 동안만 보이는 '다른 말'에 자리를 준다 */
+  }
 
   /* 질의응답 */
   body.qa #prompt, body.qa footer, body:not(.qa) #qa { display: none; }
@@ -48,6 +56,7 @@
   #ask.on { background: #c33; }
   .chip { display: block; width: 100%; margin: 6px 0; padding: 12px; text-align: left; font-size: 18px; }
   .chip.none { color: #999; }
+  #qaLow { color: #fb4; }
   #card { margin: 12px 0; padding: 12px 16px; border-radius: 12px; background: #1b2233; }
   #cardQ { margin: 4px 0 8px; font-size: 20px; }
   #cardA { margin: 0; padding-left: 1.2em; font-size: var(--fs); line-height: 1.5; }
@@ -112,6 +121,7 @@
   <div class="row"><span class="small grow" id="qaState"></span><button id="qaRetry" hidden>다시 시도</button></div>
   <button id="ask">질문</button>
   <p class="small" id="live"></p>
+  <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
   <div id="chips"></div>
   <p class="small" id="qaTime"></p>
   <div id="card" hidden>
@@ -133,6 +143,7 @@
   <label for="target">목표</label>
   <input id="target" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"> 분
   <span class="grow small" id="est"></span>
+  <label class="sw" id="shrinkBox" hidden><input type="checkbox" id="shrinkOn"> 자동 줄이기</label>
   <button id="altBtn" hidden>다른 말</button>
 </footer>
 <p id="toast" role="status" hidden></p>
@@ -169,6 +180,12 @@
   <h3>판정 모델</h3>
   <p class="small" id="modelMsg"></p>
   <button id="getModel">모델 받기 (약 163MB, 와이파이 권장)</button>
+  <label><input type="checkbox" id="autoCard"> 확신이 높으면 답 카드를 바로 열기 (e5 판정일 때)</label>
+  <div id="jevBox" hidden>
+    <label><input type="checkbox" id="jevOn"> JEV 모드 (실험): 판정 모델 Kev-0.6B가 e5 후보 5개를 다시 고릅니다</label>
+    <p class="small" id="jevMsg"></p>
+    <button id="getJev" hidden></button>
+  </div>
 
   <div class="row bottom">
     <button id="savePack" class="primary">저장</button>
@@ -271,6 +288,18 @@
   <div id="altList"></div>
   <p id="altMsg" role="status"></p>
   <div class="row bottom"><span class="grow"></span><button id="altClose">닫기</button></div>
+</dialog>
+
+<dialog id="shrinkDlg">
+  <h2>목표 시간보다 길어요</h2>
+  <p id="shrinkMsg"></p>
+  <p class="small">'발표 준비'에서 고른 덜 중요한 문장을 뺐습니다. 새로 쓴 문장은 없고, 편집 화면의 대본은 그대로입니다. <del>뺀 문장</del></p>
+  <div class="diff" id="shrinkDiff"></div>
+  <div class="row bottom">
+    <button id="shrinkYes" class="primary">줄인 대본으로 연습</button>
+    <span class="grow"></span>
+    <button id="shrinkNo">원문으로</button>
+  </div>
 </dialog>
 
 <dialog id="keyDlg">

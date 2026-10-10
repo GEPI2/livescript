@@ -15,5 +15,8 @@ onnxruntime-web 1.31.0-dev.20260914-8d85527a0 (MIT; transformers 4.3.1 package.j
 
 모델(여기에 두지 않음, 기기마다 Hugging Face에서 한 번 받음)
   Xenova/multilingual-e5-small, revision 761b726dd34fb83930e26aab4e9ac3899aa1fa78, onnx/model_quantized.onnx (q8), 원본 MIT
+  onnx-community/kev-0.6b-ONNX, revision 5a827091b3d58fe4fdfc02a5a5b2ce364047d678, onnx/model_q4f16.onnx + model_q4f16.onnx_data (WebGPU, JEV 모드에서만), Apache-2.0
+    model_q4f16.onnx 3338522 bytes sha256 26e059ddd954efd9897772b098db10b9eeda9b873984dc1c73b32a9ce177c7c8
+    model_q4f16.onnx_data 335357952 bytes sha256 777335dbc052e2e02ec7591f6eefcfb29e2c28caf52075e492d226fc27e0824b (Hugging Face LFS oid)
 
 다시 받을 때: npm pack @huggingface/transformers@4.3.1 onnxruntime-web@1.31.0-dev.20260914-8d85527a0 후 위 sha256과 비교

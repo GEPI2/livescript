@@ -17,14 +17,17 @@
   header { top: 0; padding-top: max(8px, env(safe-area-inset-top)); }
   footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .grow { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  #status { font-size: 13px; color: #999; }
-  #off { color: #fb4; }
+  #status { font-size: 13px; color: #999; white-space: normal; word-break: keep-all; line-height: 1.3; max-height: 2.6em; }  /* 좁으면 항목 단위로 두 줄 */
+  #off, #late { color: #fb4; }
   #mic.on { background: #c33; }
   #heard { font-size: 13px; color: #888; text-align: center; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
   @media (max-width: 420px) { header { gap: 6px; padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
+  @media (max-width: 520px) { #status .dot { display: none; } }  /* 이 폭까지는 상태줄이 두 줄로 접혀서 줄 끝에 ·가 남는다 */
 
-  #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 16px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
+  #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 72px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
+  #saveLog { white-space: nowrap; }
+  #target { width: 4.5em; font: inherit; color: inherit; background: #222; border: 1px solid #333; border-radius: 8px; padding: 6px 8px; }
   #prompt { max-width: 900px; margin: 0 auto; padding: 72px 16px 70vh; font-size: var(--fs); line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
   #prompt .s.cur { background: #24304a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   #prompt .r { color: #5a5a5a; }
@@ -102,6 +105,13 @@
     <div id="allList"></div>
   </details>
 </section>
+
+<footer class="e-only">
+  <label for="target">목표</label>
+  <input id="target" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"> 분
+  <span class="grow"></span>
+  <button id="saveLog">기록 내려받기</button>
+</footer>
 
 <footer class="p-only">
   <button id="prev" aria-label="이전 문장">◀</button>

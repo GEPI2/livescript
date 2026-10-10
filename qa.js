@@ -7,7 +7,7 @@ export const MODEL_FILE = `https://huggingface.co/${MODEL}/resolve/${REV}/onnx/m
 export const DIM = 384;
 const W = 0.1;  // e5 유사도 + 0.1 × 음절 비교 (준비 질문 20개 시험에서 1순위 21 → 25/30)
 
-const norm = s => s.normalize('NFC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+export const norm = s => s.normalize('NFC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 
 // 모든 질문에 흔히 붙는 군말과 질문 어미. 음절 비교를 흐리므로 빼고 비교한다.
 const FILLER = /(^|\s)(혹시|음+|어+|아+|그+|저+|저기요?|좀|이제|뭐|막|약간|그냥|일단|그러니까|그런데|근데|있잖아요|궁금한\s*게\s*있는데요?|질문\s*감사합니다|좋은\s*질문(입니다|이네요|이에요)?|감사합니다)(?=\s|$)/g;

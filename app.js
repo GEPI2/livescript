@@ -1,5 +1,5 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, locate)를 먼저 불러온다.
-import { cleanPack, prepare, rank, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM } from './qa.js';
+import { cleanPack, prepare, rank, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
 import { keyStore, keyOk, qaPrompt, generatePack, parsePack } from './claude.js';
 
 const $ = id => document.getElementById(id);
@@ -16,7 +16,8 @@ function build(text) {
   text = text.normalize('NFC');
   S = normMap(text);
   const toNorm = [];
-  for (let i = 0, k = 0; i <= text.length; i++) { toNorm[i] = k; if (S.at[k] === i) k++; }
+  // 숫자처럼 한 글자가 여러 음절로 늘면 at에 같은 값이 반복된다
+  for (let i = 0, k = 0; i <= text.length; i++) { while (k < S.at.length && S.at[k] < i) k++; toNorm[i] = k; }
 
   const root = $('prompt');
   root.textContent = '';
@@ -69,42 +70,56 @@ function render() {
   }
 }
 
-function setCur(n) { cur = Math.max(0, Math.min(n, S.s.length)); render(); }
+// by: 누가 옮겼나('voice', 'tap', 'prev', 'next'). 있으면 기록에 남긴다.
+function setCur(n, by) {
+  n = Math.max(0, Math.min(n, S.s.length));
+  if (by) note({ from: cur, to: n, by });
+  cur = n;
+  render();
+}
 
 // 손으로 옮기면 들은 말을 비워서 예전 말에 다시 끌려가지 않게 한다
-function jump(n) { heard = ''; cut = sessionNorm.length; pending = null; lastMatch = Date.now(); setCur(n); }
+function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMatch = Date.now(); setCur(n, by); }
 
 function sentStart(i) { return words[sents[i].first].n0; }
 function prev() {
   if (!words.length) return;
   const s = words[Math.min(curWord(), words.length - 1)].s;
-  jump(cur > sentStart(s) ? sentStart(s) : sentStart(Math.max(0, s - 1)));
+  jump(cur > sentStart(s) ? sentStart(s) : sentStart(Math.max(0, s - 1)), 'prev');
 }
 function next() {
   const c = curWord();
-  if (c < words.length && words[c].s + 1 < sents.length) jump(sentStart(words[c].s + 1));
+  if (c < words.length && words[c].s + 1 < sents.length) jump(sentStart(words[c].s + 1), 'next');
 }
 
 // ---- 음성 인식 ----
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NO_SR = '이 브라우저는 음성 인식이 안 돼요. Chrome이나 Safari를 쓰세요. 손으로 넘기기는 됩니다.';
 let rec, listening = false, errored = false, lock = null;
-let heard = '', sessionNorm = '', cut = 0, t0 = 0, lastHeard = 0, lastMatch = 0;
+let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0;
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
+let said = 0;  // 마지막으로 커서를 옮긴 뒤 새로 들은 글자 수 (말 속도용)
 
 function onHeard(h) {
-  const r = locate(S.s, h, cur);
+  const r = locate(S.s, h, cur, S.end);
   if (!r) return;
   lastMatch = Date.now();
   const d = r.pos - cur;
   // 뒤로 가거나 멀리 뛰는 건, 이어서 한 말도 그 위치에서 앞으로 맞아야 반영
-  if (d < -2 || d > 60) {
-    if (pending !== null && r.pos > pending && r.pos - pending <= 20) { pending = null; setCur(r.pos); }
+  if (d < -2 || d > 30) {
+    if (pending !== null && r.pos > pending && r.pos - pending <= 20) { pending = null; voiceMove(r.pos); }
     else if (pending === null || r.pos !== pending) pending = r.pos;
     return;
   }
   pending = null;
-  if (d > 0) setCur(r.pos);
+  if (d > 0) voiceMove(r.pos);
+}
+
+// 말 속도에는 목소리로 앞으로 간 글자만 센다. 건너뛴 대본은 말하지 않았으므로 새로 들은 만큼까지만.
+function voiceMove(n) {
+  if (n > cur) matched += Math.min(n - cur, said);
+  said = 0;
+  setCur(n, 'voice');
 }
 
 function say(t) {
@@ -121,12 +136,16 @@ function initRec() {
     let t = '', q = '';
     resFinal = e.results.length;
     if (qSeg && qSeg.from > e.results.length) qSeg.from = 0;  // 결과 목록이 새로 시작됐으면 처음부터
+    for (let i = e.resultIndex ?? 0; i < e.results.length; i++)  // 바뀐 결과만 (i: 이번 인식 세션 안 번호)
+      note({ i, final: e.results[i].isFinal, text: e.results[i][0].transcript, ...(qaMode && { qa: true }) });
     for (let i = 0; i < e.results.length; i++) {
       t += e.results[i][0].transcript;
       if (qSeg && i >= qSeg.from) q += e.results[i][0].transcript;
       if (!e.results[i].isFinal && resFinal > i) resFinal = i;
     }
+    const n0 = sessionNorm.length;
     sessionNorm = norm(t);
+    said += Math.max(0, sessionNorm.length - n0);
     lastHeard = Date.now();
     // 질의응답 중에는 대본 추적을 멈춘다 (질문과 답의 낱말에 커서가 끌려가지 않게)
     if (qaMode) { onQuestion(q); return; }
@@ -156,7 +175,8 @@ async function keepAwake() {
 function start() {
   if (!rec) initRec();
   listening = true;
-  if (!t0 || cur === 0) t0 = Date.now();
+  if (!t0 || cur === 0) resetTalk(Date.now());
+  else if (Date.now() - seen > 30 * 6e4) t0 += Date.now() - seen;  // 30분 넘게 쉬었다가 이어 하면 쉰 시간은 경과 시간에서 뺀다
   lastMatch = Date.now();
   try { rec.start(); } catch {}
   keepAwake();
@@ -193,24 +213,80 @@ function fontSize(delta) {
   if (delta && !qaMode) render();
 }
 
+// ---- 시간과 말 속도 ----
+// 발표 시작 시각, 대본 위에서 말한 시간(초), 목소리로 따라간 글자 수. 새로고침해도 이어서 잰다.
+let t0 = 0, onSec = 0, matched = 0, seen = 0, target = +store.get('ls.target') || 0;  // target: 목표 시간(분), 0이면 끔
+try { const v = JSON.parse(store.get('ls.talk')); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; } catch {}
+const R0 = 5;  // 처음 기본 말 속도(초당 정규화 글자). 한국어 낭독은 쉼을 포함해 초당 4.8~5.1음절
+const saveTalk = () => store.set('ls.talk', JSON.stringify({ t0, onSec, matched, seen: seen = Date.now() }));  // seen: 마지막으로 들은 때
+// 새 발표: 지난 발표에서 들은 말도 비운다
+function resetTalk(t) { t0 = t; onSec = 0; matched = 0; log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); }
+const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
 setInterval(() => {
+  if (listening) {
+    // 손으로 넘긴 글자, 애드리브, 질의응답 시간은 말 속도에서 뺀다
+    if (!qaMode && Date.now() - lastMatch < 3000) onSec += 0.5;
+    saveTalk();
+  }
   if (document.body.classList.contains('editing')) { $('status').textContent = ''; return; }
   const sec = t0 ? Math.floor((Date.now() - t0) / 1000) : 0;
   const pct = S.s.length ? Math.round(cur / S.s.length * 100) : 0;
   const off = !qaMode && listening && lastHeard - lastMatch > 3000;
-  // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 경고를 앞에 둔다
-  $('status').innerHTML = (off ? '<span id="off">대본 밖</span> · ' : '') + `${pct}% · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
+  const items = off ? ['<span id="off">대본&nbsp;밖</span>'] : [];
+  if (target) {
+    // 예상 종료 = 경과 시간 + 남은 글자 / 말 속도. 처음 30초 동안은 기본 속도 쪽으로 당긴다.
+    const d = Math.round(sec + (S.s.length - cur) * (onSec + 30) / (matched + R0 * 30) - target * 60);
+    items.push(d > 0 ? `<span id="late">+${mmss(d)}</span>` : '-' + mmss(-d));
+  }
+  items.push(mmss(sec), pct + '%');
+  $('status').innerHTML = items.join(' <span class="dot">·</span> ');
   $('qaBtn').classList.toggle('hot', !qaMode && pct >= 95);
 }, 500);
 
-$('text').oninput = () => { store.set('ls.script', $('text').value); store.set('ls.cur', 0); };
+$('target').value = target || '';
+$('target').oninput = () => {
+  target = Math.max(0, +$('target').value) || 0;
+  target ? store.set('ls.target', target) : store.del('ls.target');
+};
+
+// ---- 기록 내려받기 ----
+// 인식 결과 원문, 목소리로 옮긴 위치, 손으로 고친 위치. 나중에 매처를 고칠 때 쓴다(10분당 손 보정 횟수 등).
+const VERSION = 2;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다.
+const LOG_MAX = 20000;
+let log = [];
+function note(x) {
+  if (!t0) return;  // 발표를 시작하기 전 일은 남기지 않는다
+  log.push({ t: Date.now() - t0, ...x });
+  if (log.length > LOG_MAX) log.shift();
+}
+
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('saveLog').onclick = () => {
+  const text = $('text').value, stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace(/\D/g, '');
+  download(`livescript-log-${stamp}.json`, JSON.stringify({
+    app: 'livescript', version: VERSION, userAgent: navigator.userAgent,
+    start: t0 ? new Date(t0).toISOString() : null, target, onSec, matched, cur,
+    script: text, normLength: norm(text).length, events: log,
+  }));
+};
+
+$('text').oninput = () => { store.set('ls.script', $('text').value); store.set('ls.cur', 0); resetTalk(0); };
 $('mode').onclick = () => setMode(!document.body.classList.contains('editing'));
 $('mic').onclick = () => listening ? stop() : start();
 $('prev').onclick = prev;
 $('next').onclick = next;
 $('smaller').onclick = () => fontSize(-2);
 $('bigger').onclick = () => fontSize(2);
-$('prompt').onclick = e => { const i = e.target.dataset.i; if (i != null) jump(words[i].n0); };
+$('prompt').onclick = e => { const i = e.target.dataset.i; if (i != null) jump(words[i].n0, 'tap'); };
 // 버튼에 포커스가 남으면 스페이스가 버튼을 한 번 더 누르게 되므로 바로 뗀다
 addEventListener('click', e => e.target.closest('button')?.blur());
 addEventListener('keydown', e => {
@@ -437,11 +513,12 @@ function openCard(q, top = [], text = '') {
 }
 
 // 마지막 수단: 검색칸이 달린 전체 질문 목록
+// 검색은 친 글자 그대로 비교한다. match.js의 norm은 AI를 에이아이로 바꿔서 'ai'나 '20'으로 못 찾는다.
 function renderAll() {
-  const f = norm($('allQ').value), box = $('allList');
+  const f = plain($('allQ').value), box = $('allList');
   box.textContent = '';
   for (const q of pack?.questions || [])
-    if (!f || norm([q.q, ...q.alts].join(' ')).includes(f))
+    if (!f || plain([q.q, ...q.alts].join(' ')).includes(f))
       box.append(chip(q.q, () => { $('all').open = false; openCard(q, [], asked); }));
 }
 $('allQ').oninput = renderAll;
@@ -617,11 +694,7 @@ $('savePack').onclick = async () => {
 $('exportPack').onclick = () => {
   let p;
   try { p = cleanPack({ questions: draft }); } catch (e) { return prepMsg('내보낼 질문이 없어요.'); }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }));
-  a.download = 'qa-pack.json';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  download('qa-pack.json', JSON.stringify(p, null, 2));
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async e => {

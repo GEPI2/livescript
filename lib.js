@@ -156,6 +156,27 @@ export function cleanScript(t) {
   return t.replace(/^#{1,6}\s.*$/gm, '').replace(/\*\*|__/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ---- 대본 파일 (발표용 휴대폰으로 옮기기) ----
+// 앱이 내보낸 파일 { app: 'livescript', kind: 'script', name, text, target, info, pack, prep }이나 글 파일(.txt)을 읽는다. 파일은 믿지 않는다.
+// 반환 { name, text, target, info, pack, prep }. pack은 앱이 qa.js cleanPack으로 검사하고, prep은 모양만 맞춘다(앱 loadPrep이 읽을 때마다 검사).
+const INFO = ['topic', 'audience', 'goal', 'tone', 'outline', 'refs', 'n'];
+export function readScript(raw, fname = '') {
+  raw = String(raw).replace(/^\uFEFF/, '');
+  const json = /\.json$/i.test(fname) || /^\s*\{/.test(raw);
+  const d = json ? JSON.parse(raw) : { name: fname.replace(/\.[^.]*$/, ''), text: raw };
+  if (json && (d?.app !== 'livescript' || d.kind !== 'script')) throw new Error('라이브스크립트에서 내보낸 대본 파일이 아니에요.');
+  const text = typeof d.text === 'string' ? d.text.normalize('NFC').replace(/\r\n?/g, '\n') : '';
+  if (!text.trim()) throw new Error('대본이 비어 있어요.');
+  const p = d.prep;
+  return {
+    name: typeof d.name === 'string' ? d.name : '', text,
+    target: Math.min(600, Math.max(0, +d.target || 0)),
+    info: Object.fromEntries(INFO.filter(k => typeof d.info?.[k] === 'string').map(k => [k, d.info[k].slice(0, 2000)])),
+    pack: d.pack ?? null,
+    prep: p && typeof p === 'object' && Array.isArray(p.paras) ? { h: String(p.h ?? ''), t: +p.t || 0, paras: p.paras, kw: p.kw && typeof p.kw === 'object' ? p.kw : {} } : null,
+  };
+}
+
 // node lib.js 로 실행하면 확인
 if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWith('lib.js'))) {
   const assert = (await import('node:assert')).default;
@@ -224,5 +245,15 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   assert.equal(cleanScript('네, 대본입니다.\n```\n## 도입\n**안녕하세요.**\r\n\n\n\n반갑습니다.  \n```\n'), '안녕하세요.\n\n반갑습니다.');
   assert.equal(cleanScript('그대로 둡니다.\n\n[확인 필요] 숫자'), '그대로 둡니다.\n\n[확인 필요] 숫자');
+
+  // 대본 파일
+  const file = { app: 'livescript', kind: 'script', name: '발표', text: '가'.normalize('NFD') + '나.', target: '7', info: { topic: '주제', bad: '1', n: 5 }, pack: { questions: [] }, prep: { h: 1, paras: [{ imp: 1 }], kw: 3 } };
+  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {} } });
+  assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null }, '글 파일');
+  assert.throws(() => readScript('{"version":1,"questions":[]}', 'qa-pack.json'), /대본 파일이 아니/, '질문 팩 파일');
+  assert.throws(() => readScript('{"app":"livescript"', 'a.json'), SyntaxError);
+  assert.throws(() => readScript(' \n', 'a.txt'), /비어/);
+  assert.equal(readScript(JSON.stringify({ ...file, target: 1e9, prep: { paras: 1 } })).target, 600);
+  assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: 1 } })).prep, null);
   console.log('lib.js ok');
 }

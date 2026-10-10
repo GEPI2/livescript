@@ -278,9 +278,14 @@
     <button id="prepBtn">Q&amp;A 준비</button>
     <button id="keyBtn">AI 키</button>
     <button id="saveLog">기록 내려받기</button>
+    <button id="mExport">파일로 내보내기</button>
+    <button id="mImport">파일 가져오기</button>
   </div>
+  <p class="small">말소리는 글자로 바꾸려고 Google(Chrome) 또는 Apple(Safari)로 갑니다. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 갑니다. 질의응답 질문은 이 기기 안에서 판정해서 밖으로 나가지 않습니다. 판정 모델은 Hugging Face에서 기기마다 한 번 받습니다.</p>
+  <p class="small">iPhone Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   <div class="row bottom"><span class="grow"></span><button id="menuClose">닫기</button></div>
 </dialog>
+<input id="scriptFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
 
 <dialog id="altDlg">
   <h2>다른 말</h2>

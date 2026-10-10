@@ -1,7 +1,7 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
 import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
 import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript } from './lib.js';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js';
 import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js';
 import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js';
 
@@ -1086,6 +1086,33 @@ $('mDel').onclick = () => {
   lib.cur = lib.list[0].id;
   saveLib(); loadScript();
   tell(`'${e.name}'을(를) 지웠어요.`);
+};
+
+// 대본 파일: PC에서 쓴 대본을 발표용 휴대폰으로 옮긴다. 목표 시간, 발표 정보, 질문 팩, 발표 준비도 같이 (휴대폰에서 AI를 다시 부르지 않게).
+// 가져오면 새 대본으로 더한다. 글 파일(.txt)도 받는다.
+$('mExport').onclick = () => download(`${entry().name}.livescript.json`, JSON.stringify({
+  app: 'livescript', kind: 'script', name: entry().name, text: $('text').value, target, info: pinfo, pack, prep: loadPrep(),
+}));
+$('mImport').onclick = () => $('scriptFile').click();
+$('scriptFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  let r;
+  try {
+    if (f.size > 2e6) throw new Error('파일이 너무 커요.');
+    r = readScript(await f.text(), f.name);
+  } catch (err) { return tell('가져오지 못했어요. ' + (err instanceof SyntaxError ? '파일 내용이 깨졌어요.' : err.message)); }
+  const id = Date.now().toString(36), k = n => sk(n, id);
+  if (!save(k('script'), r.text)) return tell(FULL);
+  if (r.target) store.set(k('target'), r.target);
+  store.set(k('qaInfo'), JSON.stringify(r.info));
+  try { store.set(k('pack'), JSON.stringify(cleanPack(r.pack))); } catch {}  // 질문 팩이 없거나 깨졌으면 질문 없이
+  if (r.prep) store.set(k('prep'), JSON.stringify(r.prep));
+  lib.list.push({ id, name: cleanName(r.name) || `대본 ${lib.list.length + 1}`, src: '파일에서 가져옴' });
+  lib.cur = id;
+  saveLib(); loadScript();
+  tell(`'${entry().name}'을(를) 새 대본으로 가져왔어요.` + (pack ? ` 질문 ${pack.questions.length}개도 같이 왔어요.` : ''));
 };
 
 // ---- 버전 ----

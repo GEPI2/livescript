@@ -24,11 +24,14 @@ function readNum(d) {
   return out;
 }
 
+// AI가 대본에 남기는 표시. 소리 내어 읽지 않으므로 비교와 예상 시간에서 뺀다(화면에는 보인다).
+const MARK = /\[확인\s*필요[^\]\n]*\]/g;
+
 // 정규화된 문자열 s와, 각 글자가 원문 몇 번째 글자에서 왔는지 at(숫자처럼 하나가 여러 음절로 늘면 같은 값이 반복),
 // 어절 끝 1~2음절 표시 end(조사·어미라서 건너뛰어도 덜 센다).
 // 맥이나 일부 PDF에서 복사한 한글은 자모가 분리된 NFD라서 NFC로 합친 뒤 비교한다.
 function normMap(text) {
-  text = text.normalize('NFC');
+  text = text.normalize('NFC').replace(MARK, m => ' '.repeat(m.length));  // 같은 길이의 공백으로 바꿔 원문 위치를 지킨다
   let s = '', w = 0, m;
   const at = [], end = [];
   const endWord = () => {
@@ -263,6 +266,12 @@ if (typeof module === 'object') {
   assert.equal(toNorm[T.indexOf(' AI')], N.s.indexOf('에이아이'), '어절 끝 = 다음 어절 시작');
   assert.equal(toNorm[T.indexOf('AI') + 2], N.s.indexOf('시장'));
   assert.equal(toNorm[T.length], N.s.length);
+
+  // [확인 필요] 표시는 읽지 않으므로 비교에서 빠진다
+  const MK = '참가자는 200명[확인 필요]이었고 만족도는 [확인 필요: 출처] 높았습니다.', MN = normMap(MK);
+  assert.equal(MN.s, '참가자는이백명이었고만족도는높았습니다');
+  assert.equal(MK[MN.at[MN.s.indexOf('이었고')]], '이', '원문 위치는 그대로');
+  assert.equal(locate(MN.s, norm('이백 명이었고 만족도는 높았습니다'), 3, MN.end)?.pos, MN.s.length, '표시를 건너뛰어 읽어도 끝까지');
 
   const P = (h, cur = 0) => locate(N.s, norm(h), cur, N.end)?.pos;
   assert.equal(P('올해 이천이십육 년 에이아이 시장은'), N.s.indexOf('시장은') + 3, '숫자·약어를 소리로 읽어도');

@@ -3,6 +3,8 @@ import { cleanPack } from './qa.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
+// '다른 말'은 짧고 자주 부르므로 Haiku. Haiku 5.5는 서버 대체 모델(fallbacks)을 받지 않는다.
+export const ALT_MODEL = 'claude-haiku-5-5';
 
 // ---- 키: 기본은 이 탭에만(sessionStorage), '이 기기에 기억'일 때만 localStorage ----
 const K = 'ls.key';
@@ -75,34 +77,214 @@ ${script}
   return { system, user, text: system + '\n\n' + user };
 }
 
-// 챗봇 답에 설명이나 ``` 표시가 붙어도 JSON 부분만 골라 검사한다. 코드 블록이 있으면 그 안부터 본다.
-export function parsePack(text) {
+// 챗봇 답에 설명이나 ``` 표시가 붙어도 JSON 부분만 골라 clean으로 검사한다. 코드 블록이 있으면 그 안부터 본다.
+function parseJson(text, clean, what) {
   let err = null;
   for (const s of [String(text).match(/```(?:json)?\s*([\s\S]*?)```/)?.[1], String(text)]) {
     if (s == null) continue;
     const spans = [['{', '}'], ['[', ']']].map(([o, c]) => [s.indexOf(o), s.lastIndexOf(c)])
       .filter(([a, b]) => a >= 0 && b > a).sort((x, y) => x[0] - y[0]);
     for (const [a, b] of spans) {
-      try { return cleanPack(JSON.parse(s.slice(a, b + 1))); } catch (e) { if (!(e instanceof SyntaxError)) err ??= e; }
+      try { return clean(JSON.parse(s.slice(a, b + 1))); } catch (e) { if (!(e instanceof SyntaxError)) err ??= e; }
     }
   }
-  throw err ?? new Error('JSON을 읽지 못했어요. 질문 팩 JSON이 처음부터 끝까지 다 들어갔는지 확인해 주세요.');
+  throw err ?? new Error(`JSON을 읽지 못했어요. ${what} JSON이 처음부터 끝까지 다 들어갔는지 확인해 주세요.`);
 }
+export const parsePack = text => parseJson(text, cleanPack, '질문 팩');
 
 export async function generatePack(info, opts) {
   const p = qaPrompt(info);
   return parsePack(await callClaude({ ...opts, system: p.system, user: p.user, schema: PACK_SCHEMA }));
 }
 
+// ---- 대본 쓰기와 고치기 (답은 대본 글 그대로. 앱이 다시 세고 비교 화면을 보여 준다) ----
+const SPOKEN = `- 말하듯이 짧은 문장으로 쓴다. 한 문장은 한 호흡에 소리 내어 읽을 수 있는 길이로 한다.
+- 어려운 한자어나 외래어보다 말하기 쉬운 낱말을 쓴다.
+- 마크다운, 제목, 번호, 글머리표, 괄호 속 지시문(예: (슬라이드 넘김), (웃으며))을 쓰지 않는다. 소리 내어 읽을 문장만 쓴다.
+- 자료에 없는 숫자, 이름, 사실을 지어내지 않는다. 꼭 필요한데 자료에 없으면 그 자리에 [확인 필요]라고 쓴다.
+- 글자 수는 공백과 문장부호를 뺀 글자 수로 센다.
+- 대본 본문만 답한다. 앞뒤 설명이나 인사는 붙이지 않는다.`;
+
+// info: { topic, audience, goal, tone, outline(한 줄에 슬라이드 하나), refs, minutes, chars(목표 글자 수, 없으면 0) }
+export function scriptPrompt({ topic, audience, goal, tone, outline, refs, minutes, chars }) {
+  const slides = String(outline || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const per = chars && slides.length ? Math.round(chars / slides.length) : 0;
+  const system = `너는 발표 대본을 쓴다. 발표자는 이 대본을 휴대폰 화면에 띄워 놓고 소리 내어 읽고, 앱이 목소리를 듣고 읽는 위치를 따라간다.
+
+규칙
+- 슬라이드 하나에 문단 하나를 쓴다. 문단 사이는 빈 줄 하나로 나눈다. 슬라이드 개요가 없으면 내용에 맞게 문단을 나눈다.
+- 말투는 ${tone || '합니다체'}로 통일한다.
+${SPOKEN}
+- ${chars ? `전체 길이는 약 ${chars}자로 맞춘다.${per ? ` 슬라이드마다 개요에 적힌 글자 수에 맞춘다.` : ''}` : '길이는 내용에 맞게 정한다.'}`;
+  const user = `<발표정보>
+주제: ${topic || '(적지 않음)'}
+청중: ${audience || '(적지 않음)'}
+목적과 핵심 메시지: ${goal || '(적지 않음)'}
+목표 시간: ${minutes ? `약 ${minutes}분${chars ? ` (전체 약 ${chars}자)` : ''}` : '(적지 않음)'}
+</발표정보>
+<슬라이드개요>
+${slides.length ? slides.map((s, i) => `${i + 1}. ${s}${per ? ` (약 ${per}자)` : ''}`).join('\n') : '(없음)'}
+</슬라이드개요>
+<참고자료>
+${String(refs || '').trim() || '(없음)'}
+</참고자료>
+
+위 정보로 발표 대본을 써 주세요.`;
+  return { system, user, text: system + '\n\n' + user };
+}
+
+// script: 지금 대본, part: 고칠 부분(선택한 문단, 없으면 전체), instr: 지시, rate: 초당 글자 수, chars: 고칠 글의 글자 수
+export function editPrompt({ script, part = '', instr, rate, chars }) {
+  const system = `너는 발표 대본을 고친다. 발표자는 이 대본을 소리 내어 읽고, 앱이 목소리를 듣고 읽는 위치를 따라간다.
+
+규칙
+- 발표자의 지시대로 고친다. 지시와 상관없는 문장은 글자 하나 바꾸지 않고 그대로 둔다.
+- 문단 나눔(빈 줄)과 말투를 지킨다. 원래 있던 [확인 필요]는 그대로 둔다.
+${SPOKEN}
+- 말 속도는 초당 약 ${Math.round(rate * 10) / 10}자다. 시간으로 지시하면(예: 30초 줄이기) 이 속도로 글자 수를 어림한다.
+- ${part ? '<고칠부분>만 고쳐서 그 부분만 답한다. <대본>은 앞뒤 흐름을 보라고 주는 것이다.' : '고친 대본 전체를 답한다.'}`;
+  const user = `<대본>
+${script}
+</대본>
+${part ? `<고칠부분>\n${part}\n</고칠부분>\n` : ''}고칠 글의 길이: 약 ${chars}자 (예상 ${Math.floor(Math.round(chars / rate) / 60)}분 ${Math.round(chars / rate) % 60}초)
+<지시>
+${instr}
+</지시>`;
+  return { system, user, text: system + '\n\n' + user };
+}
+
+// ---- 발표 준비: 문단마다 줄일 때 쓸 정보(새 문장은 쓰지 않고 원문 문장 번호만), 키워드마다 다른 말 ----
+export const PREP_SCHEMA = {
+  type: 'object',
+  properties: {
+    paras: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          p: { type: 'integer' },
+          imp: { type: 'integer', enum: [1, 2, 3] },
+          keep: { type: 'array', items: { type: 'integer' } },
+          drop: { type: 'array', items: { type: 'integer' } },
+        },
+        required: ['p', 'imp', 'keep', 'drop'],
+        additionalProperties: false,
+      },
+    },
+    kw: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { k: { type: 'string' }, v: { type: 'array', items: { type: 'string' } } },
+        required: ['k', 'v'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['paras', 'kw'],
+  additionalProperties: false,
+};
+
+// ps: 문단마다 [{ t: 문장, kw: [키워드] }] (키워드는 match.js anchors()가 뽑은 것)
+export function prepPrompt(ps) {
+  const system = `너는 발표 대본을 살펴 두 가지를 정한다. 발표 중에는 AI를 부르지 않고 앱이 이 결과로만 계산한다.
+1. 발표가 늦어지면 앱이 덜 중요한 문단부터 문장을 숨겨 시간을 맞춘다. 새 문장은 쓰지 않고 원문 문장 번호만 고른다.
+2. 발표자가 키워드를 다르게 말해도 앱이 읽는 위치를 따라가도록, 키워드마다 발표자가 대신 말할 법한 말을 모은다.
+
+규칙
+- paras: 문단마다 하나씩 문단 번호 순서대로 쓴다. p는 문단 번호다.
+  - imp: 1은 빼면 발표 목적이 무너지는 문단, 2는 보통, 3은 예시나 여담.
+  - keep: 시간이 없어도 꼭 남길 문장 번호 1~2개. 문장 번호는 문단 안에서 1부터 센다.
+  - drop: 늦어지면 빼도 되는 문장 번호. keep에 넣은 번호는 넣지 않는다. 없으면 빈 배열.
+  - 다음 문장이 '그래서', '이처럼', '앞서 말씀드린'처럼 앞 문장을 가리키면 그 앞 문장은 drop에 넣지 않는다.
+- kw: 다른 말이 있는 키워드만 하나씩 쓴다. k는 키워드를 적힌 그대로, v는 다른 말 1~4개.
+  - 키워드는 앱이 공백과 문장부호를 빼고 숫자와 대문자 약어를 소리 나는 대로 바꿔 적은 것이다(30명 → 삼십명, AI → 에이아이).
+  - v에는 발표자가 그 낱말 대신 말할 법한 말(휴대폰 → 핸드폰, 스마트폰)과 숫자·영어를 다르게 읽는 말(iphone → 아이폰, 에이아이 → 인공지능)을 쓴다.
+  - 조사는 붙이지 않는다. 뜻이 넓어 다른 문장에도 나올 법한 말은 쓰지 않는다. 마땅한 다른 말이 없는 키워드는 kw에 쓰지 않는다.
+
+답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
+{"paras":[{"p":1,"imp":2,"keep":[1],"drop":[3]}],"kw":[{"k":"휴대폰","v":["핸드폰"]}]}`;
+  const body = ps.map((p, i) => `[문단 ${i + 1}]\n` + p.map((s, j) => `${j + 1}. ${s.t}` + (s.kw.length ? `\n   키워드: ${s.kw.join(', ')}` : '')).join('\n')).join('\n\n');
+  const user = `<대본>\n${body}\n</대본>\n\n위 대본의 문단 ${ps.length}개를 모두 정해 주세요.`;
+  return { system, user, text: system + '\n\n' + user };
+}
+
+// 뒤 문장이 이런 말로 시작하면 앞 문장을 가리키므로, 앞 문장은 빼지 않는다 (AI가 규칙을 어겨도 앱이 한 번 더 막는다)
+const BACKREF = /^["'“‘(]?(그래서|그러므로|따라서|그러니까|그 결과|이처럼|이렇게|이와 같이|이러한|이런|이 때문에|이는|이것은|그것은|즉|앞서|앞에서)(?![가-힣])/;
+
+// 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()). 반환 { paras: [{ imp, keep, drop }] (문장 번호는 0부터), kw: { 키워드: [다른 말] } }
+export function cleanPrep(obj, ps) {
+  if (!obj || !Array.isArray(obj.paras)) throw new Error('paras 목록이 없어요.');
+  const flat = ps.flat();
+  let o = 0;
+  const paras = ps.map((sents, i) => {
+    const it = obj.paras.find(x => x?.p === i + 1) ?? obj.paras[i] ?? {}, n = sents.length;
+    const idx = v => [...new Set((Array.isArray(v) ? v : []).filter(k => Number.isInteger(k) && k >= 1 && k <= n).map(k => k - 1))].sort((a, b) => a - b);
+    const keep = idx(it.keep);
+    let drop = idx(it.drop).filter(k => !keep.includes(k) && !BACKREF.test(flat[o + k + 1] ?? ''));  // 다음 문단 첫 문장까지 본다
+    if (!keep.length) keep.push([...Array(n).keys()].find(k => !drop.includes(k)) ?? 0);
+    drop = drop.filter(k => !keep.includes(k));
+    o += n;
+    return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop };
+  });
+  const kw = {};
+  for (const it of Array.isArray(obj.kw) ? obj.kw : []) {
+    const k = typeof it?.k === 'string' ? it.k.normalize('NFC').trim().slice(0, 30) : '';
+    const v = (Array.isArray(it?.v) ? it.v : []).filter(x => typeof x === 'string')
+      .map(x => x.normalize('NFC').replace(/\s+/g, ' ').trim()).filter(x => x && x !== k && x.length <= 20);
+    if (k && v.length && (kw[k] || Object.keys(kw).length < 600)) kw[k] = [...new Set([...(kw[k] || []), ...v])].slice(0, 4);  // 다른 말이 있는 키워드 600개까지
+  }
+  return { paras, kw };
+}
+export const parsePrep = (text, ps) => parseJson(text, o => cleanPrep(o, ps), '발표 준비');
+
+// ---- 다른 말: 고른 말과 그 문장만 보낸다 ----
+export const ALT_SCHEMA = {
+  type: 'object',
+  properties: { alts: { type: 'array', items: { type: 'string' } } },
+  required: ['alts'],
+  additionalProperties: false,
+};
+
+export function altPrompt({ phrase, sentence }) {
+  const system = `너는 발표 대본에서 고른 말을 소리 내어 말하기 쉬운 다른 말로 바꿔 준다.
+
+규칙
+- 대안을 3개 쓴다. 고른 말과 뜻이 같고, 문장에서 고른 말 자리에 그대로 넣어도 자연스러워야 한다.
+- 고른 말 끝의 조사와 어미까지 포함해서 바꾼다. 문장에 넣었을 때 조사가 맞아야 한다(예: '레버리지를' → '지렛대를', '활용을').
+- 숫자, 영어 표기, 사람·제품·기관 이름 같은 고유명사는 바꾸지 않고 그대로 둔다.
+- 더 짧고 쉬운 말을 먼저 쓴다.
+
+답은 JSON 하나로만 한다. {"alts":["...","...","..."]}`;
+  const user = `<문장>${sentence}</문장>\n<고른말>${phrase}</고른말>`;
+  return { system, user, text: system + '\n\n' + user };
+}
+
+// 숫자와 영문은 그대로 남은 대안만 쓴다 (바뀌면 음성 인식 결과와 대본이 어긋난다)
+export function cleanAlts(obj, phrase) {
+  const fixed = phrase.match(/[0-9]+|[A-Za-z]+/g) || [];
+  const out = [...new Set((Array.isArray(obj?.alts) ? obj.alts : []).filter(x => typeof x === 'string')
+    .map(x => x.normalize('NFC').replace(/\s+/g, ' ').trim()))]
+    .filter(x => x && x !== phrase && x.length <= Math.max(40, phrase.length * 3) && fixed.every(f => x.includes(f)));
+  if (!out.length) throw new Error('쓸 만한 다른 말을 찾지 못했어요. 조금 더 길게 골라 보세요.');
+  return out.slice(0, 3);
+}
+
+export async function suggestAlts({ phrase, sentence }, opts) {
+  const p = altPrompt({ phrase, sentence });
+  const text = await callClaude({ ...opts, system: p.system, user: p.user, schema: ALT_SCHEMA, model: ALT_MODEL, effort: 'low', fallback: false });
+  return parseJson(text, o => cleanAlts(o, phrase), '다른 말');
+}
+
 // ---- API 호출 (스트리밍: 질문이 많아도 시간 초과 없이 받고, 받은 만큼 진행을 보여 준다) ----
-function errorText(status, err = {}) {
+function errorText(status, err = {}, model = MODEL) {
   const t = err.type || '';
   if (status === 401 || t === 'authentication_error') return 'API 키가 맞지 않아요(401). AI 키 설정에서 키를 다시 넣어 주세요.';
   // 지출 한도(429나 400)와 크레딧 부족(400)은 기다려도 풀리지 않는다
   if (/usage limit|credit balance/i.test(err.message || '')) return `지출 한도에 걸렸거나 크레딧이 부족해요(${status || t}). Claude Console에서 결제와 한도 설정을 확인해 주세요.`;
   if (status === 403 || t === 'permission_error') return '이 키로는 쓸 수 없어요(403). 키의 권한을 확인해 주세요.';
   if (status === 402 || t === 'billing_error') return '크레딧이나 월 지출 한도를 확인해 주세요(402).';
-  if (status === 404 || t === 'not_found_error') return `이 키로는 ${MODEL} 모델을 쓸 수 없어요(404). 키의 워크스페이스 설정을 확인해 주세요.`;
+  if (status === 404 || t === 'not_found_error') return `이 키로는 ${model} 모델을 쓸 수 없어요(404). 키의 워크스페이스 설정을 확인해 주세요.`;
   if (status === 429 || t === 'rate_limit_error') return '요청이 너무 많아요(429). 1분쯤 뒤에 다시 해 주세요.';
   if (status === 413 || t === 'request_too_large') return '대본이 너무 길어요(413).';
   if (status >= 500 || t === 'overloaded_error' || t === 'api_error') return `Anthropic 서버가 바빠요(${status || t}). 잠시 뒤 다시 해 주세요.`;
@@ -110,15 +292,17 @@ function errorText(status, err = {}) {
 }
 
 // 반환: 모델이 쓴 글(text 블록만). 앞에 thinking 블록이 와도 건너뛴다.
-export async function callClaude({ key, system, user, schema, signal, onProgress, fallback = true }) {
+// onProgress({ chars, questions, text }): text는 지금까지 받은 글 전체 (대본 미리보기에 바로 보여 준다)
+export async function callClaude(o) {
+  const { key, system, user, schema, signal, onProgress, model = MODEL, effort = EFFORT, fallback = true } = o;
   if (!keyOk(key)) throw new Error(BAD_KEY);
   const body = {
-    model: MODEL,
+    model,
     max_tokens: 64000,
     stream: true,
     system,
     messages: [{ role: 'user', content: user }],
-    output_config: { effort: EFFORT, ...(schema && { format: { type: 'json_schema', schema } }) },
+    output_config: { effort, ...(schema && { format: { type: 'json_schema', schema } }) },
   };
   const headers = {
     'content-type': 'application/json',
@@ -137,8 +321,8 @@ export async function callClaude({ key, system, user, schema, signal, onProgress
     try { err = (await res.json()).error || {}; } catch {}
     // 조직에서 대체 모델 베타를 못 쓰면 그것만 빼고 한 번 더
     if (fallback && res.status === 400 && /anthropic-beta|fallbacks/.test(err.message || ''))
-      return callClaude({ key, system, user, schema, signal, onProgress, fallback: false });
-    throw new Error(errorText(res.status, err));
+      return callClaude({ ...o, fallback: false });
+    throw new Error(errorText(res.status, err, model));
   }
 
   let buf = '', text = '', stop = null, done = false, streamErr = null;
@@ -157,7 +341,7 @@ export async function callClaude({ key, system, user, schema, signal, onProgress
         const ev = JSON.parse(data);
         if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
           text += ev.delta.text;
-          onProgress?.({ chars: text.length, questions: (text.match(/"q"\s*:/g) || []).length });
+          onProgress?.({ chars: text.length, questions: (text.match(/"q"\s*:/g) || []).length, text });
         } else if (ev.type === 'content_block_start' && ev.content_block?.type === 'thinking') onProgress?.({ chars: 0, questions: 0 });
         else if (ev.type === 'message_delta') stop = ev.delta?.stop_reason ?? stop;
         else if (ev.type === 'message_stop') done = true;
@@ -168,9 +352,9 @@ export async function callClaude({ key, system, user, schema, signal, onProgress
     if (e.name === 'AbortError') throw e;
     throw new Error('답을 받다가 연결이 끊겼어요. 다시 해 주세요.');
   }
-  if (streamErr) throw new Error(errorText(0, streamErr));
-  if (stop === 'refusal') throw new Error('AI가 이 요청을 거절했어요. 대본 내용을 확인하거나 붙여넣기 방식으로 해 보세요.');
-  if (stop === 'max_tokens') throw new Error('답이 너무 길어서 잘렸어요. 질문 수를 줄여서 다시 해 주세요.');
+  if (streamErr) throw new Error(errorText(0, streamErr, model));
+  if (stop === 'refusal') throw new Error('AI가 이 요청을 거절했어요. 대본 내용을 확인한 뒤 다시 해 보세요.');
+  if (stop === 'max_tokens') throw new Error('답이 너무 길어서 잘렸어요. 대본을 나누거나 요청을 줄여서 다시 해 주세요.');
   if (!done) throw new Error('답을 받다가 연결이 끊겼어요. 다시 해 주세요.');
   return text;
 }
@@ -262,6 +446,57 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const ctl = new AbortController(); ctl.abort();
   globalThis.fetch = async (u, init) => { init.signal.throwIfAborted(); };
   await assert.rejects(generatePack(info, { key: 'k', signal: ctl.signal }), { name: 'AbortError' });
+
+  // 대본 쓰기: 슬라이드마다 글자 수, 규칙
+  const sp = scriptPrompt({ topic: '출석 앱', audience: '교수님', goal: '시간 절약', tone: '해요체', outline: '도입\n\n문제\n해결', refs: '', minutes: 3, chars: 900 });
+  assert.ok(sp.system.includes('해요체로') && sp.system.includes('[확인 필요]') && sp.system.includes('빈 줄') && sp.system.includes('약 900자'));
+  assert.ok(sp.user.includes('1. 도입 (약 300자)\n2. 문제 (약 300자)\n3. 해결 (약 300자)') && sp.user.includes('약 3분 (전체 약 900자)'));
+  assert.ok(scriptPrompt({}).system.includes('합니다체로') && scriptPrompt({}).system.includes('내용에 맞게'), '목표가 없으면 길이는 자유');
+  const ep = editPrompt({ script: '가.\n\n나.', part: '나.', instr: '30초 줄이기', rate: 5, chars: 400 });
+  assert.ok(ep.user.includes('<고칠부분>\n나.\n</고칠부분>') && ep.user.includes('예상 1분 20초') && ep.system.includes('그 부분만 답한다') && ep.system.includes('초당 약 5자'));
+  assert.ok(editPrompt({ script: '가', instr: 'x', rate: 4.83, chars: 2 }).system.includes('대본 전체를 답한다'));
+
+  // 대본 스트리밍: 받은 글이 진행 표시로 온다
+  mock(ok('안녕하세요.\n\n반갑습니다.'));
+  const texts = [];
+  assert.equal(await callClaude({ key: 'k', system: sp.system, user: sp.user, onProgress: x => x.text && texts.push(x.text) }), '안녕하세요.\n\n반갑습니다.');
+  assert.ok(texts.length > 2 && texts.at(-1) === '안녕하세요.\n\n반갑습니다.' && texts[0].length < texts.at(-1).length, '받는 대로 보여 주기');
+  assert.equal(JSON.parse(calls[0].init.body).output_config.format, undefined, '대본은 글 그대로 받는다');
+
+  // 발표 준비
+  const PS = [['도입입니다.', '예시를 듭니다.', '그래서 이 앱을 만들었습니다.', '여담입니다.'], ['한 문장 문단.'], ['앞 문단 끝.', '덧붙임.'], ['이처럼 끝납니다.']];
+  const pp = prepPrompt(PS.map(p => p.map(t => ({ t, kw: t === '도입입니다.' ? ['도입', '에이아이'] : [] }))));
+  assert.ok(pp.user.includes('[문단 1]\n1. 도입입니다.\n   키워드: 도입, 에이아이\n2. 예시를 듭니다.') && pp.user.includes('문단 4개'));
+  assert.ok(pp.system.includes("'그래서'") && pp.system.includes('새 문장은 쓰지 않고'));
+  assert.ok(!JSON.stringify([PREP_SCHEMA, ALT_SCHEMA]).match(/maxItems|minItems|minLength|maxLength|minimum|maximum/));
+  const prep = cleanPrep({ paras: [
+    { p: 1, imp: 3, keep: [1], drop: [1, 2, 4, 9, 0, 2.5] },
+    { p: 2, imp: 7, keep: [], drop: [1] },
+    { p: 3, imp: 1, keep: [], drop: [1, 2] },
+  ], kw: [{ k: '도입', v: ['인트로', ' 인트로 ', '도입', '', 3, '아주아주아주아주아주아주아주긴다른말입니다'] }, { k: '에이아이', v: [] }, null] }, PS);
+  assert.deepEqual(prep.paras[0], { imp: 3, keep: [0], drop: [3] }, 'keep은 빼지 않고, 다음 문장이 그래서로 시작하면 앞 문장(2)도 안 뺀다, 범위 밖 번호는 버림');
+  assert.deepEqual(prep.paras[1], { imp: 2, keep: [0], drop: [] }, '이상한 중요도는 2, 한 문장 문단은 남김');
+  assert.deepEqual(prep.paras[2], { imp: 1, keep: [1], drop: [0] }, '다음 문단 첫 문장(이처럼)이 가리키는 끝 문장은 안 뺀다, keep이 비면 빼지 않는 문장 하나');
+  assert.deepEqual(prep.paras[3], { imp: 2, keep: [0], drop: [] }, '빠진 문단은 기본값');
+  assert.deepEqual(prep.kw, { 도입: ['인트로'] }, '다른 말 다듬기');
+  const many = Array.from({ length: 900 }, (_, i) => ({ k: '키' + i, v: i % 3 ? [] : ['말' + i] }));
+  assert.equal(Object.keys(cleanPrep({ paras: [], kw: many }, []).kw).length, 300, '빈 항목은 600개 한도에 세지 않는다');
+  assert.equal(parsePrep('네.\n```json\n{"paras":[{"p":1,"imp":1,"keep":[1],"drop":[]}],"kw":[]}\n```', [['가.']]).paras[0].imp, 1, '붙여넣은 JSON');
+  assert.throws(() => parsePrep('{"questions":[]}', [['가.']]), /paras/);
+
+  // 다른 말: Haiku, 대체 모델 없이, 숫자·영문은 그대로
+  assert.deepEqual(cleanAlts({ alts: ['지렛대를', '지렛대를', ' 활용을 ', '레버리지를', '', 5] }, '레버리지를'), ['지렛대를', '활용을']);
+  assert.deepEqual(cleanAlts({ alts: ['2026년에 인공지능을', '2026년에 AI를 써서', '올해 AI를'] }, '2026년에 AI를'), ['2026년에 AI를 써서'], '숫자와 영문이 빠진 대안은 버림');
+  assert.throws(() => cleanAlts({ alts: ['레버리지를'] }, '레버리지를'), /찾지 못했어요/);
+  const ap = altPrompt({ phrase: '레버리지를', sentence: '이 레버리지를 쓰면' });
+  assert.ok(ap.user === '<문장>이 레버리지를 쓰면</문장>\n<고른말>레버리지를</고른말>' && ap.system.includes('조사와 어미까지') && ap.system.includes('고유명사'));
+  mock(ok(JSON.stringify({ alts: ['지렛대를', '활용을', '힘을'] })));
+  assert.deepEqual(await suggestAlts({ phrase: '레버리지를', sentence: '이 레버리지를 쓰면' }, { key: 'k' }), ['지렛대를', '활용을', '힘을']);
+  const ab = JSON.parse(calls[0].init.body);
+  assert.equal(ab.model, 'claude-haiku-5-5'); assert.equal(ab.output_config.effort, 'low');
+  assert.deepEqual(ab.output_config.format, { type: 'json_schema', schema: ALT_SCHEMA });
+  assert.equal(ab.fallbacks, undefined, 'Haiku 5.5는 서버 대체 모델이 없다'); assert.equal(calls[0].init.headers['anthropic-beta'], undefined);
+  await (async () => { mock(fail(404, 'not_found_error', 'model')); await assert.rejects(suggestAlts({ phrase: '가', sentence: '가' }, { key: 'k' }), /claude-haiku-5-5 모델/); })();
 
   console.log('claude.js ok');
 }

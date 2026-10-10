@@ -1,6 +1,7 @@
-// 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow)를 먼저 불러온다.
+// 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
 import { cleanPack, prepare, rank, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack } from './claude.js';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript } from './lib.js';
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -8,6 +9,24 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
+// 저장 공간(약 5MB)이 가득 차면 다시 계산할 수 있는 질문 벡터를 비우고 한 번 더 해 본다
+const save = (k, v) => store.set(k, v) || (store.del('ls.vec'), store.set(k, v));
+const FULL = '이 기기의 저장 공간이 가득 차서 저장하지 못했어요. 쓰지 않는 대본을 지우고, 그동안 지금 대본은 다른 곳에 복사해 두세요.';
+
+// ---- 대본 보관함 ----
+// ls.lib = { cur: 지금 대본 id, list: [{ id, name, src: 마지막으로 대본을 바꾼 방법 }] }
+// 대본마다 따로 두는 값(대본, 위치, 목표, 발표 시간, 발표 정보, 버전, 발표 준비)은 sk(이름)에 둔다.
+// 첫 대본('a')은 예전 키(ls.script, ls.cur, ls.target, ls.talk, ls.qaInfo)를 그대로 써서 옮길 것이 없고, 이전 판 앱으로 열어도 그 대본이 보인다.
+let lib = { cur: 'a', list: [{ id: 'a', name: '대본 1', src: '' }] };
+try {
+  const l = JSON.parse(store.get('ls.lib'));
+  const list = (Array.isArray(l?.list) ? l.list : []).filter(e => typeof e?.id === 'string' && /^\w+$/.test(e.id))
+    .map(e => ({ id: e.id, name: typeof e.name === 'string' && e.name.trim() ? e.name.slice(0, 40) : '대본', src: typeof e.src === 'string' ? e.src : '' }));
+  if (list.length) lib = { cur: list.some(e => e.id === l.cur) ? l.cur : list[0].id, list };
+} catch {}
+const sk = (k, id = lib.cur) => id === 'a' ? 'ls.' + k : `ls.${k}.${id}`;
+const entry = () => lib.list.find(e => e.id === lib.cur);
+const saveLib = () => save('ls.lib', JSON.stringify(lib)) || tell(FULL);
 
 let S = { s: '' }, A = null, words = [], sents = [], cur = 0, pending = null;
 let approx = null;  // 문장 키워드로 옮겨서 위치가 어림값이면 그 키워드 문장 번호. 글자 비교가 다시 맞으면 null.
@@ -45,9 +64,10 @@ function build(text) {
     last = re.lastIndex;
   }
   root.append(text.slice(last));
-  A = anchors(S.s, words);
+  // '발표 준비'에서 만든 키워드의 다른 말도 키워드로 쓴다. 키워드 이름으로 찾으므로 대본이 조금 바뀌어도 그대로 쓴다.
+  A = anchors(S.s, words, loadPrep()?.kw);
   approx = null;
-  cur = Math.min(+store.get('ls.cur') || 0, S.s.length);
+  cur = Math.min(+store.get(sk('cur')) || 0, S.s.length);
 }
 
 function curWord() {
@@ -66,7 +86,7 @@ function render() {
     x.el.classList.toggle('cur', i === s);
     x.el.classList.toggle('approx', approx !== null && i === s);
   });
-  store.set('ls.cur', cur);
+  store.set(sk('cur'), cur);
 
   // 지금 줄을 화면 위에서 1/3 지점에 둔다
   const el = words[c]?.el;
@@ -212,8 +232,8 @@ function setMode(editing) {
   if (editing && qaMode) setQa(false);
   document.body.classList.toggle('editing', editing);
   $('mode').textContent = editing ? '발표' : '편집';
-  if (editing) { stop(); scrollTo(0, 0); }
-  else { build($('text').value); render(); prepareTalk(); }
+  if (editing) { stop(); scrollTo(0, 0); updEst(); }
+  else { snapshot('발표 시작') || tell(FULL); build($('text').value); render(); prepareTalk(); }
 }
 
 function fontSize(delta) {
@@ -224,11 +244,21 @@ function fontSize(delta) {
 }
 
 // ---- 시간과 말 속도 ----
-// 발표 시작 시각, 대본 위에서 말한 시간(초), 목소리로 따라간 글자 수. 새로고침해도 이어서 잰다.
-let t0 = 0, onSec = 0, matched = 0, seen = 0, target = +store.get('ls.target') || 0;  // target: 목표 시간(분), 0이면 끔
-try { const v = JSON.parse(store.get('ls.talk')); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; } catch {}
+// 발표 시작 시각, 대본 위에서 말한 시간(초), 목소리로 따라간 글자 수. 대본마다 저장해서 새로고침해도 이어서 잰다(loadScript).
+let t0 = 0, onSec = 0, matched = 0, seen = 0, target = 0;  // target: 목표 시간(분), 0이면 끔
 const R0 = 5;  // 처음 기본 말 속도(초당 정규화 글자). 한국어 낭독은 쉼을 포함해 초당 4.8~5.1음절
-const saveTalk = () => store.set('ls.talk', JSON.stringify({ t0, onSec, matched, seen: seen = Date.now() }));  // seen: 마지막으로 들은 때
+const saveTalk = () => {
+  store.set(sk('talk'), JSON.stringify({ t0, onSec, matched, seen: seen = Date.now() }));  // seen: 마지막으로 들은 때
+  // 말 속도는 사람마다 다르므로 대본과 따로 마지막으로 잰 값을 둔다 (편집 화면의 예상 시간, AI 대본 길이)
+  if (onSec >= 20) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
+};
+// 초당 정규화 글자. 잰 값이 적을 때는 기본값 쪽으로 당긴다(상태줄 예상 종료와 같은 계산).
+function rate() {
+  let s = 0, m = 0;
+  try { const r = JSON.parse(store.get('ls.rate')); s = +r.s || 0; m = +r.m || 0; } catch {}
+  return (m + R0 * 30) / (s + 30);
+}
+const spoken = t => norm(t).length;  // 소리 내어 읽는 글자 수 ([확인 필요] 표시와 문장부호는 빠진다)
 // 새 발표: 지난 발표에서 들은 말도 비운다
 function resetTalk(t) { t0 = t; onSec = 0; matched = 0; log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); }
 const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -256,15 +286,28 @@ setInterval(() => {
   $('qaBtn').classList.toggle('hot', !qaMode && pct >= 95);
 }, 500);
 
-$('target').value = target || '';
-$('target').oninput = () => {
-  target = Math.max(0, +$('target').value) || 0;
-  target ? store.set('ls.target', target) : store.del('ls.target');
-};
+// 편집 화면 아래와 AI 도구의 목표 시간은 같은 값이다
+function setTarget(v) {
+  target = Math.max(0, +v) || 0;
+  target ? store.set(sk('target'), target) : store.del(sk('target'));
+  for (const id of ['target', 'gMin']) if (document.activeElement !== $(id)) $(id).value = target || '';
+  updEst();
+}
+$('target').oninput = () => setTarget($('target').value);
+$('gMin').oninput = () => setTarget($('gMin').value);
+
+// 편집창 아래 '예상 7:40 / 목표 8:00'. 30분 대본이면 정규화에 휴대폰에서 수 ms가 걸려서 타자를 멈출 때 센다.
+function updEst() {
+  clearTimeout(updEst.h);
+  updEst.h = setTimeout(() => {
+    const s = Math.round(spoken($('text').value) / rate());
+    $('est').textContent = `예상 ${mmss(s)}` + (target ? ` / 목표 ${mmss(Math.round(target * 60))}` : '');
+  }, 150);
+}
 
 // ---- 기록 내려받기 ----
 // 인식 결과 원문, 목소리로 옮긴 위치, 손으로 고친 위치. 나중에 매처를 고칠 때 쓴다(10분당 손 보정 횟수 등).
-const VERSION = 3;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다.
+const VERSION = 4;  // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다. (4: [확인 필요] 표시를 비교에서 뺌, 발표 준비의 다른 말을 키워드로)
 const LOG_MAX = 20000;
 let log = [];
 function note(x) {
@@ -290,8 +333,35 @@ $('saveLog').onclick = () => {
   }));
 };
 
-$('text').oninput = () => { store.set('ls.script', $('text').value); store.set('ls.cur', 0); resetTalk(0); };
-$('mode').onclick = () => setMode(!document.body.classList.contains('editing'));
+// 대본이 바뀌면 처음부터 다시 읽는다. src: 바꾼 방법(버전 목록에 보인다)
+function textChanged(src) {
+  const t = $('text').value;
+  if (!save(sk('script'), t)) {
+    // 가득 차면 이 대본의 오래된 버전부터 지운다 (지금 쓰는 대본이 옛 버전보다 중요하다)
+    const vs = vers();
+    let gone = 0, ok = false;
+    while (!ok && vs.length) { vs.pop(); gone++; vs.length ? store.set(sk('vers'), JSON.stringify(vs)) : store.del(sk('vers')); ok = store.set(sk('script'), t); }
+    tell(ok ? `저장 공간이 모자라 이 대본의 오래된 버전 ${gone}개를 지웠어요.` : FULL);
+  }
+  store.set(sk('cur'), 0); resetTalk(0);
+  setSrc(src);
+  updEst();
+}
+function setText(t, src) { $('text').value = t.normalize('NFC'); textChanged(src); undo = null; updAlt(); }
+// 맥이나 PDF에서 복사한 한글은 자모가 풀린 꼴(NFD)이다. 편집창 글을 NFC로 맞춰 두어야 고른 위치, 버전 비교, AI 결과가 같은 글자를 센다.
+function nfc() {
+  const ta = $('text'), v = ta.value, n = v.normalize('NFC');
+  if (n === v) return;
+  const at = i => v.slice(0, i).normalize('NFC').length, a = at(ta.selectionStart), b = at(ta.selectionEnd);
+  ta.value = n; ta.setSelectionRange(a, b);
+}
+$('text').oninput = e => { if (!e.isComposing) nfc(); textChanged('직접 고침'); undo = null; updAlt(); };
+const marks = () => ($('text').value.match(MARK) || []).length;
+$('mode').onclick = () => {
+  const editing = document.body.classList.contains('editing'), n = editing ? marks() : 0;
+  if (n && !confirm(`대본에 [확인 필요]가 ${n}곳 남아 있어요. 사실을 확인하지 않은 채 발표 화면으로 갈까요?\n(읽지 않아도 따라가기에는 문제없어요)`)) return;
+  setMode(!editing);
+};
 $('mic').onclick = () => listening ? stop() : start();
 $('prev').onclick = prev;
 $('next').onclick = next;
@@ -317,7 +387,6 @@ let modelErr = '', modelJob = null, vecJob = null;
 const AUTO_T1 = Infinity;  // 이 점수 이상이면 카드를 바로 연다. 실제 질문으로 평가해 정하기 전까지 끈다.
 
 function setPack(p) { pack = p; qsents = p ? prepare(p) : []; V = null; vecKey = ''; }
-try { setPack(cleanPack(JSON.parse(store.get('ls.pack')))); } catch { setPack(null); }
 
 // 모델을 불러오다 탭이 강제 종료되면 표시가 남는다. 다음에는 이 기기에서 자동으로 불러오지 않는다.
 function loadJudge(onProgress) {
@@ -555,12 +624,16 @@ function info() {
     script: $('text').value.normalize('NFC').trim(),
   };
 }
-try {
-  const i = JSON.parse(store.get('ls.qaInfo')) || {};
-  $('topic').value = i.topic || ''; $('audience').value = i.audience || ''; $('count').value = i.n || 20;
-} catch {}
-for (const id of ['topic', 'audience', 'count'])
-  $(id).onchange = () => { const { topic, audience, n } = info(); store.set('ls.qaInfo', JSON.stringify({ topic, audience, n })); };
+
+// 발표 정보 (대본마다). 'Q&A 준비'와 'AI 도구'의 같은 data-info 칸이 같은 값을 쓴다. 창을 열 때 채운다.
+let pinfo = {};
+function fillInfo() {
+  for (const el of document.querySelectorAll('[data-info]'))
+    el.value = pinfo[el.dataset.info] ?? (el.tagName === 'SELECT' ? el.options[0].value : el.defaultValue);
+  $('gMin').value = target || '';
+}
+for (const el of document.querySelectorAll('[data-info]'))
+  el.onchange = () => { pinfo[el.dataset.info] = el.value; store.set(sk('qaInfo'), JSON.stringify(pinfo)) || tell(FULL); };
 
 function field(tag, label, value, set) {
   const l = document.createElement('label');
@@ -616,14 +689,18 @@ function showKey() {
   const k = keyStore.get();
   $('gen').hidden = !k;
   $('keyHint').hidden = !!k;
+  $('aiGo').hidden = !k;
+  $('aiKeyHint').hidden = !!k;
   $('keyState').textContent = !k ? '저장된 키가 없어요.' : keyStore.remembered() ? '이 기기에 저장된 키가 있어요.' : '이 탭에만 저장된 키가 있어요.';
+  updAlt();
 }
 
-$('prepBtn').onclick = () => {
+function openQa() {
   if (!draft.length && pack) draft = copyQs(pack.questions);
-  renderDraft(); showKey(); showModel();
+  fillInfo(); renderDraft(); showKey(); showModel();
   $('prep').showModal();
-};
+}
+$('prepBtn').onclick = openQa;
 $('closePrep').onclick = () => $('prep').close();
 
 $('gen').onclick = async () => {
@@ -647,19 +724,22 @@ $('gen').onclick = async () => {
   }
 };
 
-$('copyPrompt').onclick = async () => {
-  const inf = info();
-  if (!inf.script) return prepMsg('먼저 대본을 붙여넣으세요.');
-  const out = $('promptOut');
-  out.value = qaPrompt(inf).text;
+// 프롬프트를 보여 주고 클립보드에 복사한다 (Q&A 준비와 AI 도구가 같이 쓴다)
+async function copyPrompt(out, text, msg, what) {
+  out.value = text;
   out.hidden = false;
   try {
-    await navigator.clipboard.writeText(out.value);
-    prepMsg("프롬프트를 복사했어요. claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요.");
+    await navigator.clipboard.writeText(text);
+    msg(`프롬프트를 복사했어요. claude.ai 같은 챗봇에 붙여넣고, 받은 ${what}을 '결과 붙여넣기'에 넣으세요.`);
   } catch {
     out.select();
-    prepMsg('자동 복사가 안 돼요. 위 칸의 글을 직접 복사하세요.');
+    msg('자동 복사가 안 돼요. 위 칸의 글을 직접 복사하세요.');
   }
+}
+$('copyPrompt').onclick = () => {
+  const inf = info();
+  if (!inf.script) return prepMsg('먼저 대본을 붙여넣으세요.');
+  copyPrompt($('promptOut'), qaPrompt(inf).text, prepMsg, 'JSON');
 };
 $('pasteBtn').onclick = () => { $('pasteBox').hidden = false; $('pasteIn').focus(); };
 $('pasteApply').onclick = () => {
@@ -679,14 +759,14 @@ $('addQ').onclick = () => {
 $('savePack').onclick = async () => {
   const items = draft.filter(it => it.q.trim());
   if (!items.length) {
-    store.del('ls.pack'); store.del('ls.vec');
+    store.del(sk('pack')); store.del('ls.vec');
     setPack(null); draft = []; renderDraft(); showModel();
     return prepMsg('질문을 모두 지웠어요.');
   }
   let p;
   try { p = cleanPack({ questions: items }); } catch (e) { return prepMsg(e.message); }
   const s = JSON.stringify(p);
-  const saved = store.set('ls.pack', s) || (store.del('ls.vec'), store.set('ls.pack', s));  // 가득 찼으면 벡터를 비우고 한 번 더
+  const saved = save(sk('pack'), s);  // 가득 찼으면 벡터를 비우고 한 번 더
   setPack(p);
   draft = copyQs(p.questions);
   renderDraft();
@@ -720,6 +800,7 @@ $('importFile').onchange = async e => {
 const openKey = () => { $('keyIn').value = ''; $('keyRemember').checked = keyStore.remembered(); showKey(); $('keyDlg').showModal(); };
 $('keyBtn').onclick = openKey;
 $('keyBtn2').onclick = openKey;
+$('keyBtn3').onclick = openKey;
 $('keySave').onclick = () => {
   const k = $('keyIn').value.replace(/[\s\u200b-\u200d\u2060]/g, '') || keyStore.get();  // 복사할 때 붙은 공백, 보이지 않는 글자 제거
   if (k && !keyOk(k)) { $('keyState').textContent = '키에 쓸 수 없는 글자가 있어요. 키를 다시 복사해 넣어 주세요.'; return; }
@@ -731,8 +812,428 @@ $('keySave').onclick = () => {
 $('keyClear').onclick = () => { keyStore.clear(); showKey(); };
 $('keyClose').onclick = () => $('keyDlg').close();
 
+// ---- 알림: 열린 창이 있으면 그 창의 상태 줄에, 없으면 화면 아래에 ----
+function tell(t) {
+  const box = document.querySelector('dialog[open] [role=status]') || $('toast');
+  box.textContent = t;
+  if (box !== $('toast')) return;
+  box.hidden = !t;
+  clearTimeout(tell.h);
+  tell.h = setTimeout(() => { box.hidden = true; }, 6000);
+}
+
+// ---- 대본 고르기, 새로 만들기, 이름 바꾸기, 지우기 (편집 화면에서만) ----
+function loadScript() {
+  genCtl?.abort(); aiCtl?.abort(); altCtl?.abort();  // 하던 AI 일은 앞 대본의 것이므로 멈춘다 (결과가 다른 대본에 들어가지 않게)
+  $('text').value = (store.get(sk('script')) || '').normalize('NFC');
+  target = +store.get(sk('target')) || 0;
+  $('target').value = target || '';
+  t0 = onSec = matched = seen = 0; log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
+  try { const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; } catch {}
+  try { pinfo = JSON.parse(store.get(sk('qaInfo'))) || {}; } catch { pinfo = {}; }
+  try { setPack(cleanPack(JSON.parse(store.get(sk('pack'))))); } catch { setPack(null); }  // 질문 팩도 대본마다 (첫 대본은 예전 ls.pack)
+  draft = [];
+  aiRes = null; aiJob = null; undo = null; sel = null;
+  renderLib(); updEst(); updAlt();
+}
+
+function renderLib() {
+  const s = $('lib');
+  s.textContent = '';
+  for (const e of lib.list) s.append(new Option(e.name, e.id));
+  s.append(new Option('＋ 새 대본', '+'));
+  s.value = lib.cur;
+}
+
+const cleanName = s => String(s || '').normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 40);
+$('lib').onchange = () => {
+  let id = $('lib').value;
+  if (id === '+') {
+    const name = prompt('새 대본 이름', `대본 ${lib.list.length + 1}`);
+    if (name === null) return renderLib();
+    id = Date.now().toString(36);
+    lib.list.push({ id, name: cleanName(name) || `대본 ${lib.list.length + 1}`, src: '' });
+  }
+  lib.cur = id;
+  saveLib(); loadScript();
+};
+
+// 메뉴 창: 버튼을 누르면 메뉴를 먼저 닫는다 (다른 창이 그 위에 열리도록)
+$('menuBtn').onclick = () => { $('menuTitle').textContent = entry().name; $('menu').showModal(); };
+$('menu').addEventListener('click', e => { if (e.target.closest('button')) $('menu').close(); }, true);
+$('mRename').onclick = () => {
+  const e = entry(), name = cleanName(prompt('대본 이름', e.name));
+  if (!name) return;
+  e.name = name;
+  saveLib(); renderLib();
+};
+$('mDel').onclick = () => {
+  const e = entry();
+  if (!confirm(`'${e.name}' 대본과 그 버전 기록을 지울까요? 되돌릴 수 없어요.`)) return;
+  for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep']) store.del(sk(k));
+  lib.list = lib.list.filter(x => x !== e);
+  if (!lib.list.length) lib.list.push({ id: Date.now().toString(36), name: '대본 1', src: '' });
+  lib.cur = lib.list[0].id;
+  saveLib(); loadScript();
+  tell(`'${e.name}'을(를) 지웠어요.`);
+};
+
+// ---- 버전 ----
+// sk('vers') = [{ t, label: 만든 때, src: 대본을 바꾼 방법, text }] 최신이 앞
+// ponytail: 버전마다 대본 전체를 저장한다(30분 대본 30개면 약 40만 자). 공간이 모자라면 오래된 것부터 지운다.
+// 긴 대본을 여러 개 두는 일이 흔해지면 바로 뒤 버전과의 차이(lib.js diff)만 저장한다.
+function vers() {
+  try { const v = JSON.parse(store.get(sk('vers'))); return Array.isArray(v) ? v.filter(x => typeof x?.text === 'string') : []; } catch { return []; }
+}
+// 저장 공간이 모자라면 오래된 버전부터 지우며 다시 해 본다. 지운 알림은 부른 쪽의 알림('적용했어요' 등) 뒤에 보이게 미룬다.
+function saveVers(vs) {
+  let gone = 0;
+  while (!save(sk('vers'), JSON.stringify(vs))) {
+    if (vs.length <= 1) return false;
+    vs.pop(); gone++;
+  }
+  if (gone) setTimeout(() => tell(`저장 공간이 모자라 오래된 버전 ${gone}개를 지웠어요.`));
+  return true;
+}
+// 지금 대본을 버전으로 남긴다. 지금 대본이 버전에 있으면 true(새로 남겼거나, 바로 앞 버전과 같거나, 빈 대본), 저장 공간이 모자라 못 남기면 false.
+// 대본을 바꾸는 쪽은 false이면 바꾸지 않는다(NOKEEP). once: 바로 앞 버전이 같은 이유로 만든 것이면 또 만들지 않는다('다른 말'처럼 잇달아 쓰는 것)
+const NOKEEP = '저장 공간이 가득 차서 지금 대본을 버전에 남기지 못해 바꾸지 않았어요. 쓰지 않는 대본을 지우거나, 지금 대본을 다른 곳에 복사해 둔 뒤 다시 해 주세요.';
+function snapshot(label, once = false) {
+  const vs = vers();
+  if (once && vs[0]?.label === label) return true;
+  const nv = addVersion(vs, { t: Date.now(), label, src: entry().src || '직접 고침', text: $('text').value });
+  return !nv || saveVers(nv);
+}
+
+const when = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+const est = t => mmss(Math.round(spoken(t) / rate()));
+const histMsg = t => { $('histMsg').textContent = t; };
+let picked = null;  // 버전 창에서 고른 버전
+
+function openHist() { picked = null; histMsg(''); renderVers(); $('hist').showModal(); }
+$('mHist').onclick = openHist;
+$('histClose').onclick = () => $('hist').close();
+function saveVersion() {
+  const t = $('text').value;
+  if (!t.trim()) return '빈 대본은 저장하지 않아요.';
+  if (vers()[0]?.text === t) return '바로 앞 버전과 같아서 따로 저장하지 않았어요.';
+  return snapshot('직접 저장') ? '버전을 저장했어요.' : FULL;
+}
+$('verSave').onclick = () => { histMsg(saveVersion()); renderVers(); };
+$('mVerSave').onclick = () => tell(saveVersion());
+
+function renderVers() {
+  const box = $('verList'), vs = vers();
+  box.textContent = '';
+  if (!vs.length) box.textContent = '아직 저장된 버전이 없어요.';
+  for (const v of vs) {
+    const b = document.createElement('button'), s = document.createElement('small');
+    b.className = 'ver' + (picked?.t === v.t && picked.text === v.text ? ' on' : '');
+    b.append(`${when(v.t)} · ${v.label}`);
+    s.textContent = `${v.src || '직접 고침'} · 예상 ${est(v.text)}`;
+    b.append(s);
+    b.onclick = () => { picked = v; renderVers(); };
+    box.append(b);
+  }
+  $('verView').hidden = $('verRestore').hidden = !picked;
+  if (!picked) return;
+  const now = $('text').value, d = Math.round(spoken(now) / rate()) - Math.round(spoken(picked.text) / rate());
+  $('verHead').textContent = `${when(picked.t)} 버전 → 지금 대본: 예상 ${est(picked.text)} → ${est(now)} (${d < 0 ? '-' : '+'}${mmss(Math.abs(d))})`;
+  showDiff($('verDiff'), picked.text, now);
+  $('verDiff').scrollIntoView({ block: 'nearest' });
+}
+
+// 되돌리기: 지금 대본을 버전으로 남긴 뒤 바꾼다
+$('verRestore').onclick = () => {
+  if (!picked) return;
+  if (picked.text === $('text').value) return histMsg('지금 대본과 같아요.');
+  if (!snapshot('되돌리기 전')) return histMsg(NOKEEP);
+  setText(picked.text, `되돌림(${when(picked.t)})`);
+  picked = null;
+  renderVers();
+  histMsg('되돌렸어요. 되돌리기 전 대본도 버전에 남아 있어요.');
+};
+
+// 어절 단위 비교를 그린다. 길게 같은 부분은 앞뒤만 보이고 눌러야 펼친다(30분 대본도 휴대폰에서 읽을 수 있게).
+function showDiff(box, a, b) {
+  box.textContent = '';
+  const d = diff(a, b);
+  d.forEach(({ t, v }, i) => {
+    if (t === '=' && v.length > 240) {
+      const head = i ? v.slice(0, 80) : '', tail = i < d.length - 1 ? v.slice(-80) : '';
+      const more = document.createElement('button');
+      more.textContent = `… 같은 내용 ${v.length - head.length - tail.length}자 …`;
+      more.onclick = () => more.replaceWith(v.slice(head.length, v.length - tail.length));
+      return box.append(head, more, tail);
+    }
+    const el = document.createElement(t === '+' ? 'ins' : t === '-' ? 'del' : 'span');
+    el.textContent = v;
+    box.append(el);
+  });
+  if (!d.some(x => x.t !== '=')) box.prepend('(바뀐 곳 없음)\n');
+}
+
+// ---- AI 도구: 새로 쓰기, 지시로 고치기, 발표 준비 ----
+// job = { tab, prompt: { system, user, text }, schema?, done(받은 글) }. 키가 있으면 API로, 없으면 프롬프트 복사 → 결과 붙여넣기.
+let aiTab = 'gen', aiJob = null, aiCtl = null, aiRes = null, aiSel = null;
+const aiMsg = t => { $('aiMsg').textContent = t; };
+const GO = { gen: 'AI로 쓰기', edit: 'AI로 고치기', prep: '발표 준비 하기' };
+
+function openAi(tab = aiTab) {
+  // 편집창에서 고른 글이 있으면 그 문단만 고칠 수 있다
+  const ta = $('text');
+  aiSel = ta.selectionEnd > ta.selectionStart ? paraRange(ta.value, ta.selectionStart, ta.selectionEnd) : null;
+  fillInfo(); showKey(); setTab(tab); aiMsg('');
+  $('ai').showModal();
+}
+$('aiBtn').onclick = () => openAi();
+$('aiClose').onclick = () => $('ai').close();  // 쓰던 중이면 뒤에서 계속 받는다 (다시 열면 결과가 있다)
+$('aiQa').onclick = () => { $('ai').close(); openQa(); };
+for (const b of document.querySelectorAll('#aiTabs [data-tab]')) b.onclick = () => setTab(b.dataset.tab);
+
+function setTab(t) {
+  aiTab = t;  // aiJob(복사한 프롬프트)은 두어서 창을 닫았다 열어도 붙여넣은 답이 그 프롬프트의 대본·문단에 맞는다
+  for (const b of document.querySelectorAll('#aiTabs [data-tab]')) b.classList.toggle('on', b.dataset.tab === t);
+  for (const p of document.querySelectorAll('#ai [data-pane]')) p.hidden = p.dataset.pane !== t;
+  $('aiGo').textContent = aiCtl ? '멈추기' : GO[t];
+  $('aiPrompt').hidden = $('aiPasteBox').hidden = true;
+  $('aiResBox').hidden = $('aiApply').hidden = !aiRes || t === 'prep';
+  $('aiOut').hidden = true;
+  if (t === 'prep') updPrepState();
+  if (t === 'edit') {
+    $('onlySelBox').hidden = !aiSel;
+    if (aiSel) $('selInfo').textContent = `고른 문단만 고치기 (${spoken($('text').value.slice(...aiSel))}자)`;
+  }
+}
+
+$('instrChips').onclick = e => {
+  const b = e.target.closest('button');
+  if (b) { $('instr').value = b.textContent; $('instr').focus(); }
+};
+
+// 지금 탭의 할 일. 프롬프트에 넣을 입력이 모자라면 Error (paste: 붙여넣은 결과만 받을 때는 프롬프트 입력을 묻지 않는다)
+function jobFor(tab, paste = false) {
+  const text = $('text').value.normalize('NFC'), r = rate();
+  const need = (ok, msg) => { if (!ok && !paste) throw new Error(msg); };
+  if (tab === 'gen') {
+    const g = k => $('ai').querySelector(`[data-info="${k}"]`).value.trim();
+    const i = { topic: g('topic'), audience: g('audience'), goal: g('goal'), tone: g('tone'), outline: g('outline'), refs: g('refs'), minutes: target };
+    need(i.topic || i.outline, '주제나 슬라이드 개요를 적어 주세요.');
+    i.chars = target ? Math.round(target * 60 * r) : 0;
+    return { tab, prompt: scriptPrompt(i), done: t => showRes({ text: cleanScript(t), base: text, range: null, src: 'AI 초안', check: true }) };
+  }
+  need(text.trim(), '먼저 대본을 쓰거나 붙여넣으세요.');
+  if (tab === 'edit') {
+    const instr = $('instr').value.trim(), range = $('onlySel').checked && !$('onlySelBox').hidden ? aiSel : null;
+    need(instr, '어떻게 고칠지 적어 주세요.');
+    const part = range ? text.slice(...range) : '';
+    return { tab, prompt: editPrompt({ script: text, part, instr, rate: r, chars: spoken(part || text) }), done: t => showRes({ text: cleanScript(t), base: text, range, src: 'AI 고침' }) };
+  }
+  // 발표 준비: 문단·문장은 lib.js paras(), 키워드는 match.js anchors()로 뽑아 보낸다
+  const ps = paras(text), flat = ps.flat(), words = [];
+  let s = '';
+  flat.forEach((t, si) => t.replace(MARK, ' ').split(/\s+/).filter(Boolean).forEach(x => { const n0 = s.length; s += norm(x); words.push({ s: si, t: x, n0, n1: s.length }); }));
+  const kw = flat.map(() => new Set());
+  for (const a of anchors(s, words).list) kw[a.sent].add(a.k);
+  let k = 0;
+  const input = ps.map(p => p.map(t => ({ t, kw: [...kw[k++]] })));
+  return {
+    tab, schema: PREP_SCHEMA, prompt: prepPrompt(input),
+    done: t => {
+      const p = parsePrep(t, ps);
+      if (!save(sk('prep'), JSON.stringify({ h: hashText(text), t: Date.now(), ...p }))) throw new Error(FULL);
+      updPrepState();
+      aiMsg(`발표 준비를 저장했어요. 문단 ${p.paras.length}개, 다른 말이 있는 키워드 ${Object.keys(p.kw).length}개`);
+    },
+  };
+}
+
+// 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop }] (문장 번호 0부터, lib.js paras() 기준), kw }
+// ponytail: paras는 다음 단계(늦어지면 줄이기)가 쓴다. h가 지금 대본과 다르면 그 문장 번호는 믿을 수 없다.
+function loadPrep() {
+  try {
+    const p = JSON.parse(store.get(sk('prep')));
+    if (!p || !Array.isArray(p.paras)) return null;
+    // anchors()가 받는 모양만 남긴다 (저장된 값이 깨져도 발표 화면이 멈추지 않게)
+    p.kw = Object.fromEntries(Object.entries(p.kw && typeof p.kw === 'object' ? p.kw : {}).filter(([, v]) => Array.isArray(v) && v.every(x => typeof x === 'string')));
+    return p;
+  } catch { return null; }
+}
+function updPrepState() {
+  const p = loadPrep();
+  $('prepState').textContent = !p ? '아직 하지 않았어요.'
+    : p.h === hashText($('text').value) ? `${when(p.t)}에 지금 대본으로 했어요.`
+    : `${when(p.t)}에 했는데 그 뒤로 대본이 바뀌었어요. 줄이기 정보를 쓰려면 다시 해 주세요. (키워드의 다른 말은 그대로 씁니다)`;
+}
+
+$('aiGo').onclick = async () => {
+  if (aiCtl) return aiCtl.abort();
+  try { await run(jobFor(aiTab)); } catch (e) { aiMsg(e.message); }
+};
+$('aiCopy').onclick = () => {
+  try { aiJob = jobFor(aiTab); } catch (e) { return aiMsg(e.message); }
+  copyPrompt($('aiPrompt'), aiJob.prompt.text, aiMsg, aiTab === 'prep' ? 'JSON' : '대본');
+  $('aiPasteBox').hidden = false;
+};
+$('aiPaste').onclick = () => { $('aiPasteBox').hidden = false; $('aiPasteIn').focus(); };
+$('aiPasteApply').onclick = () => {
+  const t = $('aiPasteIn').value;
+  if (!t.trim()) return aiMsg('챗봇이 돌려준 답을 붙여넣어 주세요.');
+  try {
+    (aiJob?.tab === aiTab ? aiJob : jobFor(aiTab, true)).done(t);
+    $('aiPasteIn').value = '';
+    $('aiPasteBox').hidden = $('aiPrompt').hidden = true;
+  } catch (e) { aiMsg('적용하지 못했어요. ' + e.message); }
+};
+
+// API로 부른다. 대본은 받는 대로 읽기 전용 미리보기에 보여 준다.
+async function run(job) {
+  aiCtl = new AbortController();
+  $('aiGo').textContent = '멈추기';
+  $('aiShorter').disabled = $('aiLonger').disabled = $('aiApply').disabled = true;
+  const out = $('aiOut'), live = job.tab !== 'prep';
+  let frame = 0, last = '';
+  out.value = ''; out.hidden = !live;
+  $('aiMsg').scrollIntoView({ block: 'nearest' });  // 휴대폰에서는 입력칸 아래라 안 보인다
+  aiMsg('AI에 보내는 중…');
+  try {
+    const t = await callClaude({
+      key: keyStore.get(), ...job.prompt, schema: job.schema, signal: aiCtl.signal,
+      onProgress: x => {
+        if (!x.chars) return aiMsg('AI가 생각하는 중…');
+        aiMsg(`AI가 쓰는 중… ${x.chars}자`);
+        last = x.text;
+        if (live && !frame) frame = requestAnimationFrame(() => { frame = 0; out.value = last; out.scrollTop = out.scrollHeight; });
+      },
+    });
+    cancelAnimationFrame(frame);
+    out.hidden = true;
+    job.done(t);
+  } catch (e) {
+    aiMsg(e.name === 'AbortError' ? '멈췄어요.' : e.message);
+  } finally {
+    aiCtl = null;
+    $('aiGo').textContent = GO[aiTab];
+    $('aiShorter').disabled = $('aiLonger').disabled = $('aiApply').disabled = false;
+  }
+}
+
+// 결과: r = { text: 받은 글, base: 보낼 때 대본, range: 고친 문단 [시작, 끝] 또는 null, src, check: 길이 확인 }
+function showRes(r) {
+  if (!r.text) throw new Error('받은 대본이 비어 있어요.');
+  const now = $('text').value;
+  if (r.range && now !== r.base) throw new Error('그사이 대본이 바뀌었어요. 다시 고쳐 주세요.');
+  r.full = r.range ? r.base.slice(0, r.range[0]) + r.text + r.base.slice(r.range[1]) : r.text;
+  r.shown = now;
+  aiRes = r;
+  // 앱이 다시 센다. 목표와 10% 넘게 다르면 줄이기/늘리기
+  const s = Math.round(spoken(r.full) / rate()), off = target ? s / (target * 60) - 1 : 0;
+  $('aiLen').textContent = `예상 ${mmss(s)}` + (target ? ` / 목표 ${mmss(Math.round(target * 60))} (${off < 0 ? '' : '+'}${Math.round(off * 100)}%)` : '');
+  $('aiShorter').hidden = !(r.check && off > 0.1);
+  $('aiLonger').hidden = !(r.check && off < -0.1);
+  showDiff($('aiDiff'), now, r.full);
+  $('aiResBox').hidden = $('aiApply').hidden = false;
+  $('aiMsg').scrollIntoView({ block: 'start' });
+  const marks = (r.full.match(MARK) || []).length;
+  aiMsg("바뀌는 곳을 확인하고 '적용'을 누르세요." + (marks ? ` [확인 필요] ${marks}곳은 발표 전에 직접 확인해 고쳐 주세요.` : ''));
+}
+
+// 길이 맞추기: 받은 대본을 다시 고쳐 받는다 (편집창 대본은 그대로)
+function fixJob(longer) {
+  const r = aiRes, T = Math.round(target * 60 * rate()), len = spoken(r.full);
+  const instr = `전체 길이를 약 ${T}자로 ${longer ? '늘려' : '줄여'} 주세요. 지금은 약 ${len}자입니다. 문단 수와 순서는 그대로 두세요.` +
+    (longer ? ' 늘릴 때는 설명이나 예시를 더하고, 자료에 없는 사실은 [확인 필요]로 표시하세요.' : ' 줄일 때는 덜 중요한 설명과 예시부터 뺍니다.');
+  return { tab: aiTab, prompt: editPrompt({ script: r.full, instr, rate: rate(), chars: len }), done: t => showRes({ ...r, text: cleanScript(t), range: null }) };
+}
+for (const [id, longer] of [['aiShorter', false], ['aiLonger', true]])
+  $(id).onclick = () => {
+    if (!aiRes || aiCtl) return;
+    const j = fixJob(longer);
+    if (keyStore.get()) return run(j);
+    aiJob = j;
+    copyPrompt($('aiPrompt'), j.prompt.text, aiMsg, '대본');
+    $('aiPasteBox').hidden = false;
+  };
+
+// 적용: 지금 대본을 버전으로 남긴 뒤 바꾼다
+$('aiApply').onclick = () => {
+  const r = aiRes;
+  if (!r) return;
+  if ($('text').value !== r.shown) {
+    try { showRes(r); } catch (e) { return aiMsg(e.message); }
+    return aiMsg("대본이 바뀌어서 비교를 다시 했어요. 확인하고 다시 '적용'을 누르세요.");
+  }
+  const had = r.shown.trim();
+  if (!snapshot('AI 적용 전')) return aiMsg(NOKEEP);
+  setText(r.full, r.src);
+  aiRes = null;
+  $('aiResBox').hidden = $('aiApply').hidden = true;
+  aiMsg(had ? '적용했어요. 적용 전 대본은 버전에 남아 있어요.' : '적용했어요.');
+};
+
+// ---- 다른 말: 편집창에서 고른 말을 Claude Haiku가 바꿔 준다 (키가 있을 때만) ----
+let sel = null, undo = null, altCtl = null;  // sel: 고른 말 { a, b, t }, undo: 마지막으로 바꾼 것 { a, alt, orig }
+function updAlt() {
+  const ta = $('text');
+  // 버튼을 누르느라 편집창 밖으로 나가도 고른 말을 기억한다
+  if (document.activeElement === ta) {
+    let a = ta.selectionStart, b = ta.selectionEnd;
+    const raw = ta.value.slice(a, b);
+    a += raw.length - raw.trimStart().length; b -= raw.length - raw.trimEnd().length;  // 앞뒤 공백은 빼고 바꾼다
+    const t = ta.value.slice(a, b);
+    sel = t && t.length <= 40 && !t.includes('\n') ? { a, b, t } : null;
+    if (undo && sel && (sel.a !== undo.a || sel.t !== undo.alt)) undo = null;  // 다른 말을 새로 고르면 되돌리기 대신 다른 말
+  }
+  $('altBtn').hidden = !(undo || (sel && keyStore.get()));
+  $('altBtn').textContent = undo ? '되돌리기' : '다른 말';
+}
+document.addEventListener('selectionchange', updAlt);
+$('text').addEventListener('select', updAlt);  // Firefox는 편집창 안 선택에 selectionchange가 오지 않는다
+
+$('altBtn').onclick = async () => {
+  const ta = $('text');
+  if (undo) {
+    const u = undo, e = u.a + u.alt.length;
+    if (ta.value.slice(u.a, e) === u.alt) { ta.setRangeText(u.orig, u.a, e, 'select'); ta.dispatchEvent(new Event('input')); setSrc('다른 말'); }
+    undo = null;
+    return updAlt();
+  }
+  if (!sel || ta.value.slice(sel.a, sel.b) !== sel.t) { sel = null; return updAlt(); }
+  const { a, b, t } = sel;
+  $('altFrom').textContent = `'${t}' 대신 쓸 말`;
+  $('altList').textContent = '';
+  $('altMsg').textContent = 'AI에 묻는 중…';
+  $('altDlg').showModal();
+  altCtl?.abort();
+  const ctl = altCtl = new AbortController();
+  try {
+    const alts = await suggestAlts({ phrase: t, sentence: around(ta.value, a, b) }, { key: keyStore.get(), signal: ctl.signal });
+    $('altMsg').textContent = '누르면 그 자리만 바뀝니다.';
+    for (const x of alts) $('altList').append(chip(x, () => replaceAlt(a, b, t, x)));
+  } catch (e) {
+    if (e.name !== 'AbortError') $('altMsg').textContent = e.message;
+  }
+};
+$('altClose').onclick = () => { altCtl?.abort(); $('altDlg').close(); };
+
+function setSrc(src) { const e = entry(); if (e.src !== src) { e.src = src; saveLib(); } }
+function replaceAlt(a, b, orig, alt) {
+  const ta = $('text');
+  if (ta.value.slice(a, b) !== orig) return ($('altMsg').textContent = '그사이 대본이 바뀌어서 바꾸지 못했어요. 다시 골라 주세요.');
+  if (!snapshot('다른 말 전', true)) return ($('altMsg').textContent = NOKEEP);
+  ta.setRangeText(alt, a, b, 'select');
+  ta.dispatchEvent(new Event('input'));  // 저장, 예상 시간 (oninput이 undo를 지우므로 그 뒤에 둔다)
+  setSrc('다른 말');
+  undo = { a, alt, orig };
+  sel = null;
+  $('altDlg').close();
+  updAlt();
+}
+
 if (!SR) { $('mic').disabled = true; say(NO_SR); }
 fontSize(0);
-$('text').value = store.get('ls.script') || '';
+loadScript();
 showKey();
 setMode(!$('text').value.trim());
+// 대본이 있으면 바로 발표 화면으로 열리므로 [확인 필요]는 여기서 알린다
+if (marks() && !document.body.classList.contains('editing')) tell(`대본에 [확인 필요]가 ${marks()}곳 남아 있어요. 발표 전에 편집에서 확인해 주세요.`);

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:">
 <title>라이브스크립트</title>
 <link rel="icon" href="data:,">
@@ -26,8 +26,11 @@
   @media (max-width: 520px) { #status .dot { display: none; } }  /* 이 폭까지는 상태줄이 두 줄로 접혀서 줄 끝에 ·가 남는다 */
 
   #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 72px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
-  #saveLog { white-space: nowrap; }
-  #target { width: 4.5em; font: inherit; color: inherit; background: #222; border: 1px solid #333; border-radius: 8px; padding: 6px 8px; }
+  #target { width: 4em; font: inherit; color: inherit; background: #222; border: 1px solid #333; border-radius: 8px; padding: 6px 8px; }
+  #lib { max-width: 320px; font: inherit; color: inherit; background: #222; border: 1px solid #333; border-radius: 8px; padding: 7px 4px; }
+  #est { color: #999; }
+  #altBtn { white-space: nowrap; background: #24304a; }
+  #toast { position: fixed; left: 16px; right: 16px; bottom: 72px; z-index: 2; max-width: 600px; margin: 0 auto; padding: 10px 14px; border-radius: 10px; background: #333; color: #eee; font-size: 14px; }
   #prompt { max-width: 900px; margin: 0 auto; padding: 72px 16px 70vh; font-size: var(--fs); line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
   #prompt .s.cur { background: #24304a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   #prompt .r { color: #5a5a5a; }
@@ -71,16 +74,33 @@
   .qitem .chk { padding: 2px 8px; border-radius: 6px; font-size: 13px; }
   .qitem.check .chk { background: #fb4; color: #111; }
   .bottom { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: #1b1b1b; }
+
+  /* AI 도구, 버전, 메뉴 */
+  dialog select { display: block; width: 100%; font: inherit; color: inherit; background: #111; border: 1px solid #333; border-radius: 8px; padding: 8px; }
+  .tabs button.on { background: #24304a; outline: 1px solid #8af; }
+  .half { flex: 1; min-width: 8em; margin: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .grid button { padding: 12px 8px; }
+  #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
+  #aiOut { min-height: 8em; color: #bbb; }
+  .diff { margin: 8px 0; padding: 10px; border-radius: 8px; background: #111; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
+  dialog del { background: #4a1f1f; color: #f99; }
+  dialog ins { background: #1f3a24; color: #9e9; }
+  .diff button { padding: 0 8px; font-size: 13px; color: #999; }
+  .ver { display: block; width: 100%; margin: 6px 0; text-align: left; }
+  .ver.on { outline: 1px solid #8af; background: #24304a; }
+  .ver small { display: block; color: #999; }
 </style>
 </head>
 <body class="editing">
 <header>
   <button id="mode">발표</button>
-  <button class="e-only" id="prepBtn">Q&amp;A 준비</button>
-  <button class="e-only" id="keyBtn">AI 키</button>
+  <select class="e-only grow" id="lib" aria-label="대본 고르기"></select>
+  <button class="e-only" id="aiBtn">AI</button>
+  <button class="e-only" id="menuBtn" aria-label="메뉴">⋯</button>
   <button class="p-only" id="smaller" aria-label="글자 작게">가-</button>
   <button class="p-only" id="bigger" aria-label="글자 크게">가+</button>
-  <span class="grow" id="status"></span>
+  <span class="p-only grow" id="status"></span>
   <button class="p-only" id="qaBtn">Q&amp;A</button>
   <button class="p-only" id="mic">● 시작</button>
 </header>
@@ -112,9 +132,10 @@
 <footer class="e-only">
   <label for="target">목표</label>
   <input id="target" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"> 분
-  <span class="grow"></span>
-  <button id="saveLog">기록 내려받기</button>
+  <span class="grow small" id="est"></span>
+  <button id="altBtn" hidden>다른 말</button>
 </footer>
+<p id="toast" role="status" hidden></p>
 
 <footer class="p-only">
   <button id="prev" aria-label="이전 문장">◀</button>
@@ -125,9 +146,9 @@
 <dialog id="prep">
   <h2>Q&amp;A 준비</h2>
   <p class="small">지금 대본으로 예상 질문과 답을 만듭니다. 만든 뒤에는 꼭 읽어 보고 고친 다음 저장하세요.</p>
-  <label>주제 <input id="topic" autocomplete="off"></label>
-  <label>청중 <input id="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
-  <label>질문 수 <input id="count" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
+  <label>주제 <input id="topic" data-info="topic" autocomplete="off"></label>
+  <label>청중 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
+  <label>질문 수 <input id="count" data-info="n" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
   <div class="row">
     <button id="gen" class="primary">AI로 만들기</button>
     <button id="copyPrompt">프롬프트 복사</button>
@@ -157,6 +178,99 @@
     <span class="grow"></span>
     <button id="closePrep">닫기</button>
   </div>
+</dialog>
+
+<dialog id="ai">
+  <h2>AI 도구</h2>
+  <div class="row tabs" id="aiTabs">
+    <button data-tab="gen">새로 쓰기</button>
+    <button data-tab="edit">지시로 고치기</button>
+    <button data-tab="prep">발표 준비</button>
+    <button id="aiQa">Q&amp;A 준비</button>
+  </div>
+  <div data-pane="gen">
+    <p class="small">발표 정보를 넣으면 AI가 대본 초안을 씁니다. 바뀌는 곳을 확인하고 '적용'을 눌러야 대본이 바뀝니다.</p>
+    <label>주제 <input data-info="topic" autocomplete="off"></label>
+    <label>청중 <input data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
+    <label>목적·핵심 메시지 <textarea data-info="goal" rows="2"></textarea></label>
+    <div class="row">
+      <label class="half">목표 시간(분) <input id="gMin" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"></label>
+      <label class="half">말투 <select data-info="tone"><option>합니다체</option><option>해요체</option></select></label>
+    </div>
+    <label>슬라이드 개요 (한 줄에 슬라이드 하나) <textarea data-info="outline" rows="4" placeholder="도입: 대본을 놓친 경험&#10;문제: 프롬프터 앱의 한계&#10;해결: 목소리로 따라가기"></textarea></label>
+    <label>참고 자료 (선택) <textarea data-info="refs" rows="3" placeholder="숫자, 조사 결과, 인용할 내용"></textarea></label>
+  </div>
+  <div data-pane="edit">
+    <label>어떻게 고칠까요? <textarea id="instr" rows="2"></textarea></label>
+    <div class="row" id="instrChips"><button>30초 줄이기</button><button>더 쉽게</button><button>도입을 질문으로</button></div>
+    <label id="onlySelBox"><input type="checkbox" id="onlySel" checked> <span id="selInfo"></span></label>
+  </div>
+  <div data-pane="prep">
+    <p class="small">대본을 다 쓴 뒤 한 번 하세요. 문단마다 중요도와 늦어질 때 뺄 문장을, 문장마다 키워드를 다르게 말하는 말을 정해 둡니다. 발표 중에는 AI를 부르지 않습니다.</p>
+    <p id="prepState"></p>
+  </div>
+  <div class="row">
+    <button id="aiGo" class="primary">AI로 쓰기</button>
+    <button id="aiCopy">프롬프트 복사</button>
+    <button id="aiPaste">결과 붙여넣기</button>
+  </div>
+  <p class="small" id="aiKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn3">AI 키 넣기</button></p>
+  <textarea id="aiPrompt" rows="6" readonly hidden></textarea>
+  <div id="aiPasteBox" hidden>
+    <textarea id="aiPasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
+    <div class="row"><button id="aiPasteApply">적용</button></div>
+  </div>
+  <p id="aiMsg" role="status"></p>
+  <textarea id="aiOut" rows="8" readonly hidden aria-label="AI가 쓰는 대본"></textarea>
+  <div id="aiResBox" hidden>
+    <div class="row"><span class="small grow" id="aiLen"></span><button id="aiShorter" hidden>줄이기</button><button id="aiLonger" hidden>늘리기</button></div>
+    <p class="small">지금 대본과 비교: <del>지울 말</del> <ins>더할 말</ins></p>
+    <div class="diff" id="aiDiff"></div>
+  </div>
+  <div class="row bottom">
+    <button id="aiApply" class="primary" hidden>적용</button>
+    <span class="grow"></span>
+    <button id="aiClose">닫기</button>
+  </div>
+</dialog>
+
+<dialog id="hist">
+  <h2>버전</h2>
+  <p class="small">발표를 시작할 때, AI 결과를 적용하기 전, '버전 저장'을 누를 때 대본마다 최근 30개까지 남습니다.</p>
+  <div class="row"><button id="verSave" class="primary">버전 저장</button></div>
+  <p id="histMsg" role="status"></p>
+  <div id="verList"></div>
+  <div id="verView" hidden>
+    <p class="small" id="verHead"></p>
+    <div class="diff" id="verDiff"></div>
+  </div>
+  <div class="row bottom">
+    <button id="verRestore" hidden>이 버전으로 되돌리기</button>
+    <span class="grow"></span>
+    <button id="histClose">닫기</button>
+  </div>
+</dialog>
+
+<dialog id="menu">
+  <h2 id="menuTitle">메뉴</h2>
+  <div class="grid">
+    <button id="mVerSave">버전 저장</button>
+    <button id="mHist">버전 보기</button>
+    <button id="mRename">이름 바꾸기</button>
+    <button id="mDel">대본 삭제</button>
+    <button id="prepBtn">Q&amp;A 준비</button>
+    <button id="keyBtn">AI 키</button>
+    <button id="saveLog">기록 내려받기</button>
+  </div>
+  <div class="row bottom"><span class="grow"></span><button id="menuClose">닫기</button></div>
+</dialog>
+
+<dialog id="altDlg">
+  <h2>다른 말</h2>
+  <p class="small" id="altFrom"></p>
+  <div id="altList"></div>
+  <p id="altMsg" role="status"></p>
+  <div class="row bottom"><span class="grow"></span><button id="altClose">닫기</button></div>
 </dialog>
 
 <dialog id="keyDlg">

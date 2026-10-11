@@ -1,10 +1,10 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=7';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=7';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=7';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=7';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=7';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=7';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=8';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=8';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=8';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=8';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=8';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=8';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -194,7 +194,9 @@ function say(t, tail = false) {
   $('heardT').textContent = tail && t.length > n ? '…' + t.slice(1 - n) : t;
   if (qaMode && t) $('live').textContent = t;  // 질의응답 화면에는 아래 줄이 없으므로
 }
-const sayNone = () => say(SR ? '' : NO_SR);
+// iPhone·iPad의 다른 브라우저(Safari 엔진을 빌려 씀)와 홈 화면 웹앱은 인식 객체가 있어도 동작하지 않는다는 보고가 있다
+const NOT_SAFARI = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent) || navigator.standalone ? 'iPhone·iPad에서는 Safari에서 열어 주세요. 다른 브라우저와 홈 화면 앱에서는 음성 인식이 안 될 수 있어요.' : '';
+const sayNone = () => say(SR ? NOT_SAFARI : NO_SR);
 
 function initRec() {
   rec = new SR();
@@ -245,7 +247,9 @@ function initRec() {
   rec.onerror = e => {
     if (e.error === 'no-speech' || e.error === 'aborted') return;
     errored = true;
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { stop(); say('마이크 권한을 허용해 주세요'); }
+    if (e.error === 'not-allowed') { stop(); say('마이크 권한을 허용해 주세요. iPhone·iPad는 설정 > 앱 > Safari > 마이크'); }
+    // iPhone·iPad Safari는 받아쓰기가 꺼져 있으면 이 오류를 낸다
+    else if (e.error === 'service-not-allowed') { stop(); say('음성 인식이 꺼져 있어요. iPhone·iPad는 설정 > 일반 > 키보드 > 받아쓰기를 켜 주세요'); }
     else say(e.error === 'network' ? '인터넷 연결을 확인해 주세요' : '음성 인식 오류: ' + e.error);
   };
 }
@@ -311,7 +315,8 @@ function setMode(editing) {
   $('mode').textContent = editing ? '발표' : '편집';
   $('mode').classList.toggle('cta', editing);
   closeUndo(); sayNone();
-  if (editing) { stop(); letSleep(); scrollTo(0, 0); updEst(); }
+  // iPad는 전체 화면에서 글자 입력을 막으므로 편집 화면에서는 끈다
+  if (editing) { stop(); letSleep(); scrollTo(0, 0); updEst(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
   else {
     keepAwake();
     shrinkUnits(); baseLevels();
@@ -332,8 +337,10 @@ addEventListener('resize', () => {
   }, 150);
 });
 
+// 태블릿은 거치대에 세워 두고 멀리서 읽으므로 기본 글자를 키운다. iPad Safari는 Mac처럼 자신을 알려서 화면 크기와 터치로 가린다.
+const TABLET = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) >= 600;
 function fontSize(delta) {
-  const fs = Math.max(16, Math.min(64, (+store.get('ls.fs') || 28) + delta));
+  const fs = Math.max(16, Math.min(64, (+store.get('ls.fs') || (TABLET ? 34 : 28)) + delta));
   store.set('ls.fs', fs);
   document.documentElement.style.setProperty('--fs', fs + 'px');
   $('fsNow').textContent = fs;
@@ -385,12 +392,13 @@ setInterval(() => {
     // 질의응답 때문에 멈췄으면 그동안의 시간은 발표 경과에서 뺀다 (대본 끝에서 갔다 왔으면 멈춘 값 그대로)
     else if (end && !done) { if (endQa) t0 += Date.now() - end; end = 0; endQa = false; }
     saveTalk();
-    // 마이크 버튼: 들리면 채운 원, 조용하면 빈 원, 크롬이 인식을 끝내고 다시 켜는 틈이 길면 '연결 중'
-    const m = $('mic'), gap = !recOn && Date.now() - recOff > 700, label = gap ? '연결 중' : '정지';
+    // 마이크 버튼: 들리면 채운 원, 조용하면 빈 원, 크롬이 인식을 끝내고 다시 켜는 틈이 길면 '연결 중'.
+    // 4초가 넘으면 혼자 다시 켜지 못한 것으로 보고 '다시 듣기' (iOS Safari는 누르는 동작 없이 다시 켜기가 실패하기도 한다)
+    const m = $('mic'), gap = !recOn && Date.now() - recOff > 700, label = !gap ? '정지' : stuck() ? '다시 듣기' : '연결 중';
     m.classList.toggle('hear', Date.now() - lastHeard < 1500);
     m.classList.toggle('gap', gap);
     if (m.textContent !== label) m.textContent = label;
-    m.setAttribute('aria-label', gap ? '음성 인식 다시 연결 중' : '듣는 중, 누르면 정지');
+    m.setAttribute('aria-label', !gap ? '듣는 중, 누르면 정지' : stuck() ? '음성 인식이 멈췄어요. 누르면 다시 들어요' : '음성 인식 다시 연결 중');
   }
   if (editing()) return;
   // 시작 전 대본 처음에 있으면 지난 발표의 시간을 보이지 않는다 (start()가 새로 잰다)
@@ -812,7 +820,12 @@ $('mode').onclick = () => {
   if (!editing && listening && !confirm('발표를 멈추고 편집 화면으로 갈까요? 대본을 고치지 않으면 지금 위치에서 이어 할 수 있어요.')) return;
   setMode(!editing);
 };
-$('mic').onclick = () => listening ? stop() : start();
+const stuck = () => listening && !recOn && Date.now() - recOff > 4000;
+$('mic').onclick = () => {
+  if (!stuck()) return listening ? stop() : start();
+  recOff = Date.now();  // 다시 4초를 기다린다
+  try { rec.start(); } catch {}
+};
 $('prev').onclick = prev;
 $('next').onclick = next;
 $('smaller').onclick = () => fontSize(-2);
@@ -825,6 +838,11 @@ $('viewDlg').addEventListener('click', e => {
   if (e.target === $('viewDlg') && (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right)) $('viewDlg').close();
 });
 for (const b of document.querySelectorAll('[data-w]')) b.onclick = () => { store.set('ls.w', b.dataset.w); textWidth(b.dataset.w); if (!qaMode) render(); };
+// 전체 화면: 주소 막대만큼 대본이 더 보인다. iPhone은 지원하지 않아서 단추를 숨긴다.
+$('fullRow').hidden = !document.fullscreenEnabled;
+$('full').onclick = () => document.fullscreenElement ? document.exitFullscreen().catch(() => {})
+  : document.documentElement.requestFullscreen().catch(() => tell('전체 화면으로 바꾸지 못했어요.'));
+document.addEventListener('fullscreenchange', () => $('full').setAttribute('aria-pressed', !!document.fullscreenElement));
 
 // 대본을 눌러 옮기면 5초 동안 되돌릴 수 있다 (손바닥이 스쳐도 위치를 잃지 않게). 잇달아 눌러도 되돌릴 곳은 처음 누르기 전 위치.
 let undoAt = null, undoT = 0;
@@ -847,7 +865,7 @@ addEventListener('keydown', e => {
   if (document.body.classList.contains('editing') || qaMode || e.target.closest?.('input, textarea, dialog')) return;
   if (e.key === 'ArrowRight' || e.key === 'PageDown') next();
   else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prev();
-  else if (e.key === ' ' && SR && !busy) listening ? stop() : start();
+  else if (e.key === ' ' && SR && !busy) $('mic').onclick();  // 인식이 멈췄으면 정지 대신 다시 듣기
   else return;
   e.preventDefault();
 });
@@ -909,7 +927,7 @@ function showJev() {
   $('jevBox').hidden = !HAS_GPU;
   $('jevOn').checked = jevOn;
   $('jevMsg').textContent = !jevOn ? `JEV 모델(${JEV_SIZE})은 처음 한 번만 받습니다. WebGPU가 되는 기기(PC Chrome 등)에서만 쓰고, 실패하면 e5로 판정합니다.` +
-    (matchMedia('(pointer: coarse)').matches ? ' 휴대폰에서는 데이터가 많이 들어 권하지 않아요.' : '') : {
+    (matchMedia('(pointer: coarse)').matches ? ' 휴대폰·태블릿에서는 데이터와 메모리가 많이 들어 권하지 않아요.' : '') : {
     off: `모델이 없으면 e5로만 판정합니다. 와이파이에서 한 번 받아 두면 이 기기에서 계속 씁니다.`,
     loading: 'JEV 모델을 불러오는 중…',
     ready: 'JEV 준비됨 (Kev-0.6B, 이 기기의 WebGPU로 계산)',
@@ -990,7 +1008,7 @@ async function prepareTalk() {
       await Promise.race([job, slow]);
     }
   } catch (e) { console.warn(e); }
-  finally { setBusy(false); say(SR ? '' : NO_SR); }
+  finally { setBusy(false); sayNone(); }
 }
 
 function showModel() {
@@ -1524,7 +1542,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=7').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=8').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
@@ -1927,7 +1945,8 @@ function replaceAlt(a, b, orig, alt) {
   updAlt();
 }
 
-if (!SR) { $('mic').disabled = true; say(NO_SR); }
+if (!SR) $('mic').disabled = true;
+sayNone();
 fontSize(0); textWidth(store.get('ls.w'));
 loadScript();
 $('text').readOnly = false; $('toast').hidden = true;  // 여기까지 오면 앱이 다 불러와졌다 (index.html은 읽기 전용과 안내로 시작)

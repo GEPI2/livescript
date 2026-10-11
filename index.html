@@ -38,7 +38,7 @@
   #mic.on { background: #b33; }
   #mic.on::before { content: ''; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; margin-right: 6px; border: 2px solid #fff; border-radius: 50%; }
   #mic.on.hear::before { background: #fff; }
-  #mic.on::after { content: '연결 중'; display: block; height: 0; overflow: hidden; visibility: hidden; }  /* 글자가 바뀌어도 버튼 폭이 같아서 상태줄이 좁아지지 않게 */
+  #mic.on::after { content: '연결 중'; display: block; height: 0; overflow: hidden; visibility: hidden; }  /* 글자가 바뀌어도 버튼 폭이 같아서 상태줄이 좁아지지 않게 (드문 '다시 듣기'일 때만 넓어진다) */
   #mic.on.gap::before { display: none; }
   #mic.on.gap { outline: 2px dashed #fff; outline-offset: -3px; }
   #heard { font-size: 13px; color: #888; text-align: center; }
@@ -402,7 +402,7 @@
   <details>
     <summary>데이터가 가는 곳</summary>
     <p class="small">말소리는 글자로 바꾸려고 Google(Chrome) 또는 Apple(Safari)로 갑니다. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 갑니다. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 갑니다. 질의응답 질문은 이 기기 안에서 판정해서 밖으로 나가지 않습니다. 판정 모델은 Hugging Face에서 기기마다 한 번 받습니다.</p>
-    <p class="small">iPhone Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
+    <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   </details>
   <button id="mDel">대본 삭제</button>
   <div class="row bottom"><span class="grow"></span><button id="menuClose">닫기</button></div>
@@ -459,6 +459,8 @@
   <h2 id="viewTitle">보기</h2>
   <div class="row"><span class="grow">글자 크기</span><button id="smaller" aria-label="글자 작게">가−</button><span id="fsNow" aria-live="polite"></span><button id="bigger" aria-label="글자 크게">가+</button></div>
   <div class="row" role="group" aria-labelledby="wTitle"><span class="grow" id="wTitle">글 폭</span><button data-w="18em">좁게</button><button data-w="24em">보통</button><button data-w="900px">넓게</button></div>
+  <div class="row" id="fullRow"><span class="grow">화면</span><button id="full" aria-pressed="false">전체 화면</button></div>
+  <p class="small">키보드·발표 리모컨: → 또는 Page Down 다음, ← 또는 Page Up 이전, 스페이스 시작·정지</p>
   <div class="row"><span class="grow"></span><button id="viewClose">닫기</button></div>
 </dialog>
 
@@ -477,7 +479,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=7"></script>
-<script type="module" src="app.js?v=7"></script>
+<script src="match.js?v=8"></script>
+<script type="module" src="app.js?v=8"></script>
 </body>
 </html>

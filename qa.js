@@ -247,6 +247,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.throws(() => cleanPack({}), /questions/);
   assert.throws(() => cleanPack({ questions: [{ q: ' ' }] }), /하나도/);
   assert.throws(() => cleanPack(null), /questions/);
+  // 예시 대본의 질문 팩은 다듬어도 8개 그대로
+  const ex = JSON.parse((await import('node:fs')).readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'));
+  assert.deepEqual(cleanPack(ex.pack), ex.pack, '예시 질문 팩');
+  assert.equal(ex.pack.questions.length, 8);
+  assert.equal(rank(ex.pack, prepare(ex.pack), '공짜로 쓸 수 있는 건가요')[0].q.id, 'q01', '음절 비교: 무료 질문');
 
   // 속도: 질문 40개 × 문장 8개
   const big = cleanPack(Array.from({ length: 40 }, (_, i) => ({ q: pack.questions[i % 3].q + i, alts: [...pack.questions[i % 3].alts, '하나', '둘', '셋', '넷'] })));

@@ -1,7 +1,7 @@
 // 늦어지면 자동 줄이기. 발표 중에는 AI 없이 이 계산만 한다. node shrink.js 로 확인한다.
 // '발표 준비'(claude.js cleanPrep)가 문단마다 정해 둔 중요도와 뺄 문장·남길 문장 번호로, 아직 읽지 않은 뒤쪽 문단의 문장을 숨긴다.
 // 단계: 0 원문, 1 줄임(뺄 문장을 숨김), 2 요약(남길 문장만). 화면의 글자는 모두 발표자가 쓴 원문이다.
-import { sentSpans } from './lib.js';
+import { sentSpans, readScript, hashText, paras } from './lib.js?v=1';  // 뒤 셋은 아래 확인(예시 대본)에만 쓴다
 
 export const MIN = 150, MAX = 600, PIECE = 300;  // 150자보다 짧은 문단은 다음과 묶고, 600자보다 길면 약 300자씩 나눈다
 export const FREEZE = 300;  // 지금 위치에서 300자(약 1분) 안에 시작하는 단위는 바꾸지 않는다
@@ -237,5 +237,17 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(plan(U, L0, 0, 0, r, goal - 40, 0).lv, [0, 1, 0, 1, 1, 0]);
   // 같은 상황이면 같은 결과 (문단마다 다시 계산해도 흔들리지 않는다)
   assert.deepEqual(plan(U, p5.lv, at, onTime + 5, r, goal).lv, p5.lv);
+
+  // 예시 대본(⋯ 메뉴 '예시 대본 열기'): 가져오기가 되고, 발표 준비가 이 대본에 맞고, 목표 1분까지 줄일 수 있다
+  const ex = readScript(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
+  const eps = paras(ex.text);
+  assert.equal(ex.prep.h, hashText(ex.text), '발표 준비 해시가 대본과 같다');
+  assert.equal(ex.prep.paras.length, eps.length);
+  assert.deepEqual(ex.prep.n, eps.map(p => p.length), '문단마다 문장 수');
+  ex.prep.paras.forEach((x, i) => assert.ok([...x.keep, ...x.drop].every(k => Number.isInteger(k) && k >= 0 && k < eps[i].length), `문단 ${i + 1}의 문장 번호`));
+  assert.equal(ex.target, 1);
+  const eU = units(ex.text, ex.prep.paras, len), eL = len(ex.text);
+  assert.ok(eL >= 420 && eL <= 480, `예시 대본 ${eL}자 (초당 5자로 약 1분 30초)`);
+  assert.equal(plan(eU, eU.map(() => 0), 0, 0, 5, 60, 0).over, 0, '다 줄이면 목표 1분 안');
   console.log('shrink.js ok');
 }

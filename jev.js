@@ -8,7 +8,7 @@
 export const MODEL = 'onnx-community/kev-0.6b-ONNX';
 export const REV = '5a827091b3d58fe4fdfc02a5a5b2ce364047d678';
 export const FILE = `https://huggingface.co/${MODEL}/resolve/${REV}/onnx/model_q4f16.onnx_data`;
-export const SIZE = '약 350MB';  // model_q4f16 335MB + 3MB, tokenizer 7MB
+export const SIZE = '약 340MB';  // model_q4f16 335MB + 3MB, tokenizer 7MB
 export const NONE = '해당 없음';
 // 우리 시험(준비 질문 20개, 시험 40개, e5 후보 5개 + 해당 없음, 한국어 지시)에서 1순위 23/30, 상위 3개 26/30, 상관없는 질문 거름 8/10
 export const INSTR = "청중이 방금 한 질문과 같은 것을 묻는 준비된 질문을 고르세요. 맞는 것이 없으면 '해당 없음'을 고르세요.";
@@ -60,17 +60,19 @@ export async function jevCached() {
 
 // ---- 모델 (브라우저 전용, 워커와 주고받기) ----
 // 반환: judge(들은 질문, 준비 질문 글 목록) → 선택지마다 확률(마지막이 '해당 없음')
-let jobP = null, worker = null;
+let jobP = null, worker = null, stopLoad = null;  // stopLoad: 준비를 기다리는 중이면 그 기다림을 끝낸다(closeJev)
 export function loadJev(onProgress) {
   jobP ??= (async () => {
     if (!await gpuOk()) throw new Error('nogpu');
-    const w = worker = new Worker(new URL('./jev-worker.js', import.meta.url), { type: 'module' }), calls = new Map();
+    const w = worker = new Worker(new URL('./jev-worker.js?v=1', import.meta.url), { type: 'module' }), calls = new Map();
     let n = 0;
     await new Promise((ok, no) => {
+      stopLoad = no;
       w.onmessage = ({ data: d }) => d.progress ? onProgress?.(d.progress) : d.ready ? ok() : no(new Error(d.error));
       w.onerror = e => no(new Error(e.message || 'JEV 워커를 시작하지 못했어요'));
       w.postMessage({ load: true });
     });
+    stopLoad = null;
     const fail = e => { for (const c of calls.values()) c.no(e); calls.clear(); };
     w.onmessage = ({ data: d }) => { const c = calls.get(d.id); calls.delete(d.id); d.error ? c?.no(new Error(d.error)) : c?.ok(d.probs); };
     w.onerror = e => fail(new Error(e.message || 'JEV 워커 오류'));
@@ -79,8 +81,8 @@ export function loadJev(onProgress) {
   jobP.catch(closeJev);
   return jobP;
 }
-// 오류가 나면 워커를 닫는다. 다시 불러오면 새 워커로 시작한다.
-export function closeJev() { worker?.terminate(); worker = null; jobP = null; }
+// 오류가 나거나 JEV 모드를 끄면 워커를 닫는다(받는 중이면 받기도 멈춘다). 다시 불러오면 새 워커로 시작한다.
+export function closeJev() { stopLoad?.(new Error('off')); stopLoad = null; worker?.terminate(); worker = null; jobP = null; }
 
 // node jev.js 로 실행하면 확인
 if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWith('jev.js'))) {

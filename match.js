@@ -76,7 +76,7 @@ function near(a, b, wordEnd) {
 // 최근 들은 TAIL 음절이 현재 위치 주변 어디서 끝나는지 가중치를 준 편집 거리로 찾는다.
 // end: 대본의 normMap(...).end (없으면 어절 끝 할인 없이 비교)
 // 반환: { pos: 그 지점까지 읽은 정규화 글자 수, dist } 또는 못 찾으면 null
-// ponytail: 글자 비교라서 대본을 풀어 말하면 못 잡는다. 기록을 보고 필요하면 문장 키워드로 확장.
+// ponytail: 글자 비교라서 풀어 말하면 못 잡는다. 그때는 follow()가 문장 키워드(anchorHit)로 어림한다.
 function locate(script, heard, cur, end = []) {
   const p = heard.slice(-TAIL), m = p.length;
   if (m < 5) return null;

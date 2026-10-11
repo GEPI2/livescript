@@ -39,7 +39,8 @@ function tidy(out) {
   const big = c => Math.max(c.d.length, c.i.length);
   for (let k = 1; k < g.length - 1; k++) {
     const [p, e, n] = [g[k - 1], g[k], g[k + 1]];
-    if (e.e != null && e.e.length <= big(p) && e.e.length <= big(n)) {
+    // 같은 말이나 앞 변경 끝에 줄바꿈이 있으면 합치지 않는다 (두 문단의 바뀐 곳이 빈 줄째 하나로 보이지 않게)
+    if (e.e != null && e.e.length <= big(p) && e.e.length <= big(n) && !/\n/.test(e.e + p.d.slice(-2) + p.i.slice(-2))) {
       p.d += e.e + n.d; p.i += e.e + n.i;
       g.splice(k, 2);
       k = Math.max(0, k - 2);  // 합친 덩어리 앞뒤를 다시 본다
@@ -159,6 +160,7 @@ export function cleanScript(t) {
 // ---- 대본 파일 (발표용 휴대폰으로 옮기기) ----
 // 앱이 내보낸 파일 { app: 'livescript', kind: 'script', name, text, target, info, pack, prep }이나 글 파일(.txt)을 읽는다. 파일은 믿지 않는다.
 // 반환 { name, text, target, info, pack, prep }. pack은 앱이 qa.js cleanPack으로 검사하고, prep은 모양만 맞춘다(앱 loadPrep이 읽을 때마다 검사).
+// prep.n(문단마다 문장 수)은 정수 배열일 때만 넘긴다.
 const INFO = ['topic', 'audience', 'goal', 'tone', 'outline', 'refs', 'n'];
 export function readScript(raw, fname = '') {
   raw = String(raw).replace(/^\uFEFF/, '');
@@ -173,7 +175,8 @@ export function readScript(raw, fname = '') {
     target: Math.min(600, Math.max(0, +d.target || 0)),
     info: Object.fromEntries(INFO.filter(k => typeof d.info?.[k] === 'string').map(k => [k, d.info[k].slice(0, 2000)])),
     pack: d.pack ?? null,
-    prep: p && typeof p === 'object' && Array.isArray(p.paras) ? { h: String(p.h ?? ''), t: +p.t || 0, paras: p.paras, kw: p.kw && typeof p.kw === 'object' ? p.kw : {} } : null,
+    prep: p && typeof p === 'object' && Array.isArray(p.paras) ? { h: String(p.h ?? ''), t: +p.t || 0, paras: p.paras, kw: p.kw && typeof p.kw === 'object' ? p.kw : {},
+      n: Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null } : null,
   };
 }
 
@@ -199,6 +202,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
     ['-표시합니다.', '+보여 줍니다.'], '문단 끝 낱말만 바뀌면 빈 줄은 같은 말로 남는다');
   assert.deepEqual(ch(check('앞은 이었습니다. 끝.', '앞은 이었습니다. 끝.\n\n새 문단.')), ['+\n\n새 문단.'], '끝에 문단을 더해도 마지막 어절은 같은 말');
   check('가 나\n\n다', '가 나 다\n');
+  assert.deepEqual(ch(check('첫 문단은 여기서 끝.\n\n그 시작 부분입니다.', '첫 문단은 여기서 마침.\n\n그 출발 부분입니다.')),
+    ['-끝.', '+마침.', '-시작 ', '+출발 '], '두 문단의 바뀐 곳을 빈 줄째 합치지 않는다');
 
   // 30분 대본(약 9000음절, 어절 약 2700개). 휴대폰은 PC보다 3~5배 느리다고 본다.
   const W = ['발표를', '시작하겠습니다.', '오늘은', '음성', '인식으로', '대본을', '따라가는', '앱을', '소개합니다.', '휴대폰', '브라우저만', '있으면', '됩니다.'];
@@ -248,12 +253,14 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   // 대본 파일
   const file = { app: 'livescript', kind: 'script', name: '발표', text: '가'.normalize('NFD') + '나.', target: '7', info: { topic: '주제', bad: '1', n: 5 }, pack: { questions: [] }, prep: { h: 1, paras: [{ imp: 1 }], kw: 3 } };
-  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {} } });
+  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {}, n: null } });
   assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null }, '글 파일');
   assert.throws(() => readScript('{"version":1,"questions":[]}', 'qa-pack.json'), /대본 파일이 아니/, '질문 팩 파일');
   assert.throws(() => readScript('{"app":"livescript"', 'a.json'), SyntaxError);
   assert.throws(() => readScript(' \n', 'a.txt'), /비어/);
   assert.equal(readScript(JSON.stringify({ ...file, target: 1e9, prep: { paras: 1 } })).target, 600);
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: 1 } })).prep, null);
+  assert.deepEqual(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, 2] } })).prep.n, [3, 2], '문단마다 문장 수');
+  assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, '2'] } })).prep.n, null, '깨진 문장 수는 버린다');
   console.log('lib.js ok');
 }

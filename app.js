@@ -1,9 +1,9 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=2';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=2';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=2';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=2';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=2';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=3';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=3';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=3';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=3';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=3';
 
 const $ = id => document.getElementById(id);
 // 배포 직후 옛 index.html과 섞여 아래에서 멈춰도, 빈 편집창에 친 글이 저장된 대본을 덮어쓰지 않게 다 불러올 때까지 잠근다 (맨 아래에서 푼다)
@@ -120,7 +120,8 @@ function setCur(n, by) {
 }
 
 // 손으로 옮기면 들은 말을 비워서 예전 말에 다시 끌려가지 않게 한다
-function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMatch = Date.now(); approx = null; setCur(n, by); }
+// lastMove: 손으로 옮긴 직후 3초는 대본 밖으로 보지 않는다. 말 속도(onSec)는 목소리가 맞은 때(lastMatch)로만 잰다.
+function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMove = Date.now(); approx = null; setCur(n, by); }
 
 function sentStart(i) { return words[sents[i].first].n0; }
 function prev() {
@@ -137,7 +138,7 @@ function next() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NO_SR = '이 브라우저는 음성 인식이 안 돼요. Chrome이나 Safari를 쓰세요. 손으로 넘기기는 됩니다.';
 let rec, listening = false, errored = false, lock = null;
-let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0, lastResume = 0;  // lastResume: 1.5초 넘게 쉰 뒤 첫 결과
+let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0, lastResume = 0, lastMove = 0;  // lastResume: 1.5초 넘게 쉰 뒤 첫 결과, lastMove: 손으로 옮기거나 시작한 때
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
 const APPROX_MS = 10000;  // ponytail: 문장 하나를 바꿔 말하는 데 걸리는 시간으로 잡은 값. 기록의 anchor 간격으로 다시 맞춘다.
 let said = 0;  // 마지막으로 커서를 옮긴 뒤 새로 들은 글자 수 (말 속도용)
@@ -240,7 +241,7 @@ function start() {
   else if (Date.now() - seen > 30 * 6e4) { const g = Date.now() - seen; t0 += g; if (end) end += g; }
   // 기록의 위치는 보이는 대본 기준이라 시작할 때마다 단계를 남긴다 (새로고침 뒤 이어 할 때도 기록만으로 위치를 읽을 수 있게)
   if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
-  lastMatch = Date.now();
+  lastMove = Date.now();
   try { rec.start(); } catch {}
   keepAwake();
   $('mic').classList.add('on');
@@ -252,7 +253,7 @@ function begin() {
   if (t0 || !listening || qaMode) return;
   t0 = Date.now(); onSec = 0;
   for (const e of log) e.t -= t0;  // 그 전 기록의 t는 시각 그대로다(note). 발표 시작 기준으로 바꾸면 음수가 된다.
-  saveTalk();
+  saveTalk(); keepLog();
   if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
 }
 
@@ -312,7 +313,7 @@ function rate() {
 }
 const spoken = t => norm(t).length;  // 소리 내어 읽는 글자 수 ([확인 필요] 표시와 문장부호는 빠진다)
 // 새 발표: 지난 발표에서 들은 말도 비운다
-function resetTalk(t) { t0 = t; onSec = 0; matched = 0; end = 0; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); }
+function resetTalk(t) { t0 = t; onSec = 0; matched = 0; end = 0; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); keepLog(); }
 const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 setInterval(() => {
@@ -330,9 +331,9 @@ setInterval(() => {
   const now = end || (listening ? Date.now() : seen || Date.now());
   const sec = t0 && (listening || cur) ? Math.max(0, Math.floor((now - t0) / 1000)) : 0;
   const pct = S.s.length ? Math.round(cur / S.s.length * 100) : 0;
-  // 키워드로 막 따라간 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 키워드 이동에 안 바꾼다)
+  // 키워드로 막 따라갔거나 손으로 옮긴 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 이 둘에는 안 바꾼다)
   // 쉬었다가 다시 말하기 시작했으면 그때부터 잰다 (첫마디가 대본과 달라도 바로 대본 밖이 아니게)
-  const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor, lastResume) > 3000;
+  const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor, lastResume, lastMove) > 3000;
   // 대본 밖이거나 질의응답 중에는 다시 계산하지 않는다. render() 안에서 하지 않는 것은 다시 그리다가 또 그리지 않게.
   if (listening && !off && !qaMode && t0 && target && shr.on && U) autoShrink(sec);
   // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
@@ -479,13 +480,14 @@ $('shrinkNo').onclick = shrinkAsked;
 // 6: 발표 전에 질의응답 화면에서 켠 마이크의 기록도 남긴다. 그 기록의 t는 음수다)
 const VERSION = 6;
 const LOG_MAX = 20000;
-let log = [];
+let log = [], logId = '';  // logId: 지금 log가 속한 대본 (loadScript가 정한다)
 function note(x) {
   // 발표를 시작하기 전 일은 남기지 않는다. 다만 질의응답 화면에서 켠 마이크부터는 마이크를 꺼도 남긴다
   // (t0가 0이라 t는 시각 그대로다. 발표를 시작하면 begin()이, 기록을 받으면 logJson이 바꾼다)
   if (!t0 && !listening && !log.length) return;
   log.push({ t: Date.now() - t0, ...x });
   if (log.length > LOG_MAX) log.shift();
+  keepLog.h ||= setTimeout(keepLog, 3000);  // 탭이 죽어도 잃는 기록이 3초 안쪽이게
 }
 
 function download(name, text) {
@@ -511,13 +513,17 @@ $('saveLog').onclick = () => {
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace(/\D/g, '');
   download(`livescript-log-${stamp}.json`, log.length || !lastLog ? logJson($('text').value) : lastLog);
 };
-// 새로고침해도 기록을 잇도록 페이지를 떠나거나 숨을 때 이 탭에 남긴다
-const logKey = () => 'ls.log.' + lib.cur;
-const keepLog = () => { if (t0 && log.length) try { sessionStorage.setItem(logKey(), JSON.stringify({ t0, log })); } catch {} };
+// 새로고침이나 대본을 바꿨다 돌아와도 기록을 잇도록 이 탭에 대본마다 남긴다: 기록이 늘면 3초 안에, 숨거나 떠날 때, 대본을 바꾸기 전, 새 발표를 시작할 때.
+// 기록이 비었으면 남은 것도 지워서 새 발표에 옛 기록이 되살아나지 않게.
+function keepLog() {
+  clearTimeout(keepLog.h); keepLog.h = 0;
+  if (logId) try { log.length ? sessionStorage.setItem('ls.log.' + logId, JSON.stringify({ t0, log })) : sessionStorage.removeItem('ls.log.' + logId); } catch {}
+}
 
 // 대본이 바뀌면 처음부터 다시 읽는다. src: 바꾼 방법(버전 목록에 보인다)
 function textChanged(src) {
-  if (log.length) lastLog = logJson(store.get(sk('script')) || '');  // 저장소에는 아직 고치기 전 대본이 있다
+  // 저장소에는 아직 고치기 전 대본이 있다. 다른 대본에 갔다 오거나 새로고침해도 받을 수 있게 이 탭에도 둔다.
+  if (log.length) { lastLog = logJson(store.get(sk('script')) || ''); try { sessionStorage.setItem('ls.last.' + logId, lastLog); } catch {} }
   const t = $('text').value;
   if (!save(sk('script'), t)) {
     // 가득 차면 이 대본의 오래된 버전부터 지운다 (지금 쓰는 대본이 옛 버전보다 중요하다)
@@ -671,7 +677,10 @@ function vectors(onProgress) {
       store.set('ls.vec', JSON.stringify({ hash, rev: REV, b64: toB64(v) }));
     }
     if (pack === p) { V = v; vecKey = hash + ':' + REV; }  // 계산하는 동안 팩이 바뀌었으면 버린다
-  })().finally(() => { vecJob = null; showModel(); });
+  })().finally(() => {
+    vecJob = null; showModel();
+    if (pipe && pack && pack !== p) vectors();  // 그사이 바뀐 팩은 prepareTalk가 busy라 건너뛰었을 수 있다 (V 없이 '준비 중'에 머물지 않게)
+  });
   return vecJob;
 }
 
@@ -716,8 +725,9 @@ function showModel() {
   $('getModel').textContent = stuck ? '다시 시도' : '모델 받기 (약 135MB, 와이파이 권장)';
   const j = !jevOn || !HAS_GPU ? '' : jev ? ' + JEV' : { loading: ' · JEV 준비 중', off: ' · JEV 모델 없음' }[jevState] || ' · JEV 없이';
   $('qaState').textContent = !pack ? "준비된 질문이 없어요. 편집 화면의 AI나 ⋯ 메뉴에서 'Q&A 준비'를 열어 만들어 주세요."
-    : modelState === 'loading' || vecJob ? '판정 모델 준비 중… 그동안은 글자 비교로 고릅니다'
-    : ready && V ? `질문 ${pack.questions.length}개 · AI 판정(e5, 기기 안)${j}` : `질문 ${pack.questions.length}개 · AI 모델 없이 글자 비교로 고르는 중`;
+    // 모델이 준비된 뒤 질문 벡터를 계산하기 전(V 없음)도 준비 중이다. 벡터 계산이 실패하면 modelBroke가 ready를 푼다.
+    : modelState === 'loading' || vecJob || (ready && !V) ? '판정 모델 준비 중… 그동안은 글자 비교로 고릅니다'
+    : ready ? `질문 ${pack.questions.length}개 · AI 판정(e5, 기기 안)${j}` : `질문 ${pack.questions.length}개 · AI 모델 없이 글자 비교로 고르는 중`;
   $('qaRetry').hidden = !pack || ready || modelState === 'loading';
   $('qaRetry').textContent = stuck ? '다시 시도' : '판정 모델 받기 (약 135MB, 와이파이 권장)';
   $('ask').disabled = busy || !pack;
@@ -837,6 +847,8 @@ function chip(label, fn, cls = '') {
 function chips(top, text, final, noneFirst = false, sim = false) {
   const box = $('chips');
   box.textContent = '';
+  // 말하는 동안 바뀌는 후보는 읽어 주지 않는다 (화면 읽기 소리가 질문 인식에 섞이지 않게). 판정이 끝나면 읽어 준다.
+  $('qaRes').setAttribute('aria-busy', !final);
   const none = final && chip('해당 없음', () => {
     note({ qa: 'pick', j: judgeN, id: null, how: 'none' });
     box.textContent = ''; $('qaLow').hidden = true; $('all').open = true; $('all').scrollIntoView();
@@ -1130,18 +1142,21 @@ function tell(t) {
 
 // ---- 대본 고르기, 새로 만들기, 이름 바꾸기, 지우기 (편집 화면에서만) ----
 function loadScript() {
+  keepLog();  // 앞 대본의 기록을 남긴다 (돌아오면 아래에서 잇는다)
   genCtl?.abort(); aiCtl?.abort(); altCtl?.abort();  // 하던 AI 일은 앞 대본의 것이므로 멈춘다 (결과가 다른 대본에 들어가지 않게)
   $('text').value = (store.get(sk('script')) || '').normalize('NFC');
   target = +store.get(sk('target')) || 0;
   $('target').value = target || '';
   t0 = onSec = matched = seen = end = 0; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
   try { const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; end = +v.end || 0; r0 = +v.r0 || rate(); } catch {}
-  // 발표 중 새로고침했으면 이 탭에 남겨 둔 기록을 잇는다 (새 발표면 t0가 달라 되살리지 않는다)
-  try { const s = JSON.parse(sessionStorage.getItem(logKey())); if (t0 && s?.t0 === t0 && Array.isArray(s.log)) log = s.log; } catch {}
+  // 새로고침했거나 다른 대본에 갔다 왔으면 이 탭에 남겨 둔 기록을 잇는다 (새 발표면 t0가 달라 되살리지 않는다)
+  logId = lib.cur;
+  try { const s = JSON.parse(sessionStorage.getItem('ls.log.' + logId)); if (s?.t0 === t0 && Array.isArray(s.log)) log = s.log; } catch {}
   try { pinfo = JSON.parse(store.get(sk('qaInfo'))) || {}; } catch { pinfo = {}; }
   try { setPack(cleanPack(JSON.parse(store.get(sk('pack'))))); } catch { setPack(null); }  // 질문 팩도 대본마다 (첫 대본은 예전 ls.pack)
   loadShrink();
-  draft = []; dirty = false; lastLog = null;
+  draft = []; dirty = false;
+  try { lastLog = sessionStorage.getItem('ls.last.' + logId); } catch { lastLog = null; }
   aiRes = null; aiJob = null; undo = null; sel = null;
   renderLib(); updEst(); updAlt();
 }
@@ -1181,6 +1196,8 @@ $('mDel').onclick = () => {
   if (!confirm(`'${e.name}' 대본과 그 버전 기록을 지울까요? 되돌릴 수 없어요.`)) return;
   for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink']) store.del(sk(k));
   lib.list = lib.list.filter(x => x !== e);
+  log = [];  // 지운 대본의 기록은 남기지 않는다 (loadScript의 keepLog가 이 탭의 것도 지운다)
+  try { sessionStorage.removeItem('ls.last.' + e.id); } catch {}
   if (!lib.list.length) lib.list.push({ id: Date.now().toString(36), name: '대본 1', src: '' });
   lib.cur = lib.list[0].id;
   saveLib(); loadScript();
@@ -1201,7 +1218,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = () => fetch('sample.livescript.json').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = () => fetch('sample.livescript.json?v=3').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 
 async function importScript(raw, fname, demo = false) {

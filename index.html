@@ -71,7 +71,7 @@
   .warn { display: inline-block; padding: 0 8px; border-radius: 6px; background: #fb4; color: #111; font-size: 13px; }
   #qa input { margin: 8px 0; }
   #all { scroll-margin-top: 64px; }
-  #all summary { padding: 8px 0; cursor: pointer; }
+  #all summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
 
   /* 창 */
   dialog { width: min(720px, calc(100% - 16px)); max-width: none; max-height: calc(100dvh - 16px); padding: 16px; border: 0; border-radius: 12px; background: #1b1b1b; color: #eee; }
@@ -79,8 +79,9 @@
   dialog h2 { margin: 0 0 8px; font-size: 20px; }
   dialog h3 { margin: 20px 0 4px; font-size: 16px; }
   dialog label { display: block; margin: 8px 0; }
-  dialog input, dialog textarea, #qa input { display: block; width: 100%; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
-  dialog input[type=checkbox] { display: inline; width: auto; }
+  dialog input, dialog textarea, #qa input { display: block; width: 100%; min-height: 44px; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
+  dialog input[type=checkbox] { display: inline; flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; }
+  dialog label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; min-height: 44px; }  /* 글자까지 눌리는 칸이 44px */
   dialog textarea { resize: vertical; field-sizing: content; max-height: 50vh; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
   .primary { background: #24304a; }
@@ -94,7 +95,7 @@
   .bottom { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: #1b1b1b; }
 
   /* AI 도구, 버전, 메뉴 */
-  dialog select { display: block; width: 100%; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
+  dialog select { display: block; width: 100%; min-height: 44px; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
   .tabs button.on { background: #24304a; outline: 1px solid #8af; }
   .tabs button.on:focus-visible, .ver.on:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .half { flex: 1; min-width: 8em; margin: 0; }
@@ -105,7 +106,7 @@
   .diff { margin: 8px 0; padding: 10px; border-radius: 8px; background: #111; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
   dialog del { background: #4a1f1f; color: #f99; }
   dialog ins { background: #1f3a24; color: #9e9; }
-  .diff button { padding: 0 8px; font-size: 13px; color: #999; min-height: 0; }  /* 비교 글 사이에서는 글줄 높이 */
+  .diff button { padding: 0 8px; font-size: 13px; color: #999; }
   #prepDiff { max-height: 40vh; overflow: auto; }  /* 대본 전체라 길다. 아래 버튼이 화면 밖으로 밀리지 않게 */
   .ver { display: block; width: 100%; margin: 6px 0; text-align: left; }
   .ver.on { outline: 1px solid #8af; background: #24304a; }
@@ -132,9 +133,11 @@
   <div class="row"><span class="small grow" id="qaState"></span><button id="qaRetry" hidden>다시 시도</button></div>
   <button id="ask">질문</button>
   <p class="small" id="live"></p>
-  <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
-  <div id="chips"></div>
-  <p class="small" id="qaTime"></p>
+  <div id="qaRes" aria-live="polite">  <!-- 판정 결과만 읽어 준다. 말하는 동안 바뀌는 칩은 aria-busy로 막는다(app.js chips) -->
+    <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
+    <div id="chips"></div>
+    <p class="small" id="qaTime"></p>
+  </div>
   <div id="card" hidden>
     <p class="small" id="cardHeard"></p>
     <h2 id="cardQ"></h2>
@@ -337,7 +340,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=2"></script>
-<script type="module" src="app.js?v=2"></script>
+<script src="match.js?v=3"></script>
+<script type="module" src="app.js?v=3"></script>
 </body>
 </html>

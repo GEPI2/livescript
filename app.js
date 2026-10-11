@@ -1,9 +1,9 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=3';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=3';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=3';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=3';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=3';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=4';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=4';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=4';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=4';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=4';
 
 const $ = id => document.getElementById(id);
 // 배포 직후 옛 index.html과 섞여 아래에서 멈춰도, 빈 편집창에 친 글이 저장된 대본을 덮어쓰지 않게 다 불러올 때까지 잠근다 (맨 아래에서 푼다)
@@ -902,6 +902,8 @@ function renderAll() {
       box.append(chip(q.q, () => { $('all').open = false; openCard(q, [], asked, 'list'); }));
 }
 $('allQ').oninput = renderAll;
+// 브라우저 기본 지우기(×)는 너무 작아서 칸을 텍스트로 두고, 누르면 전체를 골라 붙여넣기가 바로 바꾸게 한다
+for (const id of ['qaText', 'allQ']) $(id).onfocus = e => setTimeout(() => e.target.select());
 
 $('qaText').onkeydown = e => {
   const v = e.target.value.trim();
@@ -1218,7 +1220,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = () => fetch('sample.livescript.json?v=3').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = () => fetch('sample.livescript.json?v=4').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 
 async function importScript(raw, fname, demo = false) {

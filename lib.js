@@ -169,7 +169,8 @@ export function cleanScript(t) {
   t = String(t).normalize('NFC').replace(/\r\n?/g, '\n');
   const f = t.match(/```[^\n]*\n([\s\S]*?)```/);
   if (f) t = f[1];
-  t = t.replace(/^#{1,6}\s.*$/gm, '').replace(/\*\*|__/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  // 구분선(---, ***, ___)만 있는 줄은 소리 내어 읽지 않으므로 지운다
+  t = t.replace(/^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$/gm, '').replace(/^#{1,6}\s.*$/gm, '').replace(/\*\*|__/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   const first = t.split('\n', 1)[0];
   if (first.length <= 60 && first.length < t.length && PRE(first)) t = t.slice(first.length).trim();
   const ps = t.split('\n\n'), last = ps.at(-1), ss = (last.match(/[^.!?\n]+[.!?]*/g) || []).map(x => x.trim());  // '...'만 있는 문단은 문장이 없다
@@ -280,6 +281,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   for (const bye of ['이 대본이 도움이 되길 바랍니다.', '대본 수정이 필요하시면 말씀해 주세요.', '도움이 되었으면 좋겠습니다! 더 줄이고 싶으시면 알려 주세요.', '이 대본이 도움이 되길 바랍니다.\n말투를 바꾸고 싶으시면 요청해 주세요.'])
     assert.equal(cleanScript(body + '\n\n' + bye), body, bye);
   assert.equal(cleanScript('여기 대본입니다:\n' + body + '\n\n대본을 더 다듬고 싶으시면 말씀해 주세요.'), body, '앞뒤 함께');
+  assert.equal(cleanScript(body + '\n\n---\n\n이 대본이 도움이 되길 바랍니다.'), body, '구분선 뒤 끝인사');
+  assert.equal(cleanScript('안녕하세요.\n\n***\n\n반갑습니다.\n___'), '안녕하세요.\n\n반갑습니다.', '구분선 줄');
+  assert.equal(cleanScript('1부\n\n-- 2부 --\n\n영하 -3도'), '1부\n\n-- 2부 --\n\n영하 -3도', '글이 있는 줄은 둔다');
   for (const keep of [
     '오늘 말씀드릴 세 가지는 다음과 같습니다:\n첫째, 속도입니다.',
     '이 앱의 대본 기능은 다음과 같습니다:\n\n따라가기입니다.',

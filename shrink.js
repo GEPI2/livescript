@@ -1,7 +1,7 @@
 // 늦어지면 자동 줄이기. 발표 중에는 AI 없이 이 계산만 한다. node shrink.js 로 확인한다.
 // '발표 준비'(claude.js cleanPrep)가 문단마다 정해 둔 중요도와 뺄 문장·남길 문장 번호로, 아직 읽지 않은 뒤쪽 문단의 문장을 숨긴다.
 // 단계: 0 원문, 1 줄임(뺄 문장을 숨김), 2 요약(남길 문장만). 화면의 글자는 모두 발표자가 쓴 원문이다.
-import { sentSpans, readScript, hashText, paras } from './lib.js?v=3';  // 뒤 셋은 아래 확인(예시 대본)에만 쓴다
+import { sentSpans, readScript, hashText, paras } from './lib.js?v=4';  // 뒤 셋은 아래 확인(예시 대본)에만 쓴다
 
 export const MIN = 150, MAX = 600, PIECE = 300;  // 150자보다 짧은 문단은 다음과 묶고, 600자보다 길면 약 300자씩 나눈다
 export const FREEZE = 300;  // 지금 위치에서 300자(약 1분) 안에 시작하는 단위는 바꾸지 않는다

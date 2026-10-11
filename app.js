@@ -1,12 +1,13 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=6';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=6';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=6';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=6';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=6';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=6';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=7';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=7';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=7';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=7';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=7';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=7';
 
 const $ = id => document.getElementById(id);
+history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
 // 배포 직후 옛 index.html과 섞여 아래에서 멈춰도, 빈 편집창에 친 글이 저장된 대본을 덮어쓰지 않게 다 불러올 때까지 잠근다 (맨 아래에서 푼다)
 $('text').readOnly = true;
 const store = {
@@ -90,8 +91,8 @@ function curWord() {
   return c < 0 ? words.length : c;
 }
 
-// 읽은 어절은 흐리게, 지금 어절은 밑줄, 지금 문장은 배경
-function render() {
+// 읽은 어절은 흐리게, 지금 어절은 밑줄, 지금 문장은 배경. instant: 새로고침·회전·화면 전환 뒤에는 미끄러지지 않고 바로 옮긴다
+function render(instant = false) {
   const c = curWord(), s = words[c]?.s;
   words.forEach((w, i) => {
     const k = i < c ? 'r' : i === c ? 'c' : '';
@@ -104,10 +105,16 @@ function render() {
   store.set(sk('cur'), cur);
 
   // 지금 줄을 화면 위에서 1/3 지점에 둔다 (대본 끝이면 마지막 어절)
-  const el = words[Math.min(c, words.length - 1)]?.el;
+  const el = words[Math.min(c, words.length - 1)]?.el, rl = $('readline');
+  rl.hidden = !el;
   if (el) {
-    const d = el.getBoundingClientRect().top - innerHeight / 3;
-    if (Math.abs(d) > el.offsetHeight * 0.6) scrollBy({ top: d, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    const top = el.getBoundingClientRect().top, d = top - innerHeight / 3, go = Math.abs(d) > el.offsetHeight * 0.6;
+    // 절대 위치로 보낸다: 미끄러지는 중에 또 옮겨도 목표가 겹쳐 더해지지 않아 지금 줄이 읽는 줄 표시에 맞는다
+    if (go) scrollTo({ top: scrollY + d, behavior: instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    // 읽는 줄 표시: 스크롤이 끝난 뒤 지금 어절이 있을 줄의 왼쪽
+    rl.style.top = (go ? innerHeight / 3 : top) + 'px';
+    rl.style.height = el.offsetHeight + 'px';
+    rl.style.left = $('prompt').getBoundingClientRect().left + 4 + 'px';
   }
 }
 
@@ -139,7 +146,8 @@ function next() {
 // ---- 음성 인식 ----
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NO_SR = '이 브라우저는 음성 인식이 안 돼요. Chrome이나 Safari를 쓰세요. 손으로 넘기기는 됩니다.';
-let rec, listening = false, errored = false, lock = null;
+let rec, listening = false, errored = false, lock = null, locking = false;
+let recOn = false, recOff = 0;  // 인식기가 켜져 있나, 마지막으로 꺼진 때 (크롬이 끝냈다 다시 켜는 틈을 마이크 버튼에 보인다)
 let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0, lastResume = 0, lastMove = 0;  // lastResume: 1.5초 넘게 쉰 뒤 첫 결과, lastMove: 손으로 옮기거나 시작한 때
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
 const APPROX_MS = 10000;  // ponytail: 문장 하나를 바꿔 말하는 데 걸리는 시간으로 잡은 값. 기록의 anchor 간격으로 다시 맞춘다.
@@ -180,16 +188,20 @@ function voiceMove(n) {
   adNew(lead);
 }
 
-function say(t) {
-  $('heard').textContent = t;
+// tail: 들은 말이면 끝이 보이게 앞을 자른다 (안내 글은 앞부터 보인다)
+function say(t, tail = false) {
+  const n = Math.max(8, Math.floor($('heard').clientWidth / 13));
+  $('heardT').textContent = tail && t.length > n ? '…' + t.slice(1 - n) : t;
   if (qaMode && t) $('live').textContent = t;  // 질의응답 화면에는 아래 줄이 없으므로
 }
+const sayNone = () => say(SR ? '' : NO_SR);
 
 function initRec() {
   rec = new SR();
   rec.lang = 'ko-KR';
   rec.continuous = true;
   rec.interimResults = true;
+  rec.onstart = () => { recOn = true; };
   rec.onresult = e => {
     let t = '', q = '';
     // 세션 안에서 결과 목록이 새로 시작됐으면 세션이 끝난 것처럼 이어 붙인다 (onend와 같게).
@@ -216,11 +228,12 @@ function initRec() {
     lastHeard = Date.now();
     // 질의응답 중에는 대본 추적을 멈춘다 (질문과 답의 낱말에 커서가 끌려가지 않게)
     if (qaMode) { onQuestion(q); return; }
-    say(t.slice(-40));
+    say(t, true);
     onHeard(heard + sessionNorm.slice(cut));
   };
   // 크롬은 연속 인식을 혼자 끝내기도 해서, 듣는 중이면 다시 시작한다
   rec.onend = () => {
+    recOn = false; recOff = Date.now();
     heard = (heard + sessionNorm.slice(cut)).slice(-60);
     sessionNorm = ''; cut = 0; resFinal = 0;
     if (qSeg) { qSeg.done += qSeg.cur + ' '; qSeg.cur = ''; qSeg.from = 0; }
@@ -237,10 +250,15 @@ function initRec() {
   };
 }
 
-// 받는 사이 '정지'를 눌렀으면 바로 놓는다
+// 발표 화면에 있는 동안 화면이 꺼지지 않게 한다 (정지하고 차례를 기다릴 때, 질의응답 중에도). 받는 사이 편집 화면으로 갔으면 바로 놓는다.
+// 탭이 숨으면 브라우저가 놓으므로(released) 다시 보일 때 다시 요청한다.
 async function keepAwake() {
-  try { const l = await navigator.wakeLock?.request('screen'); if (listening) lock = l; else l?.release().catch(() => {}); } catch {}
+  if (editing() || locking || (lock && !lock.released)) return;
+  locking = true;
+  try { const l = await navigator.wakeLock?.request('screen'); if (editing()) l?.release().catch(() => {}); else lock = l || null; } catch {}
+  locking = false;
 }
+function letSleep() { lock?.release().catch(() => {}); lock = null; }
 
 function start() {
   // 대본 끝에서 다시 누르면 처음부터 할지 묻는다 (질의응답 화면의 '질문'은 묻지 않는다)
@@ -253,12 +271,13 @@ function start() {
   else if (Date.now() - seen > 30 * 6e4) { const g = Date.now() - seen; t0 += g; if (end) end += g; }
   // 기록의 위치는 보이는 대본 기준이라 시작할 때마다 단계를 남긴다 (새로고침 뒤 이어 할 때도 기록만으로 위치를 읽을 수 있게)
   if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
-  lastMove = Date.now();
-  adNew();
+  lastMove = Date.now(); recOff = Date.now();
+  unstay(); adNew();
   try { rec.start(); } catch {}
   keepAwake();
   $('mic').classList.add('on');
-  $('mic').textContent = '■ 정지';
+  $('mic').textContent = '정지';
+  $('mic').setAttribute('aria-label', '듣는 중, 누르면 정지');
 }
 
 // 질의응답 화면에서 마이크를 켜 아직 발표 시간을 재지 않았으면(start()가 미뤄 둠) 대본을 처음 따라간 지금부터 잰다
@@ -275,14 +294,13 @@ function stop() {
   listening = false;
   tape.close(null);  // 정지 직전까지 한 말 (확정 결과는 정지 뒤에 온다)
   rec?.stop();
-  lock?.release().catch(() => {});
-  lock = null;
-  $('mic').classList.remove('on');
+  $('mic').classList.remove('on', 'hear', 'gap');
+  $('mic').removeAttribute('aria-label');
   $('mic').textContent = busy ? '준비 중' : '● 시작';
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (listening && document.visibilityState === 'visible') keepAwake();
+  if (document.visibilityState === 'visible') keepAwake();
   if (document.hidden) keepLog();
 });
 
@@ -291,31 +309,57 @@ function setMode(editing) {
   if (editing && qaMode) setQa(false);
   document.body.classList.toggle('editing', editing);
   $('mode').textContent = editing ? '발표' : '편집';
-  if (editing) { stop(); scrollTo(0, 0); updEst(); }
+  $('mode').classList.toggle('cta', editing);
+  closeUndo(); sayNone();
+  if (editing) { stop(); letSleep(); scrollTo(0, 0); updEst(); }
   else {
+    keepAwake();
     shrinkUnits(); baseLevels();
     if (!snapshot('발표 시작')) tell(FULL);
     else if (shr.on && target && !U) tell(NEED_PREP);  // 발표 준비 뒤에 대본을 고쳤으면 줄이지 못한다
-    show(); render(); prepareTalk(); askShrink();
+    show(); render(true); prepareTalk(); askShrink();
   }
 }
+
+// 회전하거나 창 크기를 바꾸면 지금 줄을 다시 1/3에 둔다. 주소창이 숨거나 나오는 정도(높이만 120px 이하)는 손으로 내린 자리를 그대로 둔다.
+let vw = innerWidth, vh = innerHeight, resized = 0;
+addEventListener('resize', () => {
+  clearTimeout(resized);
+  resized = setTimeout(() => {
+    if (innerWidth === vw && Math.abs(innerHeight - vh) <= 120) return;
+    vw = innerWidth; vh = innerHeight;  // 편집·질의응답 화면에서 돌려도 새 크기를 적어 둔다 (돌아올 때 render가 맞춘다)
+    if (!editing() && !qaMode) render(true);
+  }, 150);
+});
 
 function fontSize(delta) {
   const fs = Math.max(16, Math.min(64, (+store.get('ls.fs') || 28) + delta));
   store.set('ls.fs', fs);
   document.documentElement.style.setProperty('--fs', fs + 'px');
+  $('fsNow').textContent = fs;
   if (delta && !qaMode) render();
+}
+
+// 글 폭: 좁게 18em, 보통 24em(기본), 넓게 900px. 글자 크기에 맞춰 한 줄 글자 수가 같게 em으로 둔다.
+const WIDTHS = ['18em', '24em', '900px'];
+function textWidth(w) {
+  if (!WIDTHS.includes(w)) w = '24em';
+  document.documentElement.style.setProperty('--w', w);
+  for (const b of document.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', b.dataset.w === w);
 }
 
 // ---- 시간과 말 속도 ----
 // 발표 시작 시각, 대본 위에서 말한 시간(초), 목소리로 따라간 글자 수. 대본마다 저장해서 새로고침해도 이어서 잰다(loadScript).
 // end: 발표가 끝난 때(대본 끝에 닿았거나 질의응답에 들어간 때). 그 뒤로는 경과 시간을 멈춘다.
-//   질의응답에서 대본으로 돌아오거나 끝에서 되돌아가 이어 읽으면 아직 발표 중이므로 푼다(멈춘 동안도 경과 시간에 든다).
+//   질의응답에서 대본으로 돌아오거나 끝에서 되돌아가 이어 읽으면 아직 발표 중이므로 푼다.
+//   질의응답 시간은 경과에서 빼고(endQa), 대본 끝에서 멈춘 동안은 경과에 든다.
 let t0 = 0, onSec = 0, matched = 0, seen = 0, target = 0, end = 0;  // target: 목표 시간(분), 0이면 끔
+// endQa: end를 질의응답 때문에 정했나(돌아오면 그동안을 경과에서 뺀다), qaAt: 질의응답 화면에 들어온 때, offT: 마지막으로 대본 밖이던 때(돌아오면 자동 줄이기를 다시 계산)
+let endQa = false, qaAt = 0, offT = 0;
 const R0 = 5;  // 처음 기본 말 속도(초당 정규화 글자). 한국어 낭독은 쉼을 포함해 초당 4.8~5.1음절
 let r0 = R0;  // 이번 발표의 처음 말 속도: 발표를 시작할 때 잰 속도 rate() (편집창 예상과 같은 값에서 출발)
 const saveTalk = () => {
-  store.set(sk('talk'), JSON.stringify({ t0, onSec, matched, seen: seen = Date.now(), end, r0 }));  // seen: 마지막으로 들은 때
+  store.set(sk('talk'), JSON.stringify({ t0, onSec, matched, seen: seen = Date.now(), end, endQa, r0 }));  // seen: 마지막으로 들은 때
   // 말 속도는 사람마다 다르므로 대본과 따로 마지막으로 잰 값을 둔다 (편집 화면의 예상 시간, AI 대본 길이)
   // ponytail: 1분 넘게 말한 마지막 발표 하나로 잰다. 리허설 여러 번을 합치려면 시간 가중 평균으로.
   if (onSec >= 60) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
@@ -329,19 +373,26 @@ function rate() {
 const spoken = t => norm(t).length;  // 소리 내어 읽는 글자 수 ([확인 필요] 표시와 문장부호는 빠진다)
 // 새 발표: 지난 발표에서 들은 말도 비운다
 // 애드리브 목록은 실제로 시작할 때(t) 비운다. 대본을 고쳐서 부르면(0) 그대로 둔다(편집 화면에서 '대본에 넣기'를 이어서 하게).
-function resetTalk(t) { t0 = t; onSec = 0; matched = 0; end = 0; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); keepLog(); tape.reset(); if (t) clearAds(); }
+function resetTalk(t) { t0 = t; onSec = 0; matched = 0; end = 0; endQa = false; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; saveTalk(); keepLog(); tape.reset(); if (t) clearAds(); }
 const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 setInterval(() => {
   if (listening) {
     // 손으로 넘긴 글자, 애드리브, 질의응답 시간은 말 속도에서 뺀다
     if (!qaMode && Date.now() - lastMatch < 3000) onSec += 0.5;
-    const done = qaMode || (S.s.length && cur >= S.s.length);
-    if (t0 && !end && done) end = Date.now();
-    else if (end && !done) end = 0;
+    const atEnd = S.s.length && cur >= S.s.length, done = qaMode || atEnd;
+    if (t0 && !end && done) { end = Date.now(); endQa = !atEnd; }
+    // 질의응답 때문에 멈췄으면 그동안의 시간은 발표 경과에서 뺀다 (대본 끝에서 갔다 왔으면 멈춘 값 그대로)
+    else if (end && !done) { if (endQa) t0 += Date.now() - end; end = 0; endQa = false; }
     saveTalk();
+    // 마이크 버튼: 들리면 채운 원, 조용하면 빈 원, 크롬이 인식을 끝내고 다시 켜는 틈이 길면 '연결 중'
+    const m = $('mic'), gap = !recOn && Date.now() - recOff > 700, label = gap ? '연결 중' : '정지';
+    m.classList.toggle('hear', Date.now() - lastHeard < 1500);
+    m.classList.toggle('gap', gap);
+    if (m.textContent !== label) m.textContent = label;
+    m.setAttribute('aria-label', gap ? '음성 인식 다시 연결 중' : '듣는 중, 누르면 정지');
   }
-  if (document.body.classList.contains('editing')) { $('status').textContent = ''; return; }
+  if (editing()) return;
   // 시작 전 대본 처음에 있으면 지난 발표의 시간을 보이지 않는다 (start()가 새로 잰다)
   // 끝났으면 끝난 때에서, 듣지 않는 동안은 마지막으로 들은 때에서 멈춘다
   const now = end || (listening ? Date.now() : seen || Date.now());
@@ -350,20 +401,40 @@ setInterval(() => {
   // 키워드로 막 따라갔거나 손으로 옮긴 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 이 둘에는 안 바꾼다)
   // 쉬었다가 다시 말하기 시작했으면 그때부터 잰다 (첫마디가 대본과 달라도 바로 대본 밖이 아니게)
   const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor, lastResume, lastMove) > 3000;
+  // 대본 밖(기다리는 중)은 읽는 자리와 아래 줄에서 보인다 (index.html body.off)
+  document.body.classList.toggle('off', off);
   // 대본 밖이거나 질의응답 중에는 다시 계산하지 않는다. render() 안에서 하지 않는 것은 다시 그리다가 또 그리지 않게.
+  // 대본 밖 말을 하다 대본으로 돌아오면(다시 맞으면) 같은 문단이어도 그만큼 늦어졌으므로 한 번 다시 계산한다.
+  if (off) offT = Date.now();
+  // 먼 위치 확인을 기다리는 중이면(pending) 확인된 뒤에 한다. 다시 계산하면 setLevels가 기다리던 위치를 버린다.
+  else if (offT && !pending && Math.max(lastMatch, lastAnchor) > offT) { offT = 0; uAt = -1; }
   if (listening && !off && !qaMode && t0 && target && shr.on && U) autoShrink(sec);
-  // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
-  const items = off ? ['<span id="off">대본&nbsp;밖</span>'] : [];
+  // 상태줄 큰 칸: 목표 대비 하나(목표가 없으면 경과). 시작 전에는 편집창과 같은 '예상'이고 아직 늦은 것이 아니라 주황을 쓰지 않는다.
+  // 작은 칸: 경과. 진행률은 위 막대에 있고 넓은 화면에서만 글자로도 보인다.
+  // 아직 시작하지 않았으면(t0 없음) 손으로 옮겨도 '예상'이다
+  const started = !!(t0 && (listening || cur)), pre = !listening && !started;
+  let main = mmss(sec), cls = '', late = false;
   if (target) {
     // 예상 종료 = 경과 시간 + 남은 글자 / 말 속도. 처음 30초 동안은 기본 속도 쪽으로 당긴다.
     // 시작 전에는 지난 발표 값이 아니라 편집창 예상과 같은 속도(rate())로 본다 (start()가 r0 = rate()로 새로 잰다).
     const k = listening || cur ? (onSec + 30) / (matched + r0 * 30) : 1 / rate();
     const d = Math.round(sec + (S.s.length - cur) * k - target * 60);
-    // 항목 안은 &nbsp;로 묶어서 두 줄로 접혀도 낱말과 시간이 떨어지지 않게 한다 (넣는 값은 mmss 숫자뿐)
-    items.push(d > 0 ? `<b id="late">초과&nbsp;${mmss(d)}</b>` : `<b>여유&nbsp;${mmss(-d)}</b>`);
+    late = !pre && d > 0;
+    main = (pre ? `예상 ${d > 0 ? '+' : '-'}` : d > 0 ? '초과 ' : '여유 ') + mmss(Math.abs(d));
+    cls = pre ? 'pre' : late ? 'late' : '';
   }
-  items.push(mmss(sec), pct + '%');
-  $('status').innerHTML = items.join(' <span class="dot">·</span> ');
+  if (qaMode) { main = '질의응답 ' + mmss(Math.floor((Date.now() - qaAt) / 1000)); cls = ''; }  // 작은 칸에는 멈춘 발표 경과
+  $('stMain').textContent = main;
+  $('stMain').className = 'main ' + cls;
+  const two = target || qaMode;  // 큰 칸이 경과가 아니면 작은 칸에 경과
+  $('stSec').textContent = two ? mmss(sec) : '';
+  $('stPct').textContent = (two ? ' · ' : '') + pct + '%';
+  // 진행 막대: 채운 폭은 진행률, 흰 눈금은 목표에 맞추려면 지금 있어야 할 곳(목표가 있고 발표를 시작했을 때만)
+  const bar = $('bar'), tick = target && started;
+  bar.style.setProperty('--p', pct + '%');
+  bar.style.setProperty('--t', tick ? Math.min(100, sec / (target * 60) * 100) + '%' : '0%');
+  bar.lastChild.hidden = !tick;
+  bar.classList.toggle('late', late);
   $('qaBtn').classList.toggle('hot', !qaMode && pct >= 95);
 }, 500);
 
@@ -447,6 +518,7 @@ function autoShrink(sec) {
 // 발표 중에는 지금 위치에서 300자 뒤부터만 바뀌므로 위치, 들은 말, 어림 상태가 그대로 맞다. 확인을 기다리던 먼 위치만 버린다.
 function setLevels(lv, why, over = 0) {
   const c = remap(U, shr.lv, lv, cur), moved = c !== cur, a = moved ? null : approx;
+  if (undoAt !== null) undoAt = remap(U, shr.lv, lv, undoAt);  // 되돌릴 위치도 새 대본 기준으로
   note({ shrink: lv, why, over, at: cur });
   shr.lv = lv;
   saveShrink();
@@ -494,8 +566,9 @@ $('shrinkNo').onclick = shrinkAsked;
 // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다. (4: [확인 필요] 표시를 비교에서 뺌, 발표 준비의 다른 말을 키워드로
 // 5: 자동 줄이기 { shrink: 단계, why, over, at }와 prep, 질의응답 판정 { qa: 'judge', j, q, ms, top, jev, low, auto }과 고른 칩 { qa: 'pick', j, id, how, rank }
 // 6: 발표 전에 질의응답 화면에서 켠 마이크의 기록도 남긴다. 그 기록의 t는 음수다
-// 7: 애드리브 구간 adlib (adlib.js readSegs 모양))
-const VERSION = 7;
+// 7: 애드리브 구간 adlib (adlib.js readSegs 모양)
+// 8: 탭으로 옮긴 것을 되돌리기 { by: 'undo' })
+const VERSION = 8;
 const LOG_MAX = 20000;
 let log = [], logId = '';  // logId: 지금 log가 속한 대본 (loadScript가 정한다)
 function note(x) {
@@ -719,7 +792,7 @@ function textChanged(src) {
   }
   store.set(sk('cur'), 0); resetTalk(0);
   setSrc(src);
-  updEst();
+  updEst(); showEmpty();
 }
 function setText(t, src) { $('text').value = t.normalize('NFC'); textChanged(src); undo = null; updAlt(); }
 // 맥이나 PDF에서 복사한 한글은 자모가 풀린 꼴(NFD)이다. 편집창 글을 NFC로 맞춰 두어야 고른 위치, 버전 비교, AI 결과가 같은 글자를 센다.
@@ -733,8 +806,10 @@ $('text').oninput = e => { if (!e.isComposing) nfc(); textChanged('직접 고침
 const marks = () => ($('text').value.match(MARK) || []).length;
 $('mode').onclick = () => {
   const editing = document.body.classList.contains('editing'), n = editing ? marks() : 0;
-  if (editing && !$('text').value.trim()) return tell("먼저 대본을 붙여넣거나 ⋯ 메뉴의 '예시 대본 열기'를 누르세요.");
+  if (editing && !$('text').value.trim()) return tell("먼저 대본을 붙여넣거나 '예시로 둘러보기'를 누르세요.");
   if (n && !confirm(`대본에 [확인 필요]가 ${n}곳 남아 있어요. 사실을 확인하지 않은 채 발표 화면으로 갈까요?\n(읽지 않아도 따라가기에는 문제없어요)`)) return;
+  // 듣는 중에 잘못 누르면 음성 인식이 꺼지므로 묻는다 (대본을 고치지 않으면 위치는 그대로 남는다)
+  if (!editing && listening && !confirm('발표를 멈추고 편집 화면으로 갈까요? 대본을 고치지 않으면 지금 위치에서 이어 할 수 있어요.')) return;
   setMode(!editing);
 };
 $('mic').onclick = () => listening ? stop() : start();
@@ -742,7 +817,29 @@ $('prev').onclick = prev;
 $('next').onclick = next;
 $('smaller').onclick = () => fontSize(-2);
 $('bigger').onclick = () => fontSize(2);
-$('prompt').onclick = e => { const i = e.target.dataset.i; if (i != null) jump(words[i].n0, 'tap'); };
+// 보기 시트: 글자 크기와 글 폭. 뒤를 가리지 않아서 바꾸는 대로 대본에서 보인다. 시트 밖을 누르면 닫는다.
+$('view').onclick = () => $('viewDlg').showModal();
+$('viewClose').onclick = () => $('viewDlg').close();
+$('viewDlg').addEventListener('click', e => {
+  const r = $('viewDlg').getBoundingClientRect();
+  if (e.target === $('viewDlg') && (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right)) $('viewDlg').close();
+});
+for (const b of document.querySelectorAll('[data-w]')) b.onclick = () => { store.set('ls.w', b.dataset.w); textWidth(b.dataset.w); if (!qaMode) render(); };
+
+// 대본을 눌러 옮기면 5초 동안 되돌릴 수 있다 (손바닥이 스쳐도 위치를 잃지 않게). 잇달아 눌러도 되돌릴 곳은 처음 누르기 전 위치.
+let undoAt = null, undoT = 0;
+function closeUndo() { clearTimeout(undoT); undoAt = null; $('undoBar').hidden = true; }
+$('prompt').onclick = e => {
+  const i = e.target.dataset.i;
+  if (i == null) return;
+  undoAt ??= cur;
+  jump(words[i].n0, 'tap');
+  unstay();  // 되돌리기 막대와 같은 자리
+  $('undoBar').hidden = false;
+  clearTimeout(undoT);
+  undoT = setTimeout(closeUndo, 5000);
+};
+$('undoBtn').onclick = () => { const n = undoAt; closeUndo(); if (n !== null) jump(n, 'undo'); };
 // 버튼에 포커스가 남으면 스페이스가 버튼을 한 번 더 누르게 되므로 바로 뗀다.
 // 마우스·터치로 누른 때만 포커스를 뗀다(키보드로 누르면 detail이 0)
 addEventListener('click', e => e.detail && e.target.closest('button')?.blur());
@@ -909,12 +1006,17 @@ function showModel() {
   $('getModel').disabled = modelState === 'loading';
   $('getModel').textContent = stuck ? '다시 시도' : '모델 받기 (약 135MB, 와이파이 권장)';
   const j = !jevOn || !HAS_GPU ? '' : jev ? ' + JEV' : { loading: ' · JEV 준비 중', off: ' · JEV 모델 없음' }[jevState] || ' · JEV 없이';
-  $('qaState').textContent = !pack ? "준비된 질문이 없어요. 편집 화면의 AI나 ⋯ 메뉴에서 'Q&A 준비'를 열어 만들어 주세요."
+  $('qaState').textContent = !pack ? "준비된 질문이 없어요. 편집 화면의 'AI 도구'나 ⋯ 메뉴에서 'Q&A 준비'를 열어 만들어 주세요."
     // 모델이 준비된 뒤 질문 벡터를 계산하기 전(V 없음)도 준비 중이다. 벡터 계산이 실패하면 modelBroke가 ready를 푼다.
     : modelState === 'loading' || vecJob || (ready && !V) ? '판정 모델 준비 중… 그동안은 글자 비교로 고릅니다'
-    : ready ? `질문 ${pack.questions.length}개 · AI 판정(e5, 기기 안)${j}` : `질문 ${pack.questions.length}개 · AI 모델 없이 글자 비교로 고르는 중`;
-  $('qaRetry').hidden = !pack || ready || modelState === 'loading';
+    : ready ? `질문 ${pack.questions.length}개 · AI 판정(기기 안)${j}` : `질문 ${pack.questions.length}개 · 글자 비교로 고르는 중`;
+  // 모델 받기는 질의응답 화면 맨 아래에 둔다 ('질문'이 위에 오게). 받는 동안에는 버튼을 감추고 진행을 그 자리에 보인다.
+  $('qaGet').hidden = !pack || ready;
+  $('qaRetry').hidden = modelState === 'loading';  // 발표 화면에 들어갈 때 저절로 불러오는 중이어도 감춘다
   $('qaRetry').textContent = stuck ? '다시 시도' : '판정 모델 받기 (약 135MB, 와이파이 권장)';
+  const none = 'AI 판정 모델이 없으면 글자 비교로 고릅니다.';
+  if (modelState !== 'loading') $('qaGetMsg').textContent = none;
+  else if ($('qaGetMsg').textContent === none) $('qaGetMsg').textContent = '판정 모델을 불러오는 중…';  // 받기 버튼으로 받으면 진행이 이 글을 덮는다
   $('ask').disabled = busy || !pack;
 }
 
@@ -925,8 +1027,8 @@ async function getModel(report) {
   report('');
 }
 $('getModel').onclick = () => getModel(t => t && ($('modelMsg').textContent = t));
-// 받는 동안에도 마이크와 '질문'은 쓴다(그동안은 글자 비교). 받는 동안 버튼이 숨어서 두 번 눌리지 않는다.
-$('qaRetry').onclick = () => getModel(t => t && ($('qaState').textContent = t)).finally(showModel);
+// 받는 동안에도 마이크와 '질문'은 쓴다(그동안은 글자 비교). 받는 동안 버튼을 감춰서 두 번 눌리지 않고, 진행은 버튼 자리 위 글에 보인다.
+$('qaRetry').onclick = () => getModel(t => t && ($('qaGetMsg').textContent = t)).finally(showModel);
 
 // ---- 질의응답 화면 ----
 let qaMode = false, qSeg = null;  // qSeg: '질문'을 누른 뒤 모으는 중인 말 { from, done, cur }
@@ -934,8 +1036,9 @@ let asked = '';  // 마지막으로 판정한 질문. 전체 목록에서 고른
 let judgeN = 0;  // 판정 번호. 기록에서 판정(qa: 'judge')과 고른 칩(qa: 'pick')을 잇고, 새 질문을 시작하면 늘려서 늦게 끝난 판정을 버린다.
 
 function setQa(on) {
-  if (on) tape.close(0);  // 질의응답에서 하는 말은 애드리브가 아니다
+  if (on) { tape.close(0); qaAt = Date.now(); closeUndo(); }  // 질의응답에서 하는 말은 애드리브가 아니다
   qaMode = on; qSeg = null;
+  sayNone();  // 돌아왔을 때 예전 말이 남지 않게
   document.body.classList.toggle('qa', on);
   $('qaBtn').textContent = on ? '대본' : 'Q&A';
   askBtn();
@@ -947,16 +1050,18 @@ function setQa(on) {
 }
 $('qaBtn').onclick = () => setQa(!qaMode);
 
+// 답 카드를 연 동안(body.carded)은 '질문' 버튼을 작게 줄이고 카드를 화면 위로 올린다
 function askBtn() {
-  $('ask').textContent = qSeg ? '● 듣는 중 · 다시 누르면 고르기' : '질문';
+  $('ask').textContent = qSeg ? '● 듣는 중 · 다시 누르면 고르기' : $('card').hidden ? '질문' : '다음 질문';
   $('ask').classList.toggle('on', !!qSeg);
+  document.body.classList.toggle('carded', !$('card').hidden);
 }
 
 function ask() {
   if (!qSeg) {
     qSeg = { from: listening ? resFinal : 0, done: '', cur: '' };
     asked = ''; judgeN++;
-    $('card').hidden = true; $('chips').textContent = ''; $('qaTime').textContent = ''; $('qaLow').hidden = true;
+    $('card').hidden = true; $('chips').textContent = ''; $('chips').classList.remove('final'); $('qaTime').textContent = ''; $('qaLow').hidden = true;
     $('live').textContent = SR ? '질문을 따라 말한 뒤 한 번 더 누르세요.' : NO_SR;
     if (!listening && SR) start();
   } else {
@@ -1016,7 +1121,7 @@ async function judge(text) {
   });
   chips(top, text, true, jv?.noneFirst, !!qv);
   $('qaLow').hidden = !c?.low;
-  $('qaTime').textContent = `판정 ${ms}ms · ${qv ? 'e5 + 음절 비교' : '간단 비교'}` + (jv ? ` · JEV ${jv.ms}ms` : '') + jmsg;
+  $('qaTime').textContent = (qv ? `AI 판정 ${ms}ms · 이 기기 안` : '글자 비교로 골랐어요') + (jv ? ` · JEV ${jv.ms}ms` : '') + jmsg;
   $('live').textContent = '';
   if (auto) openCard(all[0].q, top, text, 'auto', 0);
 }
@@ -1033,6 +1138,7 @@ function chip(label, fn, cls = '') {
 function chips(top, text, final, noneFirst = false, sim = false) {
   const box = $('chips');
   box.textContent = '';
+  box.classList.toggle('final', final);  // 판정이 끝난 후보는 번호를 달고 1순위에 테두리
   // 말하는 동안 바뀌는 후보는 읽어 주지 않는다 (화면 읽기 소리가 질문 인식에 섞이지 않게). 판정이 끝나면 읽어 준다.
   $('qaRes').setAttribute('aria-busy', !final);
   const none = final && chip('해당 없음', () => {
@@ -1041,7 +1147,8 @@ function chips(top, text, final, noneFirst = false, sim = false) {
   }, 'none');
   if (none && noneFirst) box.append(none);
   top.forEach((r, i) => {
-    const b = chip(r.q.q, () => openCard(r.q, top, text, final ? 'chip' : 'live', i));
+    const b = chip(r.q.q, () => openCard(r.q, top, text, final ? 'chip' : 'live', i), i ? '' : 'top');
+    if (final) { const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1; b.prepend(n); }
     if (sim && typeof r.e === 'number') { const s = document.createElement('small'); s.textContent = ' · 유사도 ' + r.e.toFixed(2); b.append(s); }
     box.append(b);
   });
@@ -1052,7 +1159,7 @@ function chips(top, text, final, noneFirst = false, sim = false) {
 // how: 어떻게 열었나('chip', 'live' 말하는 중의 칩, 'more' 카드 아래 칩, 'list' 전체 목록, 'auto' 자동). rank: 후보 중 몇째(0부터)
 function openCard(q, top = [], text = '', how = '', rank = -1) {
   if (how) note({ qa: 'pick', j: judgeN, id: q.id, how, rank });
-  qSeg = null; askBtn();
+  qSeg = null;
   $('chips').textContent = ''; $('live').textContent = ''; $('qaLow').hidden = true;
   $('cardHeard').textContent = text ? '인식한 질문: ' + text : '';
   $('cardQ').textContent = q.q;
@@ -1076,6 +1183,8 @@ function openCard(q, top = [], text = '', how = '', rank = -1) {
   }
   top.forEach((r, i) => r.q !== q && more.append(chip(r.q.q, () => openCard(r.q, top, text, 'more', i))));
   $('card').hidden = false;
+  askBtn();
+  $('card').scrollIntoView({ block: 'start' });
 }
 
 // 마지막 수단: 검색칸이 달린 전체 질문 목록
@@ -1094,8 +1203,9 @@ for (const id of ['qaText', 'allQ']) $(id).onfocus = e => setTimeout(() => e.tar
 $('qaText').onkeydown = e => {
   const v = e.target.value.trim();
   if (e.key !== 'Enter' || e.isComposing || !v) return;
-  qSeg = null; askBtn();
+  qSeg = null;
   $('card').hidden = true;
+  askBtn();
   judge(v);
 };
 
@@ -1322,14 +1432,18 @@ $('keyClear').onclick = () => { keyStore.clear(); showKey(); };
 $('keyClose').onclick = () => $('keyDlg').close();
 
 // ---- 알림: 열린 창이 있으면 그 창의 상태 줄에, 없으면 화면 아래에 ----
-function tell(t) {
-  const box = document.querySelector('dialog[open] [role=status]') || $('toast');
-  box.textContent = t;
-  if (box !== $('toast')) return;
-  box.hidden = !t;
+// stay: 6초 뒤 사라지지 않고 [닫기]를 누르거나 다른 알림이 올 때까지 남는다
+function tell(t, { stay = false } = {}) {
+  const box = document.querySelector('dialog[open] [role=status]');
+  if (box) { box.textContent = t; return; }
+  $('toastT').textContent = t;
+  $('toastX').hidden = !stay;
+  $('toast').hidden = !t;
   clearTimeout(tell.h);
-  tell.h = setTimeout(() => { box.hidden = true; }, 6000);
+  if (!stay) tell.h = setTimeout(() => { $('toast').hidden = true; }, 6000);
 }
+$('toastX').onclick = () => { $('toast').hidden = true; };
+const unstay = () => { if (!$('toastX').hidden) $('toast').hidden = true; };  // 남겨 둔 안내는 시작하거나 대본을 바꾸면 닫는다
 
 // ---- 대본 고르기, 새로 만들기, 이름 바꾸기, 지우기 (편집 화면에서만) ----
 function loadScript() {
@@ -1338,8 +1452,8 @@ function loadScript() {
   $('text').value = (store.get(sk('script')) || '').normalize('NFC');
   target = +store.get(sk('target')) || 0;
   $('target').value = target || '';
-  t0 = onSec = matched = seen = end = 0; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
-  try { const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; end = +v.end || 0; r0 = +v.r0 || rate(); } catch {}
+  t0 = onSec = matched = seen = end = 0; endQa = false; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
+  try { const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; end = +v.end || 0; endQa = v.endQa === true; r0 = +v.r0 || rate(); } catch {}
   // 새로고침했거나 다른 대본에 갔다 왔으면 이 탭에 남겨 둔 기록을 잇는다 (새 발표면 t0가 달라 되살리지 않는다)
   logId = lib.cur;
   try { const s = JSON.parse(sessionStorage.getItem('ls.log.' + logId)); if (s?.t0 === t0 && Array.isArray(s.log)) log = s.log; } catch {}
@@ -1350,7 +1464,7 @@ function loadScript() {
   try { lastLog = sessionStorage.getItem('ls.last.' + logId); } catch { lastLog = null; }
   aiRes = null; aiJob = null; undo = null; sel = null;
   ads = readSegs(store.get(sk('adlib'))); adRes = null; tape.reset();  // adJob은 둔다: 앞 대본의 애드리브라 adSet이 맞추지 않는다
-  renderLib(); updEst(); updAlt(); renderAds();
+  renderLib(); updEst(); updAlt(); renderAds(); showEmpty(); unstay();
 }
 
 function renderLib() {
@@ -1410,8 +1524,11 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = () => fetch('sample.livescript.json?v=6').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=7').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
+$('ePaste').onclick = () => $('text').focus();
+// 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
+const showEmpty = () => { $('empty').hidden = !!$('text').value.trim(); };
 
 async function importScript(raw, fname, demo = false) {
   let r;
@@ -1429,9 +1546,11 @@ async function importScript(raw, fname, demo = false) {
   lib.list.push({ id, name, src: '파일에서 가져옴' });
   lib.cur = id;
   saveLib(); loadScript();
-  tell(`'${entry().name}'을(를) 새 대본으로 가져왔어요.` + (pack ? ` 질문 ${pack.questions.length}개도 같이 왔어요.` : '') +
-    // 모델이 이 기기에 있으면 발표 화면에 들어갈 때 알아서 불러오고 '판정 모델 받기'도 보이지 않는다
-    (demo && modelState === 'off' && !await modelCached() ? " 질의응답 AI 판정을 보려면 발표 화면의 'Q&A'에서 '판정 모델 받기'를 누르세요." : ''));
+  // 모델이 이 기기에 있으면 발표 화면에 들어갈 때 알아서 불러오고 '판정 모델 받기'도 보이지 않는다
+  const get = demo && modelState === 'off' && !await modelCached() ? " AI 판정을 보려면 'Q&A' 화면 맨 아래의 '판정 모델 받기'를 누르세요." : '';
+  // 예시는 처음 쓰는 사람이 따라 할 안내라 닫을 때까지 남긴다
+  if (demo) tell("예시 대본을 열었어요. 위 '발표'를 누르고 '● 시작'을 누른 뒤 소리 내어 읽어 보세요. 질문 답하기는 발표 화면의 'Q&A'에서 봅니다." + get, { stay: true });
+  else tell(`'${entry().name}'을(를) 새 대본으로 가져왔어요.` + (pack ? ` 질문 ${pack.questions.length}개도 같이 왔어요.` : ''));
 }
 
 // ---- 버전 ----
@@ -1809,7 +1928,7 @@ function replaceAlt(a, b, orig, alt) {
 }
 
 if (!SR) { $('mic').disabled = true; say(NO_SR); }
-fontSize(0);
+fontSize(0); textWidth(store.get('ls.w'));
 loadScript();
 $('text').readOnly = false; $('toast').hidden = true;  // 여기까지 오면 앱이 다 불러와졌다 (index.html은 읽기 전용과 안내로 시작)
 showKey();

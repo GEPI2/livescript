@@ -1,5 +1,6 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=4';
+import { cleanPack } from './qa.js?v=5';
+import { cleanAi } from './adlib.js?v=5';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -276,6 +277,71 @@ export async function suggestAlts({ phrase, sentence }, opts) {
   return parseJson(text, o => cleanAlts(o, phrase), '다른 말');
 }
 
+// ---- 애드리브 정리: 발표 중 대본에 없던 말마다 제목, 말한 내용, 대본에 넣을 문장 ----
+// 대본 전체는 보내지 않는다. 애드리브와 그 앞뒤 대본 문장만 보낸다.
+export const ADLIB_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          n: { type: 'integer' },
+          title: { type: 'string' },
+          points: { type: 'array', items: { type: 'string' } },
+          worth: { type: 'boolean' },
+          add: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['n', 'title', 'points', 'worth', 'add'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['items'],
+  additionalProperties: false,
+};
+
+// segs: 오래된 것부터 [{ prev: 앞 문장(없으면 발표 처음), text: 들은 말(군말 뺀 것), next: 뒤 문장 }]
+export function adlibPrompt(segs) {
+  const system = `너는 발표가 끝난 뒤 정리를 돕는다. 발표자가 대본을 읽다가 대본에 없는 말(애드리브)을 했고, 앱이 음성 인식으로 받아 적었다.
+받아 적은 글이라 띄어쓰기와 낱말이 틀릴 수 있고 문장부호가 없다.
+
+규칙
+- items: 애드리브마다 하나씩 번호(n) 순서대로 쓴다.
+- title: 무슨 이야기인지 15자 안팎의 짧은 제목.
+- points: 발표자가 한 말을 1~3줄로 정리한다. 한 줄에 한 문장. 들은 말에 없는 내용은 더하지 않는다.
+- worth: 다음 발표에서도 하면 좋은 내용이라 대본에 넣을 만하면 true. 인사, 진행 말(예: "화면 잘 보이시나요"), 말실수를 고친 말, 앞뒤 대본을 다시 말한 것이면 false.
+- add: worth가 true일 때만, 앞 문장 바로 뒤에 넣을 대본 문장 1~2개. 앞뒤 대본 문장과 같은 말투(합니다체나 해요체)로, 소리 내어 읽기 쉬운 짧은 문장으로 쓴다. 들은 말에 없는 숫자나 사실은 지어내지 않는다. worth가 false면 빈 배열.
+
+답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
+{"items":[{"n":1,"title":"...","points":["..."],"worth":true,"add":["..."]}]}`;
+  const body = segs.map((g, i) => `<애드리브 ${i + 1}>
+앞 문장: ${g.prev || '(발표 처음)'}
+들은 말: ${g.text}
+뒤 문장: ${g.next || '(없음)'}
+</애드리브 ${i + 1}>`).join('\n');
+  const user = `${body}\n\n위 애드리브 ${segs.length}개를 모두 정리해 주세요.`;
+  return { system, user, text: system + '\n\n' + user };
+}
+
+// AI 답 검사(adlib.js cleanAi). 반환: 애드리브 순서대로 정리 또는 null(빠졌거나 모양이 틀림). 하나도 없으면 Error.
+// 붙여넣기에서는 items 배열만 와도 받는다.
+export function cleanAdlib(obj, n) {
+  const items = Array.isArray(obj) ? obj : obj?.items;
+  if (!Array.isArray(items)) throw new Error('items 목록이 없어요.');
+  const out = Array.from({ length: n }, (_, i) => cleanAi(items.find(x => x?.n === i + 1) ?? (Number.isInteger(items[i]?.n) ? null : items[i])));
+  if (!out.some(Boolean)) throw new Error('정리한 내용이 없어요.');
+  return out;
+}
+export const parseAdlib = (text, n) => parseJson(text, o => cleanAdlib(o, n), '애드리브 정리');
+
+// 짧은 글 정리라 생각은 적게(effort low). 모델은 기본(MODEL)이고 대체 모델(fallbacks)도 그대로 쓴다.
+export async function summarizeAdlib(segs, opts) {
+  const p = adlibPrompt(segs);
+  return parseAdlib(await callClaude({ ...opts, system: p.system, user: p.user, schema: ADLIB_SCHEMA, effort: 'low' }), segs.length);
+}
+
 // ---- API 호출 (스트리밍: 질문이 많아도 시간 초과 없이 받고, 받은 만큼 진행을 보여 준다) ----
 function errorText(status, err = {}, model = MODEL) {
   const t = err.type || '';
@@ -497,6 +563,33 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(ab.output_config.format, { type: 'json_schema', schema: ALT_SCHEMA });
   assert.equal(ab.fallbacks, undefined, 'Haiku 5.5는 서버 대체 모델이 없다'); assert.equal(calls[0].init.headers['anthropic-beta'], undefined);
   await (async () => { mock(fail(404, 'not_found_error', 'model')); await assert.rejects(suggestAlts({ phrase: '가', sentence: '가' }, { key: 'k' }), /claude-haiku-5-5 모델/); })();
+
+  // 애드리브 정리: 애드리브와 앞뒤 문장만 보낸다
+  const AD = [{ prev: '오늘은 라이브스크립트를 소개하겠습니다.', text: '제가 작년에 발표하다가 대본을 놓쳤거든요', next: '발표할 때 대본을 놓치지 않게 도와줍니다.', raw: '음 제가', cur: 9 },
+    { prev: '', text: '안녕하세요 반갑습니다 화면 잘 보이시나요', next: '' }];
+  const adp = adlibPrompt(AD);
+  assert.ok(adp.user.includes('<애드리브 1>\n앞 문장: 오늘은 라이브스크립트를 소개하겠습니다.\n들은 말: 제가 작년에 발표하다가 대본을 놓쳤거든요\n뒤 문장: 발표할 때 대본을 놓치지 않게 도와줍니다.\n</애드리브 1>'));
+  assert.ok(adp.user.includes('앞 문장: (발표 처음)') && adp.user.includes('애드리브 2개') && !adp.user.includes('음 제가'), '군말 뺀 글만');
+  assert.ok(adp.system.includes('합니다체나 해요체') && adp.system.includes('지어내지 않는다') && adp.system.includes('"items"'));
+  assert.ok(!JSON.stringify(ADLIB_SCHEMA).match(/maxItems|minItems|minLength|maxLength|minimum|maximum/));
+  const adr = cleanAdlib({ items: [
+    { n: 2, title: '인사', points: ['인사했다'], worth: false, add: ['안녕하세요.'] },
+    { n: 1, title: '작년 경험', points: ['작년에 대본을 놓쳤다'], worth: true, add: ['저도 작년에 발표하다가 대본을 놓친 적이 있습니다.'] },
+    { n: 7, title: '없는 번호' },
+  ] }, 2);
+  assert.deepEqual(adr, [{ title: '작년 경험', points: ['작년에 대본을 놓쳤다'], worth: true, add: ['저도 작년에 발표하다가 대본을 놓친 적이 있습니다.'] },
+    { title: '인사', points: ['인사했다'], worth: false, add: [] }], '번호로 맞추고, 넣지 않을 것의 문장은 버린다');
+  assert.deepEqual(cleanAdlib([{ title: '첫째', points: [], worth: false, add: [] }, 'x'], 3), [{ title: '첫째', points: [], worth: false, add: [] }, null, null], '배열만, 번호 없으면 차례로, 빠진 것은 null');
+  assert.deepEqual(cleanAdlib({ items: [{ n: 5, title: '없는 번호' }, { n: 1, title: '첫째' }] }, 2), [{ title: '첫째', points: [], worth: false, add: [] }, null], '번호가 있는데 다르면 차례로 쓰지 않는다');
+  assert.throws(() => cleanAdlib({ items: [{ n: 1, title: 3 }] }, 1), /정리한 내용이 없어요/);
+  assert.throws(() => parseAdlib('{"paras":[]}', 1), /items/);
+  assert.equal(parseAdlib('네.\n```json\n{"items":[{"n":1,"title":"제목","points":["점"],"worth":true,"add":["문장."]}]}\n```', 1)[0].add[0], '문장.', '붙여넣은 JSON');
+  mock(ok(JSON.stringify({ items: [{ n: 1, title: '작년 경험', points: ['점'], worth: true, add: ['문장.'] }, { n: 2, title: '인사', points: [], worth: false, add: [] }] })));
+  assert.equal((await summarizeAdlib(AD, { key: 'k' }))[1].title, '인사');
+  const adb = JSON.parse(calls[0].init.body);
+  assert.equal(adb.model, 'claude-opus-5-5'); assert.equal(adb.output_config.effort, 'low'); assert.equal(adb.fallbacks, 'default');
+  assert.deepEqual(adb.output_config.format, { type: 'json_schema', schema: ADLIB_SCHEMA });
+  assert.equal(adb.messages[0].content, adp.user, '보내는 글은 프롬프트 복사와 같다');
 
   console.log('claude.js ok');
 }

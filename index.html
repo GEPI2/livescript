@@ -101,7 +101,7 @@
   .half { flex: 1; min-width: 8em; margin: 0; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
   .grid button { padding: 12px 8px; }
-  #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
+  #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty), #adMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
   #aiOut { min-height: 8em; color: #bbb; }
   .diff { margin: 8px 0; padding: 10px; border-radius: 8px; background: #111; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
   dialog del { background: #4a1f1f; color: #f99; }
@@ -111,6 +111,23 @@
   .ver { display: block; width: 100%; margin: 6px 0; text-align: left; }
   .ver.on { outline: 1px solid #8af; background: #24304a; }
   .ver small { display: block; color: #999; }
+
+  /* 애드리브: 넓은 화면은 발표 화면 오른쪽 칸, 좁은 화면은 아래 버튼으로 여는 창. 새로 생겨도 움직이는 효과는 없다. */
+  .ad { margin: 8px 0; padding: 8px 12px; border-radius: 10px; background: #1b2233; word-break: keep-all; overflow-wrap: anywhere; }
+  .ad p, .ad ul { margin: 4px 0; }
+  .ad ul { padding-left: 1.2em; }
+  .ad .t { font-weight: bold; }
+  .ad .ok { color: #9e9; }
+  #adBtn { white-space: nowrap; padding: 8px 10px; }
+  #adSide { display: none; }
+  #adSide h2 { margin: 0; font-size: 16px; }
+  @media (max-width: 360px) { footer { gap: 4px; padding-left: 8px; padding-right: 8px; } #adBtn { padding: 8px 6px; } }
+  @media (min-width: 1100px) {
+    body:not(.editing):not(.qa) #adSide { display: block; position: fixed; z-index: 1; top: 68px; bottom: 68px; right: 16px; width: 320px; overflow-y: auto; padding-left: 12px; border-left: 1px solid #333; background: #111; }
+    body:not(.editing) #prompt { max-width: min(900px, calc(100% - 368px)); margin-left: max(0px, calc((100% - 1268px) / 2)); }  /* 오른쪽 칸 자리를 비운다 */
+    #adBtn { display: none; }
+  }
+  #adDlg { margin: 0 0 0 auto; width: min(520px, calc(100% - 24px)); height: 100dvh; max-height: 100dvh; border-radius: 12px 0 0 12px; }  /* 오른쪽에서 나오는 창 */
 </style>
 </head>
 <body class="editing">
@@ -166,8 +183,15 @@
 <footer class="p-only">
   <button id="prev" aria-label="이전 문장">◀</button>
   <span class="grow" id="heard"></span>
+  <button id="adBtn" hidden aria-haspopup="dialog" aria-live="polite"></button>
   <button id="next" aria-label="다음 문장">▶</button>
 </footer>
+
+<aside id="adSide" aria-labelledby="adSideN">
+  <div class="row"><h2 id="adSideN" aria-live="polite">애드리브</h2><span class="grow"></span><button id="adSideCopy">복사</button><button id="adSideMore" aria-haspopup="dialog">정리</button></div>
+  <p class="small" id="adSideEmpty">대본에 없는 말을 이어서 하면 여기에 모여요.</p>
+  <div id="adSideList"></div>
+</aside>
 
 <dialog id="prep" aria-labelledby="prepTitle">
   <h2 id="prepTitle" tabindex="-1" autofocus>Q&amp;A 준비</h2>
@@ -298,8 +322,9 @@
     <button id="mExport">파일로 내보내기</button>
     <button id="mImport">파일 가져오기</button>
     <button id="mSample">예시 대본 열기</button>
+    <button id="mAdlib">애드리브 정리</button>
   </div>
-  <p class="small">말소리는 글자로 바꾸려고 Google(Chrome) 또는 Apple(Safari)로 갑니다. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 갑니다. 질의응답 질문은 이 기기 안에서 판정해서 밖으로 나가지 않습니다. 판정 모델은 Hugging Face에서 기기마다 한 번 받습니다.</p>
+  <p class="small">말소리는 글자로 바꾸려고 Google(Chrome) 또는 Apple(Safari)로 갑니다. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 갑니다. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 갑니다. 질의응답 질문은 이 기기 안에서 판정해서 밖으로 나가지 않습니다. 판정 모델은 Hugging Face에서 기기마다 한 번 받습니다.</p>
   <p class="small">iPhone Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   <div class="row bottom"><span class="grow"></span><button id="menuClose">닫기</button></div>
 </dialog>
@@ -325,6 +350,31 @@
   </div>
 </dialog>
 
+<dialog id="adDlg" aria-labelledby="adTitle">
+  <h2 id="adTitle" tabindex="-1" autofocus>애드리브 정리</h2>
+  <p class="small" id="adHead"></p>
+  <div class="row">
+    <button id="adAi" class="primary">AI 정리</button>
+    <button id="adPrompt">프롬프트 복사</button>
+    <button id="adPaste">결과 붙여넣기</button>
+    <button id="adCopy">복사</button>
+  </div>
+  <p class="small" id="adKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn4">AI 키 넣기</button></p>
+  <p id="adMsg" role="status"></p>
+  <textarea id="adOut" rows="6" readonly hidden aria-label="복사할 글"></textarea>
+  <div id="adPasteBox" hidden>
+    <textarea id="adPasteIn" rows="6" aria-label="챗봇이 돌려준 JSON" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
+    <div class="row"><button id="adPasteApply">적용</button></div>
+  </div>
+  <div id="adList"></div>
+  <div class="row bottom">
+    <button id="adApply" class="primary" hidden>적용</button>
+    <button id="adCancel" hidden>취소</button>
+    <span class="grow"></span>
+    <button id="adClose">닫기</button>
+  </div>
+</dialog>
+
 <dialog id="keyDlg" aria-labelledby="keyTitle">
   <h2 id="keyTitle">AI 키</h2>
   <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송됩니다.</p>
@@ -340,7 +390,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=4"></script>
-<script type="module" src="app.js?v=4"></script>
+<script src="match.js?v=5"></script>
+<script type="module" src="app.js?v=5"></script>
 </body>
 </html>

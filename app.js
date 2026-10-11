@@ -1,10 +1,10 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=5';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=5';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=5';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=5';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=5';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=5';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=6';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib } from './claude.js?v=6';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=6';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=6';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=6';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=6';
 
 const $ = id => document.getElementById(id);
 // 배포 직후 옛 index.html과 섞여 아래에서 멈춰도, 빈 편집창에 친 글이 저장된 대본을 덮어쓰지 않게 다 불러올 때까지 잠근다 (맨 아래에서 푼다)
@@ -122,8 +122,8 @@ function setCur(n, by) {
 
 // 손으로 옮기면 들은 말을 비워서 예전 말에 다시 끌려가지 않게 한다
 // lastMove: 손으로 옮긴 직후 3초는 대본 밖으로 보지 않는다. 말 속도(onSec)는 목소리가 맞은 때(lastMatch)로만 잰다.
-// 손으로 옮겨도 모으던 애드리브를 닫는다 (마지막으로 대본이 맞은 뒤 들은 말은 모두 애드리브로 본다)
-function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMove = Date.now(); approx = null; setCur(n, by); adMove(0); }
+// 손으로 옮겨도 모으던 애드리브를 닫고 지금 자리부터 다시 모은다 (마지막으로 대본이 맞은 뒤 들은 말은 모두 애드리브로 본다)
+function jump(n, by) { heard = ''; cut = sessionNorm.length; pending = null; said = 0; lastMove = Date.now(); approx = null; setCur(n, by); tape.close(0); adNew(); }
 
 function sentStart(i) { return words[sents[i].first].n0; }
 function prev() {
@@ -154,11 +154,12 @@ function onHeard(h) {
   if (f.how === 'anchor') {
     // 키워드로 옮긴 곳은 어림 위치다. jump()처럼 들은 말을 비운다. 글자가 맞은 것은 아니므로
     // lastMatch는 그대로 두고, 말 속도에도 넣지 않는다(그동안 말한 시간도 lastMatch가 그대로라 빠진다).
-    // ponytail: 애드리브 끝에서는 키워드를 찾는 최근 20음절(match.js A_RECENT) 안에서 커서가 간 만큼을 바꿔 읽은 대본으로 보고 뺀다
-    const trim = Math.min(said, 20, Math.max(0, f.pos - cur));
+    // 애드리브는 여기서 닫지 않고 나눌 자리만 적어 둔다(adlib.js anchor). 애드리브에 다음 문장 키워드가 섞여도 커서가 옮겨 가기 때문이다.
+    // ponytail: 나눈다면 키워드를 찾는 최근 20음절(match.js A_RECENT) 안에서 커서가 간 만큼을 바꿔 읽은 대본으로 보고 뺀다
+    tape.anchor(Math.min(said, 20, Math.max(0, f.pos - cur)), cur, f.pos);
     heard = ''; cut = sessionNorm.length; said = 0; approx = f.sent; lastAnchor = Date.now();
     setCur(f.pos, 'anchor');
-    return adMove(trim);
+    return adNew();
   }
   if (!f.how) return;
   lastMatch = Date.now();
@@ -170,10 +171,9 @@ function onHeard(h) {
 }
 
 // 말 속도에는 목소리로 앞으로 간 글자만 센다. 건너뛴 대본은 말하지 않았으므로 새로 들은 만큼까지만.
-// 애드리브는 커서가 지나온 대본과 맞춰 경계를 잡는다(adlib.js voice). 확인을 거쳐 먼 위치(follow의 30글자 밖)로 옮겼으면
-// 어디서부터 다시 읽었는지 모르므로 새 위치 앞 60글자(follow가 뒤로 찾는 범위)와 맞춘다.
+// 애드리브는 커서가 지나온 대본과 맞춰 경계를 잡는다(adlib.js voice).
 function voiceMove(n) {
-  const far = n < cur || n - cur > 30, lead = tape.voice(S.s.slice(far ? Math.max(n > cur ? cur : 0, n - 60) : cur, n), far);
+  const lead = tape.voice(S.s, cur, n);
   if (n > cur) matched += Math.min(n - cur, said);
   said = 0;
   setCur(n, 'voice');
@@ -556,8 +556,6 @@ function adInfo() {
   return { cur, s: shown && s >= 0 ? shown.findIndex(v => v && ++c === s) : s,
     snip: words.slice(Math.max(0, k - 2), k + 1).map(w => w.t).join(' ').slice(-24), prev: s < 0 ? '' : sent(s), next: sent(s + 1) };
 }
-// 손이나 키워드로 옮겼다: 모으던 말을 닫고(끝에서 trim음절은 방금 맞은 대본) 지금 자리부터 다시 모은다
-function adMove(trim) { tape.close(trim); adNew(); }
 // 듣는 중이고, 질의응답이 아니고, 대본 끝이 아닐 때만 모은다. lead: 끝에서 이미 들어온 애드리브 음절 수
 function adNew(lead) { if (listening && !qaMode && cur < S.s.length) tape.open(adInfo(), lead); }
 function addAd(g) {
@@ -700,9 +698,10 @@ function adApply() {
   if (!r) return;
   if ($('text').value !== r.shown) { renderAds(); return adMsg("그사이 대본이 바뀌었어요. '대본에 넣기'를 다시 눌러 주세요."); }
   if (!snapshot('애드리브 넣기 전')) { renderAds(); return adMsg(NOKEEP); }
+  const kept = keptIn();
   setText(r.full, '애드리브');  // 대본이 바뀌었으므로 발표 준비와 질문 팩은 다른 수정처럼 '다시 준비' 안내를 받는다
   renderAds();
-  adMsg('대본에 넣었어요. 넣기 전 대본은 버전에 남아 있어요.');
+  adMsg('대본에 넣었어요.' + (kept && ` 넣기 전 대본은 ${kept}에 있어요.`));
   $('adTitle').focus();
 }
 
@@ -1411,7 +1410,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = () => fetch('sample.livescript.json?v=5').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = () => fetch('sample.livescript.json?v=6').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 
 async function importScript(raw, fname, demo = false) {
@@ -1461,6 +1460,9 @@ function snapshot(label, once = false) {
   const nv = addVersion(vs, { t: Date.now(), label, src: entry().src || '직접 고침', text: $('text').value });
   return !nv || saveVers(nv);
 }
+// 지금 대본이 들어 있는 버전 이름 (snapshot 바로 뒤, 대본을 바꾸기 전에 부른다). 없으면 ''(빈 대본).
+// 바로 앞 버전과 같으면 새로 남기지 않으므로 그 버전이다(발표 직후면 '발표 시작').
+const keptIn = () => { const v = vers()[0]; return v?.text === $('text').value ? `'${v.label}' 버전(${when(v.t)})` : ''; };
 
 const when = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 const est = t => mmss(Math.round(spoken(t) / rate()));
@@ -1507,10 +1509,11 @@ $('verRestore').onclick = () => {
   if (!picked) return;
   if (picked.text === $('text').value) return histMsg('지금 대본과 같아요.');
   if (!snapshot('되돌리기 전')) return histMsg(NOKEEP);
+  const kept = keptIn();
   setText(picked.text, `되돌림(${when(picked.t)})`);
   picked = null;
   renderVers();
-  histMsg('되돌렸어요. 되돌리기 전 대본도 버전에 남아 있어요.');
+  histMsg('되돌렸어요.' + (kept && ` 되돌리기 전 대본은 ${kept}에 있어요.`));
 };
 
 // 어절 단위 비교를 그린다. 길게 같은 부분은 앞뒤만 보이고 눌러야 펼친다(30분 대본도 휴대폰에서 읽을 수 있게).
@@ -1738,12 +1741,12 @@ $('aiApply').onclick = () => {
     try { showRes(r); } catch (e) { return aiMsg(e.message); }
     return aiMsg("대본이 바뀌어서 비교를 다시 했어요. 확인하고 다시 '적용'을 누르세요.");
   }
-  const had = r.shown.trim();
   if (!snapshot('AI 적용 전')) return aiMsg(NOKEEP);
+  const kept = keptIn();  // 빈 대본에 적용했으면 ''
   setText(r.full, r.src);
   aiRes = null;
   $('aiResBox').hidden = $('aiApply').hidden = true;
-  aiMsg(had ? '적용했어요. 적용 전 대본은 버전에 남아 있어요.' : '적용했어요.');
+  aiMsg('적용했어요.' + (kept && ` 적용 전 대본은 ${kept}에 있어요.`));
 };
 
 // ---- 다른 말: 편집창에서 고른 말을 Claude Haiku가 바꿔 준다 (키가 있을 때만) ----

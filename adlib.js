@@ -1,7 +1,7 @@
 // 애드리브 모으기. 발표자가 대본을 따라 읽다가 대본에 없는 말을 이어 가면 그 말을 따로 모은다. node adlib.js 로 확인한다.
-// app.js가 인식 결과를 넣고(heard, end), 커서가 움직일 때마다 모으던 구간을 닫고 새로 연다(voice 또는 close, 그다음 open).
+// app.js가 인식 결과를 넣고(heard, end), 커서가 움직일 때마다 모으던 구간을 닫거나 나눌 자리를 적고 새로 연다(voice, anchor, close 다음에 open).
 // 구간은 '대본이 마지막으로 맞은 뒤 들은 말'이다. 그래서 '대본 밖' 표시(3초)가 뜨기 전 첫마디도 들어간다.
-import { sentSpans } from './lib.js?v=5';
+import { sentSpans } from './lib.js?v=6';
 
 export const MIN = 10;  // ponytail: 정규화 10음절(약 2초)보다 짧으면 버린다. 군말이나 대본을 맞추다 남은 조각이 대부분이다. 실제 기록으로 다시 맞춘다.
 export const MAX = 50, RAW = 2000;  // 발표 하나에 최근 50개, 하나에 2000자까지 저장한다
@@ -10,6 +10,15 @@ export const CTX = 400;  // 앞뒤 문장은 400자까지 둔다. 잘린 앞 문
 // 군말: 홀로 쓴 어, 음, 그, 저, 저기, 이제, 뭐 (어어, 음음처럼 늘인 것과 뒤 쉼표·마침표 포함). 원문(raw)은 따로 둔다.
 const FILLER = /^(어+|음+|으음|그|저|저기|이제|뭐)[,.…~!?]*$/;
 export const clean = t => String(t).split(/\s+/).filter(w => w && !FILLER.test(w)).join(' ');
+
+// t에서 p와 두 글자가 겹치는 글자 수 (바꿔 읽은 말은 대본과 낱말이 겹친다)
+function shared(t, p) {
+  const B = new Set();
+  for (let i = 1; i < p.length; i++) B.add(p.slice(i - 1, i + 1));
+  let n = 0;
+  for (let i = 0; i < t.length; i++) n += B.has(t.slice(i - 1, i + 1)) || B.has(t.slice(i, i + 2));
+  return n;
+}
 
 // s 끝에서 정규화 n음절 앞의 어절 경계 (n은 이동 하나에 100음절 안쪽이라 끝 400자만 본다). 어절 가운데에 걸리면 out일 때 그 어절 앞, 아니면 뒤.
 export function back(s, n, len, out = true) {
@@ -60,9 +69,14 @@ function snap(s, i, early) {
 // 닫은 구간은 끝까지 확정 결과가 온 뒤에 글을 정한다. 세션이 확정 없이 끝나면 마지막 중간 결과를 쓴다.
 // norm: 정규화(app.js는 match.js norm), onSeg({ info, at, end, raw, text }): MIN을 넘은 구간 (at, end는 clock 시각)
 // ponytail: 테이프는 페이지를 새로 열 때까지 자란다(말 1시간에 약 5만 자).
+// 키워드 이동(anchor)은 혼자서 구간을 닫지 않는다. 애드리브에 다음 문장의 키워드 두 개가 섞여도 커서가 옮겨 가기 때문이다.
+// 나눌 자리만 적어 두고(tent) 다음 일로 정한다. 키워드 뒤에 대본 밖 말이 MIN 넘게 이어졌으면 없던 일로 하고(앞 구간이 처음 시작, 시각, 자리 그대로 이어진다)
+// 아니면 나눈다. 키워드로 또 옮기면 두 키워드 사이의 말에서 커서가 간 만큼은 바꿔 읽은 대본으로 본다.
+// 목소리가 맞으면 키워드 뒤 구간에서 대본을 빼고 남는 말로 잰다. 정지·손으로 옮김·질의응답이면 키워드 뒤에 한 말 전부로 잰다.
 export function collector(onSeg, norm, clock = Date.now) {
-  let old = '', now = '', fin = 0, open = null, closing = [];
+  let old = '', now = '', fin = 0, open = null, closing = [], tent = null;
   const tape = () => old + now, pos = () => old.length + now.length, len = t => norm(t).length;
+  const size = (a, b) => len(clean(tape().slice(a, b)));  // 군말을 뺀 음절 수
   function emit(c) {
     const s = tape(), b = snap(s, Math.min(c.b ?? s.length, s.length), false);
     const a = snap(s, c.a, true);
@@ -79,6 +93,23 @@ export function collector(onSeg, norm, clock = Date.now) {
     open = null;
     flush(false);
   }
+  // 키워드로 나눈 것을 정한다. keep: 나눈다(앞 구간은 나눌 자리에서 닫는다), 아니면 없던 일(키워드 뒤에 연 구간을 버리고 앞 구간을 잇는다)
+  function settle(keep) {
+    const t = tent;
+    tent = null;
+    if (!t) return;
+    if (!keep) open = t.o;
+    else if (t.o.at && t.b > t.o.a) closing.push({ info: t.o.info, a: t.o.a, b: t.b, at: t.o.at, end: t.end });
+  }
+  // 목소리로 맞았을 때 구간 o에서 뺄 것: { a: 새 시작(앞에 대본이 끼었으면 그 뒤), trim: 끝에서 뺄 음절 수 }. voice의 설명 참고
+  function cut(o, p, far, lead) {
+    const s = tape(), g = norm(s.slice(o.a));
+    let [m, i] = align([...p].reverse(), [...g.slice(Math.max(0, g.length - lead - p.length - 10), g.length - lead)].reverse());
+    const m2 = Math.max(0, len(s.slice(back(s, lead + m, len, false))) - lead);  // 어절 가운데면 그 어절은 애드리브 쪽
+    i = Math.max(0, i - (m - m2)); m = m2;
+    const [h, k] = align([...p.slice(0, p.length - i)], [...g.slice(0, g.length - lead - m)]);
+    return { a: fwd(s, o.a, h, len), trim: lead + m + (far ? 0 : Math.min(p.length - i - k, g.length - lead - m - h)) };
+  }
   return {
     // rs: 이번 세션의 결과 목록 [{ t: 글, final }] (크롬처럼 확정된 결과가 앞에 온다)
     heard(rs) {
@@ -91,28 +122,54 @@ export function collector(onSeg, norm, clock = Date.now) {
     // 세션이 끝남 (onend, 또는 세션 안에서 결과 목록이 새로 시작됨)
     end() { old += now + ' '; now = ''; fin = 0; flush(true); },
     // 대본이 맞은 자리부터 모은다. info: 그 자리 { cur, s, snip, prev, next }, lead: 끝에서 이미 들어온 애드리브 음절 수(voice의 반환값)
-    open(info, lead = 0) { const a = back(tape(), lead, len); open = { info, a, at: a < pos() ? clock() : 0 }; },
-    // 닫는다. trim: 끝에서 뺄 음절 수(키워드로 맞은 대본), null: 이번 세션이 끝날 때의 끝에서(정지)
-    close: trim => close(trim),
-    // 목소리로 대본이 맞아 닫는다. p: 커서가 방금 지나온 대본(정규화), far: 확인을 거쳐 먼 곳으로 옮겼음(p는 새 위치 앞 60글자 안).
+    // tent가 있으면 키워드로 옮긴 직후다(anch). 그 자리는 어림이라 대본을 어디서부터 다시 읽었는지 모른다.
+    open(info, lead = 0) { const a = back(tape(), lead, len); open = { info, a, at: a < pos() ? clock() : 0, anch: !!tent }; },
+    // 닫는다(손으로 옮김, 질의응답, 정지). trim: 끝에서 뺄 음절 수, null: 이번 세션이 끝날 때의 끝에서(정지)
+    close(trim) {
+      if (tent) settle(size(tent.p, trim == null ? undefined : back(tape(), trim, len)) < MIN);
+      close(trim);
+    },
+    // 키워드로 옮겼다: 끝에서 trim음절(바꿔 읽은 대본으로 본 것) 앞을 나눌 자리로 적어 둔다. 커서가 from에서 to로 간다. 그다음 open()으로 새 구간을 연다.
+    // tent.from: 없던 일이 되면 커서가 있던 자리. 앞 구간도 키워드로 연 것이면 모른다(-1e9, voice에서 먼 이동으로 본다).
+    anchor(trim, from, to) {
+      if (tent) {  // 키워드로 잇달아 옮겼다
+        const more = size(tent.p) - (to - from) >= MIN;  // 첫 키워드 뒤에 커서가 간 것보다 MIN 넘게 더 말했다: 애드리브가 이어졌다
+        if (more) from = tent.from;
+        settle(!more);
+      }
+      if (open) tent = { o: open, b: back(tape(), trim, len), p: pos(), end: clock(), from: open.anch ? -1e9 : from };
+      open = null;
+      flush(false);
+    },
+    // 목소리로 대본이 맞아 닫는다. sc: 정규화한 대본, 커서가 from에서 to로 간다. 커서가 지나온 대본(p)은 from~to이고,
+    // 뒤로 가거나 확인을 거쳐 먼 위치(follow의 30글자 밖)로 옮겼으면(far) 어디서부터 다시 읽었는지 모르므로 새 위치 앞 60글자(follow가 뒤로 찾는 범위)다.
     // 모은 말(g)을 p와 끝에서부터 맞춰 애드리브 뒤에 다시 읽은 대본을 빼고, 앞에서부터 맞춰 커서가 늦게 따라와 애드리브 전에 읽은
     // 대본(한 결과에 대본 끝과 애드리브 첫마디가 같이 온 경우)을 뺀다. 가까운 이동이면 둘 다 맞지 않은 가운데 대본은 바꿔 읽은 것으로 보고
     // 그만큼 끝에서 더 뺀다(커서가 간 만큼 말했다). 끝과 앞이 어절 가운데에 걸리면 그 어절은 애드리브에 둔다
     // (어미만 우연히 같을 때: 애드리브 '…나아집니다'와 대본 '…배진혁입니다').
     // 반환 lead: 끝에서 대본 뒤에 이미 들어온 다음 애드리브의 음절 수(locate는 3음절까지 붙어도 맞춘다). open(info, lead)에 넘긴다.
-    voice(p, far) {
-      const s = tape(), g = norm(s.slice(open ? open.a : Math.max(0, s.length - 400)));
-      const lead = [0, 1, 2, 3].find(k => g[g.length - 1 - k] === p.at(-1)) ?? 0;
+    // 키워드로 나눈 뒤 처음 맞은 목소리면 나눌지 정한다(위 collector 설명). 키워드 뒤 구간에서 대본을 빼고 남는 말(left)로 잰다.
+    // 키워드 자리에서 30글자 넘게 앞으로 갔으면 그사이 말은 건너뛴 대본을 바꿔 읽은 것일 수 있어 나눈다. 다만 키워드로 옮기기 전 자리(tent.from)에서도
+    // 30글자 넘게 갔는데(키워드 문장을 건너뛰고 다음 문장을 읽음, skip) 거기서 먼 이동으로 재어 남는 말 중 건너뛴 대본과 겹치지 않는 것이 MIN 넘으면 없던 일이다.
+    // 바꿔 읽은 말은 대본과 낱말이 겹친다. 키워드로 잇달아 옮겼으면(tent.from이 -1e9) 바꿔 읽는 중이므로 보지 않는다.
+    // 없던 일이면 커서는 tent.from에서 온 것으로 보고 p를 다시 잡는다(키워드가 앞지른 만큼 다시 읽은 대본도 뺀다).
+    voice(sc, from, to) {
+      const s = tape(), far = f => to < f || to - f > 30, pass = f => sc.slice(far(f) ? Math.max(to > f ? f : 0, to - 60, 0) : f, to);
+      const g = norm(s.slice(open ? open.a : Math.max(0, s.length - 400))), lead = [0, 1, 2, 3].find(k => g[g.length - 1 - k] === sc[to - 1]) ?? 0;
+      if (tent) {
+        const left = f => { const c = cut(open, pass(f), far(f), lead); return norm(clean(s.slice(c.a, back(s, c.trim, len, false)))); };
+        const skip = !!open && tent.from >= 0 && to - tent.from > 30 && (t => t.length - shared(t, sc.slice(from, to)))(left(tent.from)) >= MIN;
+        const keep = !!open && (to - from > 30 || left(from).length < MIN) && !skip;
+        if (!keep) from = tent.from;
+        settle(keep);
+      }
       if (!open) return lead;
-      let [m, i] = align([...p].reverse(), [...g.slice(Math.max(0, g.length - lead - p.length - 10), g.length - lead)].reverse());
-      const m2 = Math.max(0, len(s.slice(back(s, lead + m, len, false))) - lead);  // 어절 가운데면 그 어절은 애드리브 쪽
-      i = Math.max(0, i - (m - m2)); m = m2;
-      const [h, k] = align([...p.slice(0, p.length - i)], [...g.slice(0, g.length - lead - m)]);
-      close(lead + m + (far ? 0 : Math.min(p.length - i - k, g.length - lead - m - h)), fwd(s, open.a, h, len), false);
+      const c = cut(open, pass(from), far(from), lead);
+      close(c.trim, c.a, false);
       return lead;
     },
     // 새 발표: 모으던 것과 확정을 기다리던 것을 버린다
-    reset() { open = null; closing = []; },
+    reset() { open = null; closing = []; tent = null; },
   };
 }
 
@@ -236,32 +293,124 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(got.length, 2, 'reset 뒤에는 나오지 않는다');
 
   // 6. 목소리로 맞아 닫기(voice): 커서가 지나온 대본 p와 맞춰 앞뒤의 대본을 뺀다. 한 결과에 여러 어절씩 온다.
-  const V = (steps, name) => {
-    const g3 = [], C3 = collector(g => g3.push(g), norm);
+  // 단계마다 [들은 말, 커서 from, to, 키워드 이동이면 trim]. from, to는 대본 sc의 앞부분(글)이나 위치. 반환 [구간 글, lead, 구간 자리]
+  const V = (sc, steps) => {
+    const g3 = [], C3 = collector(g => g3.push(g), norm), at = t => typeof t === 'number' ? t : len(t);
     let lead = 0;
     C3.open(info(0));
-    for (const [h, p, far] of steps) { C3.heard(R([h])); if (p) C3.open(info(1), lead = C3.voice(norm(p), far)); }
+    for (const [h, a, b, trim] of steps) {
+      C3.heard(R([h]));
+      if (trim != null) { C3.anchor(trim, at(a), at(b)); C3.open(info(at(b))); }
+      else if (b != null) C3.open(info(at(b)), lead = C3.voice(norm(sc), at(a), at(b)));
+    }
     C3.close(null); C3.end();
-    return [g3.map(g => g.text), lead];
+    return [g3.map(g => g.text), lead, g3.map(g => g.info.cur)];
   };
-  const S0 = '안녕하세요 오늘 발표를 맡은 배진혁입니다.';
+  const S0 = '안녕하세요 오늘 발표를 맡은 배진혁입니다.', S1 = S0 + ' 저희 팀은 지난 3개월';
   // 대본 끝과 애드리브 첫마디가 한 결과로: locate는 '혹시'를 붙인 채 문장 끝으로 옮긴다. '혹시'는 다음 애드리브에 넣는다.
-  assert.deepEqual(V([[S0 + ' 혹시', S0], [S0 + ' 혹시 뒤에 계신 분들 소리 잘 들리시나요 저희 팀은 지난 3개월', '저희 팀은 지난 3개월']]),
+  assert.deepEqual(V(S1, [[S0 + ' 혹시', '', S0], [S0 + ' 혹시 뒤에 계신 분들 소리 잘 들리시나요 저희 팀은 지난 3개월', S0, S1]]).slice(0, 2),
     [['혹시 뒤에 계신 분들 소리 잘 들리시나요'], 0], '첫마디를 잃지 않는다');
-  assert.equal(V([[S0 + ' 혹시', S0]])[1], 2, 'lead');
+  assert.equal(V(S1, [[S0 + ' 혹시', '', S0]])[1], 2, 'lead');
   // 커서가 늦게 따라옴: 대본 끝(맡은 배진혁입니다)이 애드리브와 한 결과로 와서 커서가 '발표를'에 남았다. 앞의 대본도 빼고,
   // 애드리브 끝 '나아집니다'와 대본 '배진혁입니다'의 '니다'가 우연히 같아도 끝 어절을 잃지 않는다.
-  assert.deepEqual(V([['안녕하세요 오늘 발표를', '안녕하세요 오늘 발표를'],
-    [S0 + ' 시끄러운 곳에서는 마이크를 가까이 대면 조금 나아집니다 저희 팀은 지난 3개월', '맡은 배진혁입니다 저희 팀은 지난 3개월']])[0],
+  assert.deepEqual(V(S1, [['안녕하세요 오늘 발표를', '', '안녕하세요 오늘 발표를'],
+    [S0 + ' 시끄러운 곳에서는 마이크를 가까이 대면 조금 나아집니다 저희 팀은 지난 3개월', '안녕하세요 오늘 발표를', S1]])[0],
   ['시끄러운 곳에서는 마이크를 가까이 대면 조금 나아집니다'], '늦게 따라온 커서');
   // 바꿔 읽기: 끝만 같고 가운데는 다르게 말했으면 커서가 간 만큼 말한 것으로 보고 뺀다(애드리브가 아니다)
-  assert.deepEqual(V([['대학생들한테 설문해 봤더니 반 넘는 사람이 발표하다 대본 놓쳐 봤다고 답했습니다', '대학생 200명에게 설문을 해 보니 절반 이상이 발표 중에 대본을 놓친 경험이 있다고 답했습니다']])[0],
-    [], '바꿔 읽은 대본');
-  // 다시 읽기(먼 위치, 뒤로): 애드리브 뒤에 앞 문장을 다시 읽었다. 다시 읽은 만큼만 빼고 애드리브 끝은 남긴다.
-  assert.deepEqual(V([[S0, S0], [S0 + ' 사실 이 기능은 팀원이 낸 아이디어인데요 오늘 발표를 맡은 배진혁입니다', S0, true]])[0],
+  const SV = '대학생 200명에게 설문을 해 보니 절반 이상이 발표 중에 대본을 놓친 경험이 있다고 답했습니다';
+  assert.deepEqual(V(SV, [['반 넘는 사람이 발표하다 대본 놓쳐 봤다고 답했습니다', '대학생 200명에게 설문을 해 보니', SV]])[0], [], '바꿔 읽은 대본');
+  // 다시 읽기(뒤로 먼 위치): 애드리브 뒤에 앞 문장을 다시 읽었다. 다시 읽은 만큼만 빼고 애드리브 끝은 남긴다.
+  assert.deepEqual(V(S1, [[S0, '', S0], [S0 + ' 사실 이 기능은 팀원이 낸 아이디어인데요 오늘 발표를 맡은 배진혁입니다', S1, S0]])[0],
     ['사실 이 기능은 팀원이 낸 아이디어인데요'], '다시 읽기');
 
-  // 7. 확정되며 앞 글자가 바뀌어도 시작은 어절 경계 (쉼표가 붙어 한 글자 밀림, 띄어쓰기가 빠져 한 글자 당겨짐)
+  // 7. 키워드 이동은 나눌 자리만 적어 둔다. 키워드 뒤 '이 앱은 대본 따라가요'(9음절)를 바꿔 읽은 대본으로 보고 나눌지는 다음 일로 정한다.
+  const SK = '라이브스크립트는 발표 대본을 따라갑니다. 음성 인식으로 지금 읽는 곳을 찾습니다. 화면도 알아서 내려 줍니다.', SK2 = SK.slice(0, SK.lastIndexOf(' 화면'));
+  const H1 = '제가 작년에 발표하다가 대본을 놓쳤어요 이 앱은 대본 따라가요', K1 = [H1, 0, 14, 9], MORE = ' 그래서 이런 걸 만들게 됐습니다';
+  assert.deepEqual(V(SK, [K1, [H1 + ' 목소리를 글자로 바꿔서 위치를', 14, '라이브스크립트는 발표 대본을 따라갑니다. 음성 인식으로 지금', 9],
+    [H1 + ' 목소리를 글자로 바꿔서 위치를 읽는 곳을 찾습니다', '라이브스크립트는 발표 대본을 따라갑니다. 음성 인식으로 지금', SK2]]),
+  [['제가 작년에 발표하다가 대본을 놓쳤어요'], 0, [0]], '키워드로 잇달아 옮기면(바꿔 읽기) 나눈다');
+  assert.deepEqual(V(SK, [K1, [H1 + ' 그렇죠']])[0], ['제가 작년에 발표하다가 대본을 놓쳤어요'], '정지: 뒤에 한 말이 짧으면 나눈다');
+  assert.deepEqual(V(SK, [K1, [H1 + MORE]]), [[H1 + MORE], 0, [0]], '정지: 대본 밖 말이 이어지면 없던 일, 처음 자리 그대로');
+  assert.deepEqual(V(SK, [K1, [H1 + MORE + ' 라이브스크립트는 발표', 14, '라이브스크립트는 발표']]), [[H1 + MORE], 0, [0]], '대본 밖 말이 이어지다 뒤로 맞으면 없던 일');
+  assert.deepEqual(V(SK, [K1, [H1 + MORE + ' 화면도 알아서 내려 줍니다', 14, SK]]), [[H1 + MORE], 0, [0]], '키워드 문장을 건너뛰고 다음 문장을 읽어도 대본 밖 말이 이어졌으면 없던 일');
+  assert.deepEqual(V(SK, [K1, [H1 + ' 그렇죠 화면도 알아서 내려 줍니다', 14, SK]])[0], ['제가 작년에 발표하다가 대본을 놓쳤어요'], '30글자 넘게 앞으로 맞고 키워드 뒤 말이 짧으면 나눈다');
+  assert.deepEqual(V(SK, [K1, [H1 + MORE + ' 목소리를 글자로 바꿔서 위치를', 14, '라이브스크립트는 발표 대본을 따라갑니다. 음성 인식으로 지금', 9],
+    [H1 + MORE + ' 목소리를 글자로 바꿔서 위치를 읽는 곳을 찾습니다', '라이브스크립트는 발표 대본을 따라갑니다. 음성 인식으로 지금', SK2]]),
+  [[H1 + MORE + ' 목소리를'], 0, [0]], '키워드로 잇달아 옮겨도 그사이 커서가 간 것보다 MIN 넘게 더 말했으면 앞 구간을 잇는다');
+  assert.deepEqual(V(SK, [K1, [H1 + ' 음성 인식으로 지금 어디 읽는지 찾아 주고요 화면도 알아서 내려 줍니다', 14, SK]])[0],
+    ['제가 작년에 발표하다가 대본을 놓쳤어요', '음성 인식으로 지금 어디 읽는지 찾아 주고요'], '건너뛴 대본을 바꿔 읽은 말(글자가 겹친다)이면 나눈다');
+
+  // 8. app.js와 같은 흐름(match.js follow, 크롬처럼 어절이 w개씩 늘어나는 중간 결과, 330ms 간격)으로 예시 대본을 읽는다. 반환 [[앞 문장 번호, 글]]
+  const sample = JSON.parse(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'));
+  function talk(text, lines, w, kw = {}) {
+    const S = normMap(text), words = [], segs = [], T = collector(g => segs.push(g), norm, () => t);
+    let t = 0, cur = 0, pending = null, approx = null, heard = '', said = 0, lastAnchor = -1e9, k = 0, anchored = 0;
+    for (const m of text.matchAll(/\S+/g)) {  // app.js build()처럼 . ? ! 뒤나 줄바꿈에서 새 문장
+      words.push({ t: m[0], s: k, n0: len(text.slice(0, m.index)), n1: len(text.slice(0, m.index + m[0].length)) });
+      if (/[.?!]$/.test(m[0]) || /^\s*\n/.test(text.slice(m.index + m[0].length))) k++;
+    }
+    const A = anchors(S.s, words, kw), info = () => ({ cur, s: words.findLast(x => x.n0 < cur)?.s ?? -1 });
+    T.open(info());
+    for (const line of lines) {
+      const ws = line.split(' ');
+      let cut = 0, sn = '';
+      for (let i = Math.min(w, ws.length); ; i = Math.min(i + w, ws.length)) {
+        t += 330;
+        T.heard([{ t: ws.slice(0, i).join(' '), final: i === ws.length }]);
+        const n0 = sn.length;
+        sn = norm(ws.slice(0, i).join(' ')); said += Math.max(0, sn.length - n0);
+        const f = follow(S, A, heard + sn.slice(cut), cur, pending, t - lastAnchor < 10000 ? approx : null);
+        pending = f.pending;
+        if (f.how === 'anchor') {
+          T.anchor(Math.min(said, 20, Math.max(0, f.pos - cur)), cur, f.pos);
+          heard = ''; cut = sn.length; said = 0; approx = f.sent; lastAnchor = t; cur = f.pos; anchored++;
+          T.open(info());
+        } else if (f.how === 'voice') {
+          approx = null;
+          if (f.pos !== cur) { const lead = T.voice(S.s, cur, f.pos); said = 0; cur = f.pos; T.open(info(), lead); }
+        }
+        if (i === ws.length) break;
+      }
+      heard = (heard + sn.slice(cut)).slice(-60);
+      T.end();  // 줄마다 인식 세션 하나
+    }
+    T.close(null); T.end();
+    return [segs.map(g => [g.info.s, g.text]), anchored];
+  }
+  const sents = sample.text.match(/[^.?!]+[.?!]/g).map(x => x.trim());
+  // 실제 주소에서 본 경우: 13문장을 읽고, 다음 문장 키워드 두 개(판정, 모델)가 섞인 애드리브, 다음 문장. 키워드로 옮겨도 한 구간이고 13번째 문장 뒤
+  const AD = '이 부분이 제일 중요한데요 판정 모델은 인터넷이 끊겨도 한 번 받아 두면 계속 쓸 수 있습니다';
+  for (const w of [1, 2, 3]) {
+    const [got, n] = talk(sample.text, [...sents.slice(0, 13), AD, sents[13]], w, sample.prep.kw);
+    assert.ok(n > 0, '키워드로 옮기는 경우를 시험한다');
+    assert.deepEqual(got, [[12, AD]], `키워드가 섞인 애드리브 w=${w}`);
+  }
+  // 애드리브 뒤에 다음 문장들을 바꿔 읽어 키워드로 또 옮겨도, 그사이 대본 밖 말이 길면 13번째 문장 뒤에서 애드리브 처음부터 (바꿔 읽은 말이 붙는 것은 어쩔 수 없다)
+  const P13 = '어떤 질문인지 판정하는 건 서버 말고 기기 안의 작은 모델이 해요', P14 = '앱 설치 없이 휴대폰이나 피씨 브라우저로 주소만 열면 끝이에요';
+  for (const w of [1, 2, 3]) {
+    const [got] = talk(sample.text, [...sents.slice(0, 13), AD, P13, P14, sents[15]], w, sample.prep.kw);
+    assert.ok(got.length === 1 && got[0][0] === 12 && got[0][1].startsWith(AD), `애드리브 뒤 바꿔 읽기 w=${w}: ${JSON.stringify(got)}`);
+  }
+  // 키워드 문장을 건너뛰고 그다음 문장을 읽어도 한 구간
+  for (const w of [1, 2, 3]) assert.deepEqual(talk(sample.text, [...sents.slice(0, 13), AD, sents[14]], w, sample.prep.kw)[0], [[12, AD]], `건너뛰기 w=${w}`);
+  // 키워드로 잇달아 옮긴 뒤 앞 문장으로 돌아와 읽어도 다시 읽은 대본은 애드리브에 넣지 않는다
+  const AD2 = '이건 예상 질문 카드 기능인데요 판정 모델이 핵심이라 뒤에서 자세히 말씀드릴게요';
+  for (const w of [1, 2, 3]) {
+    const [got] = talk(sample.text, [...sents.slice(0, 12), AD2, ...sents.slice(12, 14)], w, sample.prep.kw);
+    assert.ok(got.length === 1 && got[0][1].endsWith('말씀드릴게요'), `키워드 두 번 뒤 다시 읽기 w=${w}: ${JSON.stringify(got)}`);
+  }
+  // 많이 바꿔 읽기(키워드로만 옮겨 감)는 애드리브가 아니다
+  const PARA = ['서버 말고 기기에서 판정해요', '설치 없이 휴대폰 브라우저로 열어요', '모델은 무료 오픈소스고 와이파이에서 받아요'];
+  const PARA2 = [P14, '판정 모델은 공짜 오픈소스고 와이파이 될 때 한 번만 받아 두시면 돼요', '정리하면 에이아이는 발표 전엔 준비를 돕고 발표 중엔 기기에서 질문을 알아들어요'];
+  for (const w of [1, 2, 3]) {
+    const [got, n] = talk(sample.text, [...sents.slice(0, 13), ...PARA, ...sents.slice(16)], w, sample.prep.kw);
+    assert.ok(n >= 2, '키워드로 잇달아 옮긴다');
+    assert.deepEqual(got, [], `바꿔 읽기 w=${w}`);
+    // ponytail: w=1이면 '공짜 오픈소스고 …'가 구간으로 남는다(이번 변경 전부터). 키워드 두 번 뒤의 목소리로 건너뛰기를 보지 않는 것은 w=2, 3이 확인한다.
+    if (w > 1) assert.deepEqual(talk(sample.text, [...sents.slice(0, 14), ...PARA2, ...sents.slice(17)], w, sample.prep.kw)[0], [], `바꿔 읽기 2 w=${w}`);
+  }
+
+  // 9. 확정되며 앞 글자가 바뀌어도 시작은 어절 경계 (쉼표가 붙어 한 글자 밀림, 띄어쓰기가 빠져 한 글자 당겨짐)
   for (const [fin, want] of [['안녕하세요, 오늘은', '제가'], ['안녕하세요오늘은', '제가'], ['안녕 하세요 오늘 은', '은 제가']]) {
     const g2 = [], C2 = collector(g => g2.push(g), norm);
     C2.heard(R(['안녕하세요 오늘은']));

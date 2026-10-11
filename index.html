@@ -63,7 +63,8 @@
   #empty h1 { margin: 0 0 8px; font-size: 22px; }
   #empty p { margin: 8px 0; }
   #empty ol { margin: 8px 0; padding: 0; list-style: none; color: #ccc; }
-  #empty button { pointer-events: auto; }
+  #empty button, #empty a { pointer-events: auto; }
+  a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; background: #2a2a2a; color: inherit; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
   #empty::after { content: ''; position: absolute; top: 100%; width: 1px; height: 76px; }  /* 낮은 가로 화면에서도 카드 끝을 아래 막대 위로 올릴 만큼 내릴 수 있게 */
   #prompt { max-width: var(--w); margin: 0 auto; padding: calc(100dvh / 3) 16px 70vh; font-size: var(--fs); line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
   #prompt .s.cur { background: #41639a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
@@ -205,7 +206,7 @@
     <li>② 위 '발표'</li>
     <li>③ '● 시작'을 누르고 읽기</li>
   </ol>
-  <div class="row"><button id="eSample" class="cta">예시로 둘러보기</button><button id="ePaste">직접 붙여넣기</button></div>
+  <div class="row"><button id="eSample" class="cta">예시로 둘러보기</button><button id="ePaste">직접 붙여넣기</button><a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a></div>
 </div>
 <main class="p-only" id="prompt"></main>
 <div class="p-only" id="readline" aria-hidden="true"></div>
@@ -398,6 +399,7 @@
     <button id="mImport">파일 가져오기</button>
     <button id="mSample">예시 대본 열기</button>
     <button id="keyBtn">AI 키</button>
+    <a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a>
   </div>
   <details>
     <summary>데이터가 가는 곳</summary>

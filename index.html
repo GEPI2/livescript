@@ -23,6 +23,7 @@
   #heard { font-size: 13px; color: #888; text-align: center; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
   @media (max-width: 420px) { header { gap: 6px; padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
+  @media (max-width: 360px) { header { gap: 4px; padding-left: 8px; padding-right: 8px; } header button { padding: 8px 6px; } }  /* 320px에서도 상태줄에 시간이 보이게 */
   @media (max-width: 520px) { #status .dot { display: none; } }  /* 이 폭까지는 상태줄이 두 줄로 접혀서 줄 끝에 ·가 남는다 */
 
   #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 72px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
@@ -313,6 +314,7 @@
   <p class="small" id="keyState"></p>
   <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
   <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워집니다)</label>
+  <p class="small" id="keyShared" hidden>이 주소(github.io)는 같은 GitHub 계정의 다른 Pages 사이트와 저장 공간을 같이 써서, 기억한 키를 그 사이트들도 읽을 수 있어요. 팀 키는 기억하지 말고 이 탭에만 두세요.</p>
   <div class="row">
     <button id="keySave" class="primary">저장</button>
     <button id="keyClear">키 지우기</button>

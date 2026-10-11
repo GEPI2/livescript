@@ -134,7 +134,7 @@ function next() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NO_SR = '이 브라우저는 음성 인식이 안 돼요. Chrome이나 Safari를 쓰세요. 손으로 넘기기는 됩니다.';
 let rec, listening = false, errored = false, lock = null;
-let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0;
+let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0, lastResume = 0;  // lastResume: 1.5초 넘게 쉰 뒤 첫 결과
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
 let said = 0;  // 마지막으로 커서를 옮긴 뒤 새로 들은 글자 수 (말 속도용)
 
@@ -188,6 +188,7 @@ function initRec() {
     const n0 = sessionNorm.length;
     sessionNorm = norm(t);
     said += Math.max(0, sessionNorm.length - n0);
+    if (Date.now() - lastHeard > 1500) lastResume = Date.now();
     lastHeard = Date.now();
     // 질의응답 중에는 대본 추적을 멈춘다 (질문과 답의 낱말에 커서가 끌려가지 않게)
     if (qaMode) { onQuestion(q); return; }
@@ -289,10 +290,12 @@ setInterval(() => {
     saveTalk();
   }
   if (document.body.classList.contains('editing')) { $('status').textContent = ''; return; }
-  const sec = t0 ? Math.floor((Date.now() - t0) / 1000) : 0;
+  // 시작 전 대본 처음에 있으면 지난 발표의 시간을 보이지 않는다 (start()가 새로 잰다)
+  const sec = t0 && (listening || cur) ? Math.floor((Date.now() - t0) / 1000) : 0;
   const pct = S.s.length ? Math.round(cur / S.s.length * 100) : 0;
   // 키워드로 막 따라간 때도 대본 밖이 아니다 (lastMatch는 말 속도용이라 키워드 이동에 안 바꾼다)
-  const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor) > 3000;
+  // 쉬었다가 다시 말하기 시작했으면 그때부터 잰다 (첫마디가 대본과 달라도 바로 대본 밖이 아니게)
+  const off = !qaMode && listening && lastHeard - Math.max(lastMatch, lastAnchor, lastResume) > 3000;
   // 대본 밖이거나 질의응답 중에는 다시 계산하지 않는다. render() 안에서 하지 않는 것은 다시 그리다가 또 그리지 않게.
   if (listening && !off && !qaMode && t0 && target && shr.on && U) autoShrink(sec);
   // 휴대폰에서는 상태줄이 좁아 뒤쪽이 잘리므로 중요한 것을 앞에 둔다: 대본 밖, 목표 대비, 경과, 진행률
@@ -329,7 +332,7 @@ function updEst() {
   $('shrinkBox').hidden = !target;
 }
 
-// ---- 늦어지면 자동 줄이기 (shrink.js, PLAN 4-2 2차) ----
+// ---- 늦어지면 자동 줄이기 (shrink.js) ----
 // sk('shrink') = { on, h: 대본 해시, pt: 발표 준비를 한 때, lv: 단위마다 단계(0 원문, 1 줄임, 2 요약), asked: 미리 줄인 대본을 물어본 대본,
 //   pre: 미리 줄인 대본으로 연습하기로 했으면 그 단계(처음부터 발표할 때마다 이 단계로 시작) }
 // 단계는 대본과 '발표 준비' 결과가 그대로일 때만 쓴다. 저장해 두어서 새로고침해도 같은 글이 보인다.
@@ -1006,6 +1009,7 @@ $('importFile').onchange = async e => {
 };
 
 // ---- AI 키 창 ----
+$('keyShared').hidden = !location.hostname.endsWith('.github.io');  // 계정의 Pages 사이트가 모두 한 출처(<계정>.github.io)를 쓴다
 const openKey = () => { $('keyIn').value = ''; $('keyRemember').checked = keyStore.remembered(); showKey(); $('keyDlg').showModal(); };
 $('keyBtn').onclick = openKey;
 $('keyBtn2').onclick = openKey;
@@ -1109,7 +1113,10 @@ $('scriptFile').onchange = async e => {
   store.set(k('qaInfo'), JSON.stringify(r.info));
   try { store.set(k('pack'), JSON.stringify(cleanPack(r.pack))); } catch {}  // 질문 팩이 없거나 깨졌으면 질문 없이
   if (r.prep) store.set(k('prep'), JSON.stringify(r.prep));
-  lib.list.push({ id, name: cleanName(r.name) || `대본 ${lib.list.length + 1}`, src: '파일에서 가져옴' });
+  // 같은 기기에서 내보냈다 가져오면 이름이 겹치므로 ' (2)'처럼 번호를 붙인다 (이름은 40자까지)
+  let name = cleanName(r.name) || `대본 ${lib.list.length + 1}`;
+  for (let i = 2, b = name.slice(0, 35); lib.list.some(x => x.name === name); i++) name = `${b} (${i})`;
+  lib.list.push({ id, name, src: '파일에서 가져옴' });
   lib.cur = id;
   saveLib(); loadScript();
   tell(`'${entry().name}'을(를) 새 대본으로 가져왔어요.` + (pack ? ` 질문 ${pack.questions.length}개도 같이 왔어요.` : ''));
@@ -1234,7 +1241,7 @@ function setTab(t) {
   for (const p of document.querySelectorAll('#ai [data-pane]')) p.hidden = p.dataset.pane !== t;
   $('aiGo').textContent = aiCtl ? '멈추기' : GO[t];
   $('aiPrompt').hidden = $('aiPasteBox').hidden = true;
-  $('aiResBox').hidden = $('aiApply').hidden = !aiRes || t === 'prep';
+  $('aiResBox').hidden = $('aiApply').hidden = aiRes?.tab !== t;  // 결과는 만든 탭에서만 (새로 쓴 초안을 '고치기'에서 적용하지 않게)
   $('aiOut').hidden = true;
   if (t === 'prep') updPrepState();
   if (t === 'edit') {
@@ -1257,14 +1264,14 @@ function jobFor(tab, paste = false) {
     const i = { topic: g('topic'), audience: g('audience'), goal: g('goal'), tone: g('tone'), outline: g('outline'), refs: g('refs'), minutes: target };
     need(i.topic || i.outline, '주제나 슬라이드 개요를 적어 주세요.');
     i.chars = target ? Math.round(target * 60 * r) : 0;
-    return { tab, prompt: scriptPrompt(i), done: t => showRes({ text: cleanScript(t), base: text, range: null, src: 'AI 초안', check: true }) };
+    return { tab, prompt: scriptPrompt(i), done: t => showRes({ tab, text: cleanScript(t), base: text, range: null, src: 'AI 초안', check: true }) };
   }
   need(text.trim(), '먼저 대본을 쓰거나 붙여넣으세요.');
   if (tab === 'edit') {
     const instr = $('instr').value.trim(), range = $('onlySel').checked && !$('onlySelBox').hidden ? aiSel : null;
     need(instr, '어떻게 고칠지 적어 주세요.');
     const part = range ? text.slice(...range) : '';
-    return { tab, prompt: editPrompt({ script: text, part, instr, rate: r, chars: spoken(part || text) }), done: t => showRes({ text: cleanScript(t), base: text, range, src: 'AI 고침' }) };
+    return { tab, prompt: editPrompt({ script: text, part, instr, rate: r, chars: spoken(part || text) }), done: t => showRes({ tab, text: cleanScript(t), base: text, range, src: 'AI 고침' }) };
   }
   // 발표 준비: 문단·문장은 lib.js paras(), 키워드는 match.js anchors()로 뽑아 보낸다
   const ps = paras(text), flat = ps.flat(), words = [];
@@ -1357,7 +1364,7 @@ async function run(job) {
   }
 }
 
-// 결과: r = { text: 받은 글, base: 보낼 때 대본, range: 고친 문단 [시작, 끝] 또는 null, src, check: 길이 확인 }
+// 결과: r = { tab: 만든 탭, text: 받은 글, base: 보낼 때 대본, range: 고친 문단 [시작, 끝] 또는 null, src, check: 길이 확인 }
 function showRes(r) {
   if (!r.text) throw new Error('받은 대본이 비어 있어요.');
   const now = $('text').value;
@@ -1365,6 +1372,7 @@ function showRes(r) {
   r.full = r.range ? r.base.slice(0, r.range[0]) + r.text + r.base.slice(r.range[1]) : r.text;
   r.shown = now;
   aiRes = r;
+  if (aiTab !== r.tab) setTab(r.tab);  // 받는 사이 탭을 바꿨으면 결과를 만든 탭으로
   // 앱이 다시 센다. 목표와 10% 넘게 다르면 줄이기/늘리기
   const s = Math.round(spoken(r.full) / rate()), off = target ? s / (target * 60) - 1 : 0;
   $('aiLen').textContent = `예상 ${mmss(s)}` + (target ? ` / 목표 ${mmss(Math.round(target * 60))} (${off < 0 ? '' : '+'}${Math.round(off * 100)}%)` : '');

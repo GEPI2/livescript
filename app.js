@@ -1,9 +1,9 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=1';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=1';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=1';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=1';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=1';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=2';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts } from './claude.js?v=2';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=2';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=2';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=2';
 
 const $ = id => document.getElementById(id);
 // 배포 직후 옛 index.html과 섞여 아래에서 멈춰도, 빈 편집창에 친 글이 저장된 대본을 덮어쓰지 않게 다 불러올 때까지 잠근다 (맨 아래에서 푼다)
@@ -102,8 +102,8 @@ function render() {
   });
   store.set(sk('cur'), cur);
 
-  // 지금 줄을 화면 위에서 1/3 지점에 둔다
-  const el = words[c]?.el;
+  // 지금 줄을 화면 위에서 1/3 지점에 둔다 (대본 끝이면 마지막 어절)
+  const el = words[Math.min(c, words.length - 1)]?.el;
   if (el) {
     const d = el.getBoundingClientRect().top - innerHeight / 3;
     if (Math.abs(d) > el.offsetHeight * 0.6) scrollBy({ top: d, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
@@ -113,6 +113,7 @@ function render() {
 // by: 누가 옮겼나('voice', 'anchor', 'tap', 'prev', 'next'). 있으면 기록에 남긴다.
 function setCur(n, by) {
   n = Math.max(0, Math.min(n, S.s.length));
+  if (by) begin();  // 질의응답 화면에서 켠 마이크로 손으로만 넘겨도 발표 시간을 잰다
   if (by) note({ from: cur, to: n, by });
   cur = n;
   render();
@@ -146,6 +147,7 @@ function onHeard(h) {
   // 키워드로 옮긴 지 오래면 이어 읽는 중으로 보지 않는다 (애드리브 뒤 키워드 하나에 끌려가지 않게). 점선 표시는 그대로.
   const f = follow(S, A, h, cur, pending, Date.now() - lastAnchor < APPROX_MS ? approx : null);
   pending = f.pending;
+  if (f.how) begin();
   if (f.how === 'anchor') {
     // 키워드로 옮긴 곳은 어림 위치다. jump()처럼 들은 말을 비운다. 글자가 맞은 것은 아니므로
     // lastMatch는 그대로 두고, 말 속도에도 넣지 않는다(그동안 말한 시간도 lastMatch가 그대로라 빠진다).
@@ -232,7 +234,8 @@ function start() {
   if (!qaMode && end && S.s.length && cur >= S.s.length && confirm('대본 끝이에요. 처음부터 다시 할까요?')) jump(0, 'tap');
   if (!rec) initRec();
   listening = true;
-  if (!t0 || cur === 0) { resetTalk(Date.now()); baseLevels(); }
+  // 질의응답 화면에서 켠 마이크로는 발표 시간을 재지 않는다. 대본을 처음 따라갈 때 잰다(begin).
+  if (!t0 || cur === 0) { resetTalk(qaMode ? 0 : Date.now()); baseLevels(); }
   // 30분 넘게 쉬었다가 이어 하면 쉰 시간은 경과 시간에서 뺀다. 끝난 발표면 멈춘 시간(end)도 같이 옮겨서 발표 시간이 그대로 남게.
   else if (Date.now() - seen > 30 * 6e4) { const g = Date.now() - seen; t0 += g; if (end) end += g; }
   // 기록의 위치는 보이는 대본 기준이라 시작할 때마다 단계를 남긴다 (새로고침 뒤 이어 할 때도 기록만으로 위치를 읽을 수 있게)
@@ -242,6 +245,15 @@ function start() {
   keepAwake();
   $('mic').classList.add('on');
   $('mic').textContent = '■ 정지';
+}
+
+// 질의응답 화면에서 마이크를 켜 아직 발표 시간을 재지 않았으면(start()가 미뤄 둠) 대본을 처음 따라간 지금부터 잰다
+function begin() {
+  if (t0 || !listening || qaMode) return;
+  t0 = Date.now(); onSec = 0;
+  for (const e of log) e.t -= t0;  // 그 전 기록의 t는 시각 그대로다(note). 발표 시작 기준으로 바꾸면 음수가 된다.
+  saveTalk();
+  if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
 }
 
 function stop() {
@@ -463,12 +475,15 @@ $('shrinkNo').onclick = shrinkAsked;
 // ---- 기록 내려받기 ----
 // 인식 결과 원문, 목소리로 옮긴 위치, 손으로 고친 위치. 나중에 매처를 고칠 때 쓴다(10분당 손 보정 횟수 등).
 // 기록 파일에 적는 앱 버전. 매처나 기록 형식을 바꾸면 올린다. (4: [확인 필요] 표시를 비교에서 뺌, 발표 준비의 다른 말을 키워드로
-// 5: 자동 줄이기 { shrink: 단계, why, over, at }와 prep, 질의응답 판정 { qa: 'judge', j, q, ms, top, jev, low, auto }과 고른 칩 { qa: 'pick', j, id, how, rank })
-const VERSION = 5;
+// 5: 자동 줄이기 { shrink: 단계, why, over, at }와 prep, 질의응답 판정 { qa: 'judge', j, q, ms, top, jev, low, auto }과 고른 칩 { qa: 'pick', j, id, how, rank }
+// 6: 발표 전에 질의응답 화면에서 켠 마이크의 기록도 남긴다. 그 기록의 t는 음수다)
+const VERSION = 6;
 const LOG_MAX = 20000;
 let log = [];
 function note(x) {
-  if (!t0) return;  // 발표를 시작하기 전 일은 남기지 않는다
+  // 발표를 시작하기 전 일은 남기지 않는다. 다만 질의응답 화면에서 켠 마이크부터는 마이크를 꺼도 남긴다
+  // (t0가 0이라 t는 시각 그대로다. 발표를 시작하면 begin()이, 기록을 받으면 logJson이 바꾼다)
+  if (!t0 && !listening && !log.length) return;
   log.push({ t: Date.now() - t0, ...x });
   if (log.length > LOG_MAX) log.shift();
 }
@@ -481,12 +496,15 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-const logJson = text => JSON.stringify({
-  app: 'livescript', version: VERSION, userAgent: navigator.userAgent,
-  start: t0 ? new Date(t0).toISOString() : null, target, onSec, matched, cur,
-  script: text, normLength: norm(text).length, events: log,
-  prep: shr.on && prepFits(loadPrep(), text) ? loadPrep().paras : null,  // 자동 줄이기 단계(shrink)로 보이는 대본을 다시 만들 때
-});
+const logJson = text => {
+  const b = t0 || log[0]?.t || 0;  // 질의응답만 하고 발표는 시작하지 않았으면 첫 기록을 시작으로 본다
+  return JSON.stringify({
+    app: 'livescript', version: VERSION, userAgent: navigator.userAgent,
+    start: b ? new Date(b).toISOString() : null, target, onSec, matched, cur,
+    script: text, normLength: norm(text).length, events: t0 ? log : log.map(e => ({ ...e, t: e.t - b })),
+    prep: shr.on && prepFits(loadPrep(), text) ? loadPrep().paras : null,  // 자동 줄이기 단계(shrink)로 보이는 대본을 다시 만들 때
+  });
+};
 // 리허설 뒤 오타부터 고쳐도 기록을 받을 수 있게, 대본을 고쳐 새 발표가 되기 직전의 기록(고치기 전 대본과 함께)을 둔다
 let lastLog = null;
 $('saveLog').onclick = () => {
@@ -695,13 +713,13 @@ function showModel() {
   }[modelState];
   $('getModel').hidden = ready;
   $('getModel').disabled = modelState === 'loading';
-  $('getModel').textContent = stuck ? '다시 시도' : '모델 받기 (약 163MB, 와이파이 권장)';
+  $('getModel').textContent = stuck ? '다시 시도' : '모델 받기 (약 135MB, 와이파이 권장)';
   const j = !jevOn || !HAS_GPU ? '' : jev ? ' + JEV' : { loading: ' · JEV 준비 중', off: ' · JEV 모델 없음' }[jevState] || ' · JEV 없이';
   $('qaState').textContent = !pack ? "준비된 질문이 없어요. 편집 화면의 AI나 ⋯ 메뉴에서 'Q&A 준비'를 열어 만들어 주세요."
     : modelState === 'loading' || vecJob ? '판정 모델 준비 중… 그동안은 글자 비교로 고릅니다'
     : ready && V ? `질문 ${pack.questions.length}개 · AI 판정(e5, 기기 안)${j}` : `질문 ${pack.questions.length}개 · AI 모델 없이 글자 비교로 고르는 중`;
   $('qaRetry').hidden = !pack || ready || modelState === 'loading';
-  $('qaRetry').textContent = stuck ? '다시 시도' : '판정 모델 받기 (약 163MB, 와이파이 권장)';
+  $('qaRetry').textContent = stuck ? '다시 시도' : '판정 모델 받기 (약 135MB, 와이파이 권장)';
   $('ask').disabled = busy || !pack;
 }
 
@@ -1186,7 +1204,7 @@ $('scriptFile').onchange = async e => {
 $('mSample').onclick = () => fetch('sample.livescript.json').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 
-function importScript(raw, fname, demo = false) {
+async function importScript(raw, fname, demo = false) {
   let r;
   try { r = readScript(raw, fname); } catch (err) { return tell('가져오지 못했어요. ' + (err instanceof SyntaxError ? '파일 내용이 깨졌어요.' : err.message)); }
   const id = Date.now().toString(36), k = n => sk(n, id);
@@ -1203,7 +1221,8 @@ function importScript(raw, fname, demo = false) {
   lib.cur = id;
   saveLib(); loadScript();
   tell(`'${entry().name}'을(를) 새 대본으로 가져왔어요.` + (pack ? ` 질문 ${pack.questions.length}개도 같이 왔어요.` : '') +
-    (demo && modelState !== 'ready' ? " 질의응답 AI 판정을 보려면 ⋯ 메뉴의 'Q&A 준비'에서 판정 모델을 받으세요." : ''));
+    // 모델이 이 기기에 있으면 발표 화면에 들어갈 때 알아서 불러오고 '판정 모델 받기'도 보이지 않는다
+    (demo && modelState === 'off' && !await modelCached() ? " 질의응답 AI 판정을 보려면 발표 화면의 'Q&A'에서 '판정 모델 받기'를 누르세요." : ''));
 }
 
 // ---- 버전 ----

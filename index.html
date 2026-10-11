@@ -13,7 +13,7 @@
   body { margin: 0; background: #111; color: #eee; font: 16px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
   button { font: inherit; color: inherit; background: #2a2a2a; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 44px; }
   footer button { min-width: 56px; }
-  #aiBtn, #menuBtn { min-width: 44px; }
+  header button { min-width: 44px; }
   button:disabled { opacity: .4; }
   header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 8px 16px; background: #111e; }
   header { top: 0; padding-top: max(8px, env(safe-area-inset-top)); }
@@ -25,12 +25,13 @@
   #heard { font-size: 13px; color: #888; text-align: center; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
   @media (max-width: 420px) { header { gap: 6px; padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
-  @media (max-width: 360px) { header { gap: 4px; padding-left: 8px; padding-right: 8px; } header button { padding: 8px 6px; } }  /* 320px에서도 상태줄에 시간이 보이게 */
+  @media (max-width: 360px) { header { gap: 2px; padding-left: 4px; padding-right: 4px; } header button { padding: 8px 4px; } }  /* 버튼을 44px로 두고도 상태줄에 시간이 보이게 */
+  @media (max-width: 340px) { #mic { padding: 8px 2px; } #status { font-size: 14px; } }  /* 320px에서도 '초과 12:34 · 12:34 · 100%'가 두 줄 안에 들게 */
   @media (max-width: 520px) { #status .dot { display: none; } }  /* 이 폭까지는 상태줄이 두 줄로 접혀서 줄 끝에 ·가 남는다 */
 
   #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 72px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; resize: none; }
-  #target { width: 4em; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 6px 8px; }
-  #lib { max-width: 320px; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 7px 4px; }
+  #target { width: 4em; min-height: 44px; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 6px 8px; }
+  #lib { max-width: 320px; min-height: 44px; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 7px 4px; }
   #est { color: #999; }
   #est.over { color: #fb4; }
   #altBtn { white-space: nowrap; background: #24304a; }
@@ -45,7 +46,8 @@
   /* 자동 줄이기로 문장을 숨긴 문단: 왼쪽 줄과 작은 표시 */
   #prompt .cut { border-left: 3px solid #6178a8; padding-left: 10px; margin-left: -13px; }
   #prompt .cut::before { content: attr(data-l); margin-right: 6px; font-size: .5em; color: #8a9bbd; vertical-align: 0.3em; }
-  .sw { white-space: nowrap; font-size: 14px; padding: 10px 0; }
+  .sw { display: flex; align-items: center; gap: 6px; min-height: 44px; white-space: nowrap; font-size: 14px; }
+  .sw input { width: 22px; height: 22px; margin: 0; }
   @media (max-width: 420px) {
     #est .wide { display: none; }  /* 목표는 바로 옆 입력칸에 보인다 */
     #est { white-space: normal; word-break: keep-all; line-height: 1.2; }  /* 320px에서도 넘친 시간 (+0:26)이 잘리지 않게 두 줄로 */
@@ -189,7 +191,7 @@
 
   <h3>판정 모델</h3>
   <p class="small" id="modelMsg"></p>
-  <button id="getModel">모델 받기 (약 163MB, 와이파이 권장)</button>
+  <button id="getModel">모델 받기 (약 135MB, 와이파이 권장)</button>
   <label><input type="checkbox" id="autoCard"> 확신이 높으면 답 카드를 바로 열기 (e5 판정일 때)</label>
   <div id="jevBox" hidden>
     <label><input type="checkbox" id="jevOn"> JEV 모드 (실험): 판정 모델 Kev-0.6B가 e5 후보 5개를 다시 고릅니다</label>
@@ -335,7 +337,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=1"></script>
-<script type="module" src="app.js?v=1"></script>
+<script src="match.js?v=2"></script>
+<script type="module" src="app.js?v=2"></script>
 </body>
 </html>

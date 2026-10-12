@@ -5,1486 +5,258 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
-<title>라이브스크립트 iPad 사용 안내서</title>
+<title>라이브스크립트 사용 안내서</title>
+<link rel="icon" href="../icons/icon-192.png" sizes="192x192">
 <style>
-/* Layout: iPadOS reference app. Wide screens get a Settings-style sidebar of grouped chapter rows beside a content pane with large chapter titles; portrait and phone widths stack the contents list above one reading column. Screenshots sit in iPad bezels beside step text when the pane has room. */
+/* 한 단 읽기: 섹션마다 큰 제목, 한 줄 요약, 단계, 화면 하나. 섹션 사이는 굵은 회색 띠 */
 :root {
-  --bg: #f2f3f7;
-  --side: #e8eaf1;
-  --cell: #ffffff;
-  --cell-hover: #e6e9f1;
-  --fill: #eceef4;
-  --sep: #cfd3dc;
-  --fg: #111318;
-  --fg2: #50576a;
-  --fg3: #8b919d;
-  --accent: #35578f;
-  --accent-fill: #41639a;
-  --on-accent: #ffffff;
-  --accent-soft: #e1e8f5;
-  --late: #8a5200;
-  --late-soft: #fbefd8;
-  --off: #1a6795;
-  --off-soft: #ddeef8;
-  --rec: #b33a3a;
-  --on-rec: #ffffff;
-  --bezel: #1c1d21;
-  --bezel-edge: #34363d;
-  --shot-bg: #111111;
-  --ph-bg: #e9eaee;
-  --ph-fg: #5c6270;
-  --key: #ffffff;
-  --key-edge: #c4c9d3;
-  --key-shadow: #aab0bc;
-  --pin-bg: #ffffff;
-  --pin-fg: #1d3157;
-  --pin-ring: #41639a;
-  --shadow: rgba(20, 28, 45, 0.10);
-  --hair: 1px;
+  --bg: #ffffff; --band: #f2f4f6; --card: #f9fafb; --fill: #f2f4f6; --line: #e5e8eb;
+  --fg-strong: #191f28; --fg: #333d4b; --fg2: #4e5968; --fg3: #6b7684; --fg4: #b0b8c1;
+  --accent: #1b64da; --accent-fill: #1b64da; --on-accent: #ffffff; --bezel: #191f28;
   --f: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
-  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --measure: 42em;
-  --wide: 980px;
   color-scheme: light;
 }
-@media (min-resolution: 2dppx) { :root { --hair: 0.5px; } }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #060709; --side: #111216; --cell: #1c1d22; --cell-hover: #2a2c33; --fill: #2a2b31; --sep: #3a3c44;
-    --fg: #f2f3f6; --fg2: #a9aeb9; --fg3: #7c818c;
-    --accent: #88aaff; --accent-fill: #41639a; --on-accent: #ffffff; --accent-soft: #1b2740;
-    --late: #ffbb44; --late-soft: #2e230e; --off: #56b4e9; --off-soft: #0d2836; --rec: #b33a3a; --on-rec: #ffffff;
-    --bezel: #2a2b31; --bezel-edge: #4a4c55; --shot-bg: #111111; --ph-bg: #33353c; --ph-fg: #a9aeb9;
-    --key: #2c2d34; --key-edge: #4a4c56; --key-shadow: #0b0c0e;
-    --pin-bg: #ffffff; --pin-fg: #1d3157; --pin-ring: #41639a; --shadow: rgba(0, 0, 0, 0.5);
+    --bg: #17171c; --band: #101013; --card: #202027; --fill: #2c2c35; --line: #3c3c47;
+    --fg-strong: #ffffff; --fg: #e4e4e5; --fg2: #c3c3c6; --fg3: #9e9ea4; --fg4: #62626d;
+    --accent: #61b0ff; --accent-fill: #2970d9; --on-accent: #ffffff; --bezel: #3c3c47;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #060709; --side: #111216; --cell: #1c1d22; --cell-hover: #2a2c33; --fill: #2a2b31; --sep: #3a3c44;
-  --fg: #f2f3f6; --fg2: #a9aeb9; --fg3: #7c818c;
-  --accent: #88aaff; --accent-fill: #41639a; --on-accent: #ffffff; --accent-soft: #1b2740;
-  --late: #ffbb44; --late-soft: #2e230e; --off: #56b4e9; --off-soft: #0d2836; --rec: #b33a3a; --on-rec: #ffffff;
-  --bezel: #2a2b31; --bezel-edge: #4a4c55; --shot-bg: #111111; --ph-bg: #33353c; --ph-fg: #a9aeb9;
-  --key: #2c2d34; --key-edge: #4a4c56; --key-shadow: #0b0c0e;
-  --pin-bg: #ffffff; --pin-fg: #1d3157; --pin-ring: #41639a; --shadow: rgba(0, 0, 0, 0.5);
+  --bg: #17171c; --band: #101013; --card: #202027; --fill: #2c2c35; --line: #3c3c47;
+  --fg-strong: #ffffff; --fg: #e4e4e5; --fg2: #c3c3c6; --fg3: #9e9ea4; --fg4: #62626d;
+  --accent: #61b0ff; --accent-fill: #2970d9; --on-accent: #ffffff; --bezel: #3c3c47;
   color-scheme: dark;
 }
-@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
-
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--f);
-  font-size: 17px;
-  line-height: 1.65;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--band); color: var(--fg); font: 400 17px/1.6 var(--f); word-break: keep-all; overflow-wrap: anywhere; }
+header, section { background: var(--bg); padding: 40px max(20px, env(safe-area-inset-right), calc((100% - 720px) / 2)) 48px max(20px, env(safe-area-inset-left), calc((100% - 720px) / 2)); }
+section { margin-top: 12px; scroll-margin-top: 0; }
+h1, h2, h3 { color: var(--fg-strong); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 1.25rem + 2.5vw, 36px); line-height: 1.3; letter-spacing: -0.02em; margin: 4px 0 12px; }
+h2 { font-size: 26px; line-height: 1.4; }
+h3 { font-size: 15px; font-weight: 600; color: var(--fg2); margin: 24px 0 4px; }
+p { margin: 0; }
+.lead { font-size: 17px; font-weight: 500; color: var(--fg2); margin-top: 8px; }
+a { color: var(--accent); }
+.btn { display: inline-flex; align-items: center; min-height: 52px; padding: 0 28px; margin-top: 24px; border-radius: 14px; background: var(--accent-fill); color: var(--on-accent); font-weight: 600; text-decoration: none; }
+nav ul { list-style: none; margin: 28px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (min-width: 600px) { nav ul { grid-template-columns: 1fr 1fr 1fr; } }
+nav a { display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 12px; background: var(--fill); color: var(--fg-strong); font-size: 15px; font-weight: 600; text-decoration: none; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+ol { counter-reset: n; list-style: none; margin: 20px 0 0; padding: 0; }
+ol li { counter-increment: n; position: relative; padding: 12px 0 12px 44px; border-bottom: 1px solid var(--line); }
+ol li:last-child { border-bottom: 0; }
+ol li::before { content: counter(n); position: absolute; left: 0; top: 13px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font: 600 15px/28px var(--f); text-align: center; }
+dl { margin: 8px 0 0; }
+.lead + dl { margin-top: 20px; }
+dl div { padding: 12px 0; border-bottom: 1px solid var(--line); }
+@media (min-width: 480px) { dl div { display: grid; grid-template-columns: 7.5em 1fr; gap: 12px; } }
+dl div:last-child { border-bottom: 0; }
+dt { font-weight: 600; color: var(--fg-strong); }
+dd { margin: 0; }
+.note { margin-top: 16px; font-size: 15px; color: var(--fg2); }
+kbd { font: 600 14px/1 var(--f); padding: 3px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--fill); color: var(--fg-strong); white-space: nowrap; }
+figure { margin: 28px 0 0; }
+figure img { display: block; max-width: 100%; height: auto; }
+figcaption { margin-top: 10px; font-size: 14px; color: var(--fg3); }
+/* PC 화면: 설명하는 부분만 잘라 원래 크기 이하로 (늘리면 흐려진다) */
+.win { width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+/* 휴대폰 화면: 얇은 테두리 */
+.phone { max-width: 240px; margin-inline: auto; border: 6px solid var(--bezel); border-radius: 30px; overflow: hidden; }
+@media (min-width: 720px) {
+  .split { display: grid; grid-template-columns: 1fr 220px; gap: 32px; align-items: start; }
+  .split figure { margin-top: 20px; }
 }
-img { max-width: 100%; height: auto; }
-a { color: var(--accent); text-underline-offset: 3px; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.skip { position: absolute; left: -9999px; top: 8px; z-index: 2; padding: 8px 14px; border-radius: 10px; background: var(--cell); }
-.skip:focus { left: 16px; }
-
-/* ---------- layout ---------- */
-.masthead, main, .side { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
-.masthead > .inner, main > section, main > .colophon, .side > .inner { max-width: var(--wide); margin-left: auto; margin-right: auto; }
-main { container: pane / inline-size; padding-bottom: 72px; }
-@media (min-width: 600px) {
-  .masthead, main, .side { padding-left: max(28px, env(safe-area-inset-left)); padding-right: max(28px, env(safe-area-inset-right)); }
+h2 + details { margin-top: 12px; }
+details { border-bottom: 1px solid var(--line); }
+details:last-of-type { border-bottom: 0; }
+summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 0; font-weight: 600; color: var(--fg-strong); cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "›"; flex: none; font-size: 22px; color: var(--fg3); transform: rotate(90deg); }
+details[open] summary::after { transform: rotate(-90deg); }
+details p { padding: 0 0 16px; color: var(--fg); }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+  summary::after { transition: transform .2s; }
 }
-@media (min-width: 1024px) {
-  .app { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .side {
-    grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 0; align-self: start;
-    height: 100vh; height: 100dvh; overflow-y: auto; overscroll-behavior: contain;
-    background: var(--side); border-right: var(--hair) solid var(--sep);
-    padding: 28px 16px 40px max(16px, env(safe-area-inset-left));
-  }
-  .masthead { grid-column: 2; grid-row: 1; padding: max(12px, env(safe-area-inset-top)) clamp(24px, 3.5vw, 56px) 0; }
-  main { grid-column: 2; grid-row: 2; padding: 0 clamp(24px, 3.5vw, 56px) 96px; }
-}
-@media (min-width: 1024px) and (max-width: 1179px) { .app { grid-template-columns: 280px minmax(0, 1fr); } }
-
-/* ---------- masthead ---------- */
-.masthead { padding-top: max(12px, env(safe-area-inset-top)); }
-.back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin-left: -4px; padding: 0 4px; color: var(--accent); text-decoration: none; font-size: 17px; }
-.eyebrow { margin: 14px 0 0; font-size: 15px; font-weight: 600; color: var(--fg2); }
-h1 { margin: 2px 0 14px; font-size: clamp(30px, 2rem + 1.4vw, 42px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; text-wrap: balance; }
-.lead { margin: 0 0 4px; max-width: var(--measure); font-size: 18px; }
-.spec { margin: 22px 0 0; padding: 0; max-width: calc(var(--measure) + 40px); background: var(--cell); border-radius: 12px; }
-.spec > div { position: relative; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; padding: 11px 16px; }
-.spec > div + div::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: var(--hair) solid var(--sep); }
-.spec dt { font-weight: 500; }
-.spec dd { margin: 0 0 0 auto; color: var(--fg2); text-align: right; }
-
-/* ---------- contents (sidebar on wide, inset list on narrow) ---------- */
-.side { padding-top: 28px; }
-.side-title { margin: 0 0 6px 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
-.group-h { margin: 18px 16px 6px; font-size: 13px; font-weight: 500; color: var(--fg2); }
-.group { list-style: none; margin: 0; padding: 0; background: var(--cell); border-radius: 12px; overflow: hidden; }
-.group li { margin: 0; }
-.group a {
-  position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  min-height: 44px; padding: 10px 14px 10px 16px; color: var(--fg); text-decoration: none; font-size: 16px; line-height: 1.35;
-}
-.group li + li a::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: var(--hair) solid var(--sep); }
-.group a:hover { background: var(--cell-hover); }
-.group a:focus-visible { outline-color: currentColor; outline-offset: -4px; border-radius: 12px; }
-.app:has(#intro:target, #intro :target) .group a[href="#intro"],
-.app:has(#quick:target, #quick :target) .group a[href="#quick"],
-.app:has(#layout:target, #layout :target) .group a[href="#layout"],
-.app:has(#script:target, #script :target) .group a[href="#script"],
-.app:has(#screen:target, #screen :target) .group a[href="#screen"],
-.app:has(#control:target, #control :target) .group a[href="#control"],
-.app:has(#time:target, #time :target) .group a[href="#time"],
-.app:has(#qa:target, #qa :target) .group a[href="#qa"],
-.app:has(#adlib:target, #adlib :target) .group a[href="#adlib"],
-.app:has(#ai:target, #ai :target) .group a[href="#ai"],
-.app:has(#data:target, #data :target) .group a[href="#data"],
-.app:has(#trouble:target, #trouble :target) .group a[href="#trouble"],
-.app:has(#limits:target, #limits :target) .group a[href="#limits"],
-.app:has(#other:target, #other :target) .group a[href="#other"] { background: var(--accent-fill); color: var(--on-accent); }
-@media (max-width: 1023px) {
-  .side .inner { padding-top: 8px; }
-  .side-title { font-size: 22px; margin-left: 0; }
-  .group a::after { content: "\203A"; flex: none; color: var(--fg3); font-size: 22px; line-height: 1; }
-  .groups { display: grid; gap: 0 20px; }
-}
-@media (min-width: 640px) and (max-width: 1023px) {
-  .groups { grid-template-columns: 1fr 1fr; align-items: start; }
-}
-
-/* ---------- sections and type ---------- */
-section { padding-top: 56px; scroll-margin-top: 12px; }
-h2 { margin: 0 0 12px; font-size: clamp(28px, 1.5rem + 1vw, 34px); font-weight: 700; letter-spacing: -0.022em; line-height: 1.2; text-wrap: balance; }
-h3 { margin: 34px 0 8px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.4; text-wrap: balance; scroll-margin-top: 12px; }
-p { margin: 0 0 14px; max-width: var(--measure); }
-ul { margin: 0 0 16px; padding-left: 1.2em; max-width: var(--measure); }
-li { margin: 5px 0; }
-li::marker { color: var(--fg3); }
-.small { font-size: 14px; color: var(--fg2); }
-kbd {
-  display: inline-block; min-width: 1.9em; padding: 1px 7px; box-sizing: border-box;
-  font: 500 0.82em/1.6 var(--f); text-align: center; white-space: nowrap; vertical-align: 0.06em; color: var(--fg);
-  background: var(--key); border: var(--hair) solid var(--key-edge); border-radius: 6px; box-shadow: 0 1px 0 var(--key-shadow);
-}
-.st { font-size: 0.9em; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 1px 7px; border-radius: 6px; background: var(--fill); }
-.st.pre { color: var(--fg2); }
-.st.late { color: var(--late); background: var(--late-soft); }
-.st.off { color: var(--off); background: var(--off-soft); font-weight: 600; }
-.st.rec { color: var(--on-rec); background: var(--rec); }
-.path { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
-.path i { font-style: normal; color: var(--fg3); }
-.path.in { padding: 0 8px; border-radius: 6px; background: var(--fill); font-size: 0.92em; }
-.nw { white-space: nowrap; }
-
-/* ---------- grouped cells ---------- */
-.items, .setlist { list-style: none; margin: 14px 0 20px; padding: 0; max-width: calc(var(--measure) + 40px); background: var(--cell); border-radius: 12px; }
-.items > li, .setlist > li { position: relative; margin: 0; padding: 12px 16px 13px; }
-.items > li + li::before, .setlist > li + li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: var(--hair) solid var(--sep); }
-.items .t { display: block; font-weight: 600; }
-.setlist > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 16px; min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
-.setlist .k { font-weight: 500; }
-.setlist .v { margin-left: auto; text-align: right; color: var(--fg2); font-size: 15px; }
-.setlist .v .path { justify-content: flex-end; }
-.setlist .sub { display: block; font-size: 13px; }
-
-.note { margin: 18px 0 20px; padding: 14px 18px; max-width: calc(var(--measure) + 40px); background: var(--cell); border-radius: 12px; }
-.note > :last-child { margin-bottom: 0; }
-.note-h { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--fg2); }
-.note.warn { background: var(--late-soft); }
-.note.warn .note-h { color: var(--late); }
-.note.info { background: var(--accent-soft); }
-.note.info .note-h { color: var(--accent); }
-
-.tbl { overflow-x: auto; margin: 16px 0 20px; background: var(--cell); border-radius: 12px; }
-table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.55; }
-th { padding: 10px 14px 8px; text-align: left; vertical-align: bottom; font-size: 13px; font-weight: 600; color: var(--fg2); white-space: nowrap; }
-td { padding: 10px 14px; text-align: left; vertical-align: top; border-top: var(--hair) solid var(--sep); }
-.tbl.wide table { min-width: 540px; }
-
-ol.seq { list-style: none; counter-reset: s; margin: 12px 0 18px; padding: 0; display: grid; gap: 8px; max-width: var(--measure); }
-ol.seq > li { counter-increment: s; position: relative; margin: 0; padding-left: 34px; }
-ol.seq > li::before {
-  content: counter(s); position: absolute; left: 0; top: 3px; width: 22px; height: 22px; border-radius: 50%;
-  border: 1.5px solid var(--accent); color: var(--accent); font: 600 12px/19px var(--f); text-align: center;
-}
-
-/* steps: a grouped list whose rows carry a screenshot */
-ol.steps { list-style: none; counter-reset: step; margin: 20px 0 24px; padding: 0; background: var(--cell); border-radius: 12px; }
-ol.steps > li { counter-increment: step; position: relative; display: grid; gap: 16px 28px; align-items: start; margin: 0; padding: 20px 20px 22px 58px; }
-ol.steps > li + li::before { content: ""; position: absolute; top: 0; left: 58px; right: 0; border-top: var(--hair) solid var(--sep); }
-ol.steps > li > * { min-width: 0; }
-ol.steps p, ol.steps ul { max-width: none; }
-.step-t { position: relative; margin: 0 0 8px; font-size: 19px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
-.step-t::before {
-  content: counter(step); position: absolute; left: -40px; top: -1px; width: 28px; height: 28px; border-radius: 50%;
-  background: var(--accent-fill); color: var(--on-accent); font: 600 15px/28px var(--f); text-align: center;
-}
-
-.faqs { margin: 16px 0 20px; max-width: calc(var(--measure) + 40px); background: var(--cell); border-radius: 12px; }
-.faq { position: relative; }
-.faq + .faq::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: var(--hair) solid var(--sep); }
-.faq summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 44px; padding: 12px 16px; cursor: pointer; list-style: none; font-weight: 600; line-height: 1.5; }
-.faq summary::-webkit-details-marker { display: none; }
-.faq summary::after { content: "\203A"; flex: none; color: var(--fg3); font-size: 22px; line-height: 1; margin-top: 1px; }
-.faq[open] summary::after { transform: rotate(90deg); }
-.faq summary:focus-visible { outline-offset: -3px; border-radius: 12px; }
-.faq-b { padding: 0 16px 14px; }
-.faq-b > :last-child { margin-bottom: 0; }
-
-/* ---------- screenshots ---------- */
-figure { margin: 0; }
-figcaption { margin-top: 10px; font-size: 14px; line-height: 1.55; color: var(--fg2); }
-.ipad .bezel { background: var(--bezel); border: var(--hair) solid var(--bezel-edge); border-radius: 24px; padding: 12px; box-shadow: 0 1px 2px var(--shadow), 0 10px 28px var(--shadow); }
-.ipad .bezel img { display: block; width: 100%; border-radius: 10px; background: var(--shot-bg); }
-.ipad.portrait { width: 320px; width: clamp(240px, 42cqi, 400px); max-width: 100%; }
-.ipad.land { width: 100%; max-width: 860px; }
-.ipad.land .bezel { border-radius: 22px; }
-.row { display: grid; gap: 16px 32px; align-items: start; margin: 16px 0 12px; }
-.row > * { min-width: 0; }
-.row > div > :last-child { margin-bottom: 0; }
-.shots { display: flex; flex-wrap: wrap; gap: 22px 28px; align-items: flex-start; margin: 18px 0 14px; }
-.shots > .ipad.land { flex: 1 1 300px; max-width: 470px; }
-.strip { margin: 16px 0 20px; max-width: 800px; }
-.strip .scroll { overflow-x: auto; border: var(--hair) solid var(--sep); border-radius: 8px; background: var(--shot-bg); }
-.strip img { display: block; width: 100%; min-width: 540px; }
-.ipad.split { width: 100%; max-width: 640px; }
-.split-in { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.ipad .split-in img { border-radius: 10px 4px 4px 10px; }
-.split-in .other { display: grid; place-items: center; aspect-ratio: 590 / 820; border-radius: 4px 10px 10px 4px; background: var(--ph-bg); color: var(--ph-fg); font-size: 14px; text-align: center; padding: 8px; }
-@container pane (min-width: 660px) {
-  ol.steps > li, .row { grid-template-columns: minmax(0, 1fr) auto; }
-  .anat { grid-template-columns: auto minmax(0, 1fr); }
-}
-@container pane (max-width: 659px) { .anat > .ipad.portrait { width: min(100%, 400px); } }
-@media (max-width: 480px) {
-  ol.steps > li { padding-left: 52px; padding-right: 16px; }
-  ol.steps > li + li::before { left: 52px; }
-  .step-t::before { left: -38px; }
-}
-
-/* anatomy */
-.anat { display: grid; gap: 22px 32px; align-items: start; margin: 18px 0 10px; }
-.anat > * { min-width: 0; }
-.pins { position: relative; }
-.pin, .pin-k {
-  display: grid; place-items: center; width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%;
-  background: var(--pin-bg); color: var(--pin-fg); border: 2px solid var(--pin-ring); font: 700 11.5px/1 var(--f);
-}
-.pin { position: absolute; transform: translate(-50%, -50%); }
-.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: var(--measure); }
-.legend li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; margin: 0; }
-.legend .pin-k { margin-top: 3px; }
-.lg-t { display: block; font-weight: 600; }
-
-.colophon { margin-top: 64px; padding-top: 18px; border-top: var(--hair) solid var(--sep); font-size: 14px; color: var(--fg2); }
-.colophon p { max-width: none; }
 </style>
 </head>
 <body>
-<a class="skip" href="#main">본문으로 건너뛰기</a>
-<div class="app">
-
-<header class="masthead">
-  <div class="inner">
-    <a class="back" href="../">라이브스크립트 열기</a>
-    <p class="eyebrow">발표 프롬프터 · iPad 사용 안내서</p>
-    <h1>라이브스크립트 iPad 사용 안내서</h1>
-    <p class="lead">대본을 소리 내어 읽으면 지금 읽는 곳을 표시하고 화면을 내려 주는 발표 프롬프터입니다. 이 안내서는 iPad를 거치대에 세우고 Safari로 발표하는 경우를 기준으로 썼습니다. 처음 쓰는 분은 <a href="#quick">빠른 시작</a>만 따라 해도 몇 분 안에 써 볼 수 있습니다. 나머지 장은 필요할 때 찾아 읽으세요. 앱이 무엇을 하는지 확인하려는 선생님은 <a href="#ai">AI 기능과 키</a>, <a href="#data">데이터와 개인정보</a>, <a href="#limits">알아 둘 한계</a>를 먼저 보세요.</p>
-    <p class="small">앱의 '사용 안내서' 버튼으로 이 안내서를 열었다면 Safari 위쪽 탭 막대에서 앱 탭을 누르면 돌아갑니다.</p>
-    <dl class="spec">
-      <div><dt>주소</dt><dd><a href="https://gepi2.github.io/livescript/">https://gepi2.github.io/livescript/</a></dd></div>
-      <div><dt>설치와 계정</dt><dd>없음. Safari에서 주소를 엽니다</dd></div>
-      <div><dt>비용</dt><dd>무료. AI 키를 넣어 쓸 때만 사용료</dd></div>
-      <div><dt>필요한 것</dt><dd>iPad, Safari, 받아쓰기, 마이크, 인터넷</dd></div>
-    </dl>
-    <div class="note info">
-      <p class="note-h">확인한 범위</p>
-      <p>실제 iPad에서는 아직 시험하지 않았고, 실제 마이크로 말해서 따라가는지도 어떤 기기에서든 아직 시험하지 않았습니다. 지금까지는 데스크톱 브라우저에 흉내 낸 음성 입력을 넣어 확인했고, 이 안내서의 화면 사진도 데스크톱 브라우저를 iPad 화면 크기로 맞춰 찍었습니다. 받아쓰기가 꺼졌을 때와 Safari가 아닐 때 나오는 안내 글은 코드로만 확인했습니다. 음성 인식이 끊긴 뒤 다시 켜지는지, 전체 화면에서 리모컨 키가 들어오는지, 화면 꺼짐 방지, 화면을 나눠 쓸 때 인식이 이어지는지도 모릅니다. 발표 전날 발표에 쓸 iPad로 처음부터 끝까지 리허설하세요.</p>
-    </div>
-  </div>
+<header>
+  <h1>라이브스크립트 사용 안내서</h1>
+  <p class="lead">소리 내어 읽으면 대본이 따라오는 발표 프롬프터예요. 가입 없이 Chrome에서 써요.</p>
+  <a class="btn" href="../">앱 열기</a>
+  <nav aria-label="목차">
+    <ul>
+      <li><a href="#start">시작하기</a></li>
+      <li><a href="#script">대본과 목표 시간</a></li>
+      <li><a href="#talk">발표하기</a></li>
+      <li><a href="#check">발표 점검</a></li>
+      <li><a href="#qa">질문 받기</a></li>
+      <li><a href="#adlib">애드리브</a></li>
+      <li><a href="#ai">AI로 준비하기</a></li>
+      <li><a href="#faq">자주 묻는 질문</a></li>
+      <li><a href="#note">데이터가 가는 곳</a></li>
+    </ul>
+  </nav>
 </header>
 
-<nav class="side" aria-label="목차">
-  <div class="inner">
-    <p class="side-title">목차</p>
-    <div class="groups">
-      <div>
-        <p class="group-h">시작하기</p>
-        <ul class="group">
-          <li><a href="#intro">소개와 준비물</a></li>
-          <li><a href="#quick">빠른 시작</a></li>
-        </ul>
-      </div>
-      <div>
-        <p class="group-h">대본과 발표</p>
-        <ul class="group">
-          <li><a href="#script">대본 준비</a></li>
-          <li><a href="#screen">발표 화면 구성</a></li>
-          <li><a href="#control">발표 중 조작</a></li>
-          <li><a href="#time">시간 맞추기와 자동 줄이기</a></li>
-        </ul>
-      </div>
-      <div>
-        <p class="group-h">질문과 정리</p>
-        <ul class="group">
-          <li><a href="#qa">질의응답</a></li>
-          <li><a href="#adlib">애드리브 정리</a></li>
-          <li><a href="#ai">AI 기능과 키</a></li>
-        </ul>
-      </div>
-      <div>
-        <p class="group-h">참고</p>
-        <ul class="group">
-          <li><a href="#layout">화면 방향과 멀티태스킹</a></li>
-          <li><a href="#data">데이터와 개인정보</a></li>
-          <li><a href="#trouble">문제 해결</a></li>
-          <li><a href="#limits">알아 둘 한계</a></li>
-          <li><a href="#other">다른 기기에서</a></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</nav>
-
-<main id="main">
-
-<!-- ============ 소개 ============ -->
-<section id="intro">
-  <h2>소개와 준비물</h2>
-  <p>라이브스크립트는 웹 앱입니다. 발표자가 대본을 읽으면 브라우저의 음성 인식이 말을 글자로 바꾸고, 앱이 그 글자를 대본과 맞춰 지금 읽는 문장과 어절(띄어쓰기로 나뉜 말 덩어리)을 표시합니다. App Store에서 받는 앱은 없고, iPad의 Safari에서 주소를 열어 씁니다. 앱에는 서버와 계정이 없고, 대본과 설정은 그 Safari 안에만 저장됩니다.</p>
-
-  <h3>하는 일</h3>
-  <ul>
-    <li>따라가기: 어미를 바꾸거나 낱말을 건너뛰어도 하이라이트가 따라가고, 지금 줄을 늘 화면 위에서 3분의 1 지점에 둡니다.</li>
-    <li>시간 맞추기: 목표 시간에 비해 남는 시간과 넘는 시간을 보여 주고, 늦어지면 미리 고른 덜 중요한 문장을 숨깁니다.</li>
-    <li>질의응답: 미리 준비한 질문 가운데 청중 질문과 가까운 후보 3개를 골라 주고, 고른 질문의 답 카드를 크게 보여 줍니다.</li>
-    <li>애드리브 모음: 대본에 없던 말(애드리브)을 모아 두었다가, 발표가 끝난 뒤 대본에 넣을지 고르게 합니다.</li>
-    <li>대본 보관함: 대본 여러 개, 버전 기록, 파일 내보내기와 가져오기.</li>
-    <li>AI 도구(선택): 대본 초안 쓰기, 지시로 고치기, 발표 준비, 예상 질문 만들기. Anthropic의 Claude를 씁니다.</li>
-  </ul>
-
-  <h3>준비물</h3>
-  <ul class="items">
-    <li><span class="t">iPad와 Safari</span>주소는 Safari로 여세요. iPad의 Chrome, Firefox, Edge나 홈 화면에 추가한 앱에서는 음성 인식이 안 될 수 있습니다. 앱이 이런 환경을 알아채면 발표 화면 아래 줄에 “iPhone·iPad에서는 Safari에서 열어 주세요. …”를 보여 줍니다.</li>
-    <li><span class="t">받아쓰기</span>iPad 설정에서 받아쓰기를 켜 두세요. 꺼져 있으면 '● 시작'을 누를 때 “음성 인식이 꺼져 있어요. …”가 나옵니다.</li>
-    <li><span class="t">마이크 권한</span>처음 '● 시작'을 누르면 Safari가 마이크 사용을 묻습니다. 허용하세요.</li>
-    <li><span class="t">인터넷</span>Safari에서는 말소리를 Apple 서버가 글자로 바꿉니다. 발표하는 동안에도 와이파이가 연결되어 있어야 합니다.</li>
-    <li><span class="t">거치대</span>iPad를 세워 둘 거치대나 보면대를 준비하세요. 50~70cm 떨어져서도 읽을 수 있게 iPad 같은 태블릿은 처음 글자 크기를 34로 잡게 만들었습니다(실제 iPad에서는 확인하지 않았습니다). 크거나 작으면 '가'에서 바꾸세요.</li>
-    <li><span class="t">블루투스 키보드나 발표 리모컨(선택)</span><span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>블루투스</span></span>를 연 채로 리모컨을 연결 모드로 켜고, 목록에 나온 이름을 눌러 연결하세요. Page Down·Page Up이나 방향키를 보내는 리모컨이면 화면을 만지지 않고 문장을 넘길 수 있습니다(<a href="#keys">키보드와 발표 리모컨</a>). USB 수신기를 꽂는 리모컨은 iPad 단자에 맞는 어댑터가 있어야 하고, iPad에서 동작하는지는 확인하지 않았습니다.</li>
-    <li><span class="t">AI 키(선택)</span>앱 안에서 바로 AI를 쓰려면 본인의 Anthropic API 키가 있어야 합니다. API 키는 Anthropic 사이트(Claude Console)에서 만드는 'sk-ant-'로 시작하는 긴 문자열입니다. 크레딧을 충전해야 쓸 수 있고, 쓴 만큼 사용료가 듭니다. 키가 없어도 프롬프트를 claude.ai 같은 챗봇에 복사해 같은 일을 할 수 있습니다. AI를 쓰면 대본과 발표 정보가 Anthropic(키 없이 쓰면 프롬프트를 붙여넣은 챗봇 서비스)으로 갑니다(<a href="#data">데이터와 개인정보</a>).</li>
-    <li><span class="t">학교에서 빌린 iPad</span>관리 설정 때문에 받아쓰기나 마이크 설정을 바꾸지 못할 수 있습니다. 발표 전날 그 iPad로 빠른 시작을 끝까지 해 보세요.</li>
-  </ul>
-
-  <h3>iPad에서 설정할 곳</h3>
-  <ul class="setlist">
-    <li><span class="k">받아쓰기 켜기</span><span class="v"><span class="path"><span>설정</span><i aria-hidden="true">›</i><span>일반</span><i aria-hidden="true">›</i><span>키보드</span><i aria-hidden="true">›</i><span>받아쓰기</span></span></span></li>
-    <li><span class="k">마이크 허용으로 두기</span><span class="v"><span class="path"><span>설정</span><i aria-hidden="true">›</i><span>앱</span><i aria-hidden="true">›</i><span>Safari</span><i aria-hidden="true">›</i><span>마이크</span></span><span class="sub">'허용'을 고르세요. '묻기'면 페이지를 열 때마다 다시 물을 수 있습니다.</span><span class="sub">iPadOS 17 이하: 설정 › Safari › 마이크</span></span></li>
-    <li><span class="k">화면 자동 잠금 늘리기</span><span class="v"><span class="path"><span>설정</span><i aria-hidden="true">›</i><span>디스플레이 및 밝기</span><i aria-hidden="true">›</i><span>자동 잠금</span></span></span></li>
-    <li><span class="k">방해 금지 켜기</span><span class="v"><span class="path"><span>제어 센터</span><i aria-hidden="true">›</i><span>집중 모드</span></span></span></li>
-    <li><span class="k">리모컨 연결</span><span class="v"><span class="path"><span>설정</span><i aria-hidden="true">›</i><span>블루투스</span></span></span></li>
-  </ul>
-  <p>마이크나 인터넷이 없을 때도 '◀' '▶' 버튼이나 어절을 눌러 손으로 넘길 수 있습니다. 음성 인식을 지원하지 않는 브라우저에서는 마이크 버튼이 눌리지 않고 손으로 넘기기만 됩니다.</p>
+<section id="start">
+  <h2>시작하기</h2>
+  <ol>
+    <li>Chrome에서 <a href="../">gepi2.github.io/livescript</a>를 열고 '예시로 둘러보기'를 눌러 주세요.</li>
+    <li>'⋯' › '앱으로 설치'나 Chrome 메뉴로 설치하면 앱처럼 따로 열려요.</li>
+    <li>'발표', '● 시작'을 누르고 마이크를 허용해 주세요.</li>
+  </ol>
+  <p class="note">발표 화면에선 '편집'을 눌러야 '⋯'과 'AI 도구'가 보여요.</p>
+  <figure>
+    <div class="win"><img src="img/01-first-run.png" width="576" height="276" alt="첫 화면 가운데 카드. '예시로 둘러보기', '직접 붙여넣기', '사용 안내서' 버튼이 있어요."></div>
+    <figcaption>처음 연 화면</figcaption>
+  </figure>
 </section>
 
-<!-- ============ 빠른 시작 ============ -->
-<section id="quick">
-  <h2>빠른 시작</h2>
-  <p>예시 대본을 열어 첫 문단을 읽어 보는 데까지 해 봅니다. 예시에는 목표 시간 3분, 예상 질문 8개, 발표 준비 결과가 들어 있어서 AI 키 없이도 따라가기, 자동 줄이기, 질의응답을 모두 볼 수 있습니다. 아래 사진은 iPad를 세로로 둔 화면입니다.</p>
-
-  <div class="note">
-    <p class="note-h">시작 전에</p>
-    <ul>
-      <li>Safari로 여세요. 카카오톡 같은 메신저에서 주소를 누르면 그 앱 안의 화면으로 열리고, 그 화면에서는 음성 인식이 안 되거나 대본이 따로 저장될 수 있습니다. 주소를 복사해 Safari 주소창에 붙여넣으세요. 개인 정보 보호 브라우징 탭은 닫으면 대본이 사라지니 보통 탭에서 여세요.</li>
-      <li><span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>일반</span><i aria-hidden="true">›</i><span>키보드</span></span>에서 받아쓰기를 켜세요.</li>
-      <li>와이파이에 연결하세요. 음성 인식은 인터넷이 있어야 합니다.</li>
-    </ul>
-    <p>나머지 설정은 <a href="#intro">iPad에서 설정할 곳</a>에 있습니다.</p>
-  </div>
-
-  <ol class="steps">
-    <li>
-      <div>
-        <p class="step-t">주소를 Safari에서 여세요</p>
-        <p>처음 열면 빈 편집 화면과 안내 카드가 보입니다. 화면 아래에 “불러오는 중이에요. 오래 걸리면 새로고침해 주세요.”가 보이면 사라질 때까지 기다리세요.</p>
-        <p>안내 카드 없이 대본이 보이면 전에 쓴 대본이 있는 것입니다. 왼쪽 위 '편집'을 누른 뒤 '⋯' 메뉴의 '예시 대본 열기'를 누르고 3단계로 가세요.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/01-ipad-first-run.jpg" width="800" height="1151" alt="처음 연 세로 iPad 편집 화면. 위에 '발표', '대본 1', 'AI 도구', '⋯' 버튼이 있고, 가운데 안내 카드에 '예시로 둘러보기', '직접 붙여넣기', '사용 안내서' 버튼이 있습니다. 맨 아래 줄은 목표 '없음', 예상 0:00입니다."></div>
-        <figcaption>처음 연 편집 화면. 안내 카드에 '예시로 둘러보기', '직접 붙여넣기', '사용 안내서'가 있고, 맨 아래 줄은 목표 '없음', 예상 0:00입니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">'예시로 둘러보기'를 누르세요</p>
-        <p>'예시: 라이브스크립트 소개' 대본이 새 대본으로 열리고 아래에 안내가 뜹니다. 맨 아래 <span class="st late">예상 4:11 (+1:11)</span>은 이 대본을 읽는 데 4분 11초쯤 걸려서 목표 3분보다 1분 11초 길다는 뜻입니다.</p>
-        <p>안내에서 말하는 'Q&amp;A' 화면 맨 아래 '판정 모델 받기'는 약 135MB를 받으니 와이파이에서만 누르세요(<a href="#qa-model">판정 모델</a>). 받지 않아도 질의응답은 됩니다.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/02-ipad-editor-example.jpg" width="800" height="1151" loading="lazy" alt="예시 대본을 연 세로 iPad 편집 화면. 위 대본 고르기 상자에 '예시: 라이브스크립트 소개', 대본 본문 아래쪽에 예시 대본을 열었다는 안내와 '닫기' 버튼, 맨 아래에 목표 3분, 주황색 '예상 4:11 (+1:11) / 목표 3:00', 체크된 '자동 줄이기'가 있습니다."></div>
-        <figcaption>예시 대본을 연 직후. 아래 안내는 '닫기'나 '● 시작'을 누르거나 발표 화면에서 어절을 누르면 사라집니다. iPad 폭에서는 맨 아래 줄에 '/ 목표 3:00'도 같이 보입니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">위 '발표'를 누르고 줄일지 고르세요</p>
-        <p>'발표'를 누르면 대본이 목표보다 길 때 '목표 시간보다 길어요' 창이 뜹니다. 흐린 취소선 글이 뺄 문장입니다.</p>
-        <ul>
-          <li>'줄인 대본으로 시작': 이 문장들을 빼고 시작합니다. 예시에서는 예상 2:43이 됩니다.</li>
-          <li>'원문 그대로 시작': 대본 전체로 시작합니다.</li>
-        </ul>
-        <p>어느 쪽을 골라도 편집 화면의 대본은 그대로입니다. 자세한 동작은 <a href="#time">시간 맞추기와 자동 줄이기</a>에 있습니다.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/03-ipad-shrink-dialog.jpg" width="800" height="1151" loading="lazy" alt="'목표 시간보다 길어요' 창. 지금 대본은 예상 4:11, 목표 3:00보다 1:11 길고 줄인 대본의 예상 시간은 2:43이라는 안내, 흐린 취소선이 그어진 대본 미리 보기, 아래에 '줄인 대본으로 시작'과 '원문 그대로 시작' 버튼이 있습니다."></div>
-        <figcaption>'목표 시간보다 길어요' 창. 미리 보기 맨 앞의 '… 같은 내용 453자 …'를 누르면 접어 둔 앞부분이 보입니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">'● 시작'을 누르세요</p>
-        <p>발표 화면의 첫 어절 '안녕하세요.'에 파란 배경이 있고, 그 줄 왼쪽 끝에 파란 세로 막대(읽는 줄 표시)가 있습니다. 오른쪽 위 '● 시작'을 누르세요. Safari가 마이크 사용을 물으면 '허용'을 누르세요. 허용하기 전에는 버튼이 점선 테두리의 '연결 중'이나 '다시 듣기'로 바뀔 수 있습니다. 허용한 뒤 말할 때 '정지' 앞 원이 채워지고 아래 줄에 들은 말이 보이면 듣고 있는 것입니다.</p>
-        <p>아래 줄에 “마이크 권한을 허용해 주세요”가 나오면 <a href="#trouble">문제 해결</a>을 보세요. “음성 인식이 꺼져 있어요”가 나오면 <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>일반</span><i aria-hidden="true">›</i><span>키보드</span><i aria-hidden="true">›</i><span>받아쓰기</span></span>를 켜고 '● 시작'을 다시 누르세요.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/04-ipad-present-ready.jpg" width="800" height="1151" loading="lazy" alt="시작 전 세로 iPad 발표 화면. 위에 '편집', 회색 상태줄 '예상 +1:11'과 '0:00 · 0%', '가', 'Q&amp;A', '● 시작' 버튼이 있고, 화면 위에서 3분의 1쯤에 있는 첫 어절 '안녕하세요.'에 파란 배경과 왼쪽 읽는 줄 표시가 있습니다. 큰 글자의 대본이 한 열로 이어지고, 아래 양쪽에 '◀'와 '▶'가 있습니다."></div>
-        <figcaption>'원문 그대로 시작'을 고른 발표 화면. 맨 위 '편집' 오른쪽의 회색 '예상 +1:11'은 대본 전체를 읽으면 목표보다 1분 11초 길다는 뜻입니다. '줄인 대본으로 시작'을 골랐으면 '예상 -0:17'로 보입니다. 예시 안내가 아직 아래에 떠 있으면 '● 시작'을 누를 때 사라집니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">소리 내어 읽으세요</p>
-        <p>읽는 대로 지금 문장에 파란 배경이, 지금 어절에 흰 밑줄이 생기고 화면이 따라 내려갑니다. 위치가 어긋나면 읽을 어절을 누르세요. 첫 문단(30초쯤)만 읽어 보고 '정지'를 누르세요.</p>
-        <p>질문 답하기는 위 'Q&amp;A'를 눌러 해 볼 수 있습니다(<a href="#qa">질의응답</a>).</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/05-ipad-present-reading.jpg" width="800" height="1151" loading="lazy" alt="읽는 중인 세로 iPad 발표 화면. 상태줄은 '여유 0:18'과 '0:05 · 8%', 마이크 버튼은 빨간 '정지'입니다. 읽은 글은 흐리고, 지금 문장은 파란 배경, 지금 어절 '보이고,'에 흰 밑줄이 있으며, 아래 줄 가운데에 들은 말이 보입니다."></div>
-        <figcaption>읽는 중. 읽은 글은 흐리고, 지금 문장은 파란 배경, 지금 어절 '보이고,'에는 흰 밑줄이 있습니다. 맨 위 가는 막대가 진행 막대입니다.</figcaption>
-      </figure>
-    </li>
-  </ol>
-
-  <h3>내 대본으로 시작하기</h3>
-  <ol class="seq">
-    <li>발표 화면이면 왼쪽 위 '편집'을 누르세요.</li>
-    <li>위 대본 고르기 상자에서 '대본 1'을 고르거나, 맨 아래 '＋ 새 대본'을 고르고 이름을 넣으세요.</li>
-    <li>다른 앱에서 대본을 복사한 뒤 큰 칸을 길게 누르고 '붙여넣기'를 누르세요. 저장 버튼은 없고, 칠 때마다 저장됩니다.</li>
-    <li>발표 시간이 정해져 있으면 아래 '목표'에 분을 넣으세요.</li>
-    <li>'발표'를 누르고 '● 시작'을 누르세요.</li>
-  </ol>
-
-  <h3>발표 직전 확인</h3>
-  <p>발표 전날에는 발표에 쓸 iPad로 처음부터 끝까지 리허설하고, '⋯' 메뉴의 '파일로 내보내기'로 대본을 받아 두세요. 발표 직전에는 아래 순서로 확인하세요.</p>
-  <ol class="seq">
-    <li>'편집'을 눌러 위 상자에 내 대본 이름이 있는지 보고 '발표'를 누르세요.</li>
-    <li>첫 어절을 누르세요. 리모컨이나 키보드를 쓰면 <kbd>→</kbd>나 <kbd>Page Down</kbd>을 한 번 눌러 둘째 문장으로 넘어가는지 보고, <kbd>←</kbd>나 <kbd>Page Up</kbd>을 눌러 첫 문장으로 돌아오세요.</li>
-    <li>첫 어절에 흰 밑줄이 있고 글자가 흐리지 않은지 보세요. 첫 어절에서 '● 시작'을 눌러야 시간을 새로 잽니다. 중간에서 누르면 연습 때 시간과 애드리브에 이어서 셉니다. 새로 시작하면 지난 애드리브와 인식 기록이 지워지니, 남길 것이 있으면 먼저 정리하거나 편집 화면 '⋯' 메뉴의 '인식 기록 내려받기'로 받아 두세요.</li>
-    <li>와이파이가 연결되어 있는지 보세요. 음성 인식은 인터넷이 있어야 합니다.</li>
-    <li>블루투스 이어폰이 연결되어 있으면 이어폰 마이크로 소리를 받을 수 있습니다. iPad 마이크를 쓰려면 연결을 끊으세요.</li>
-    <li><span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>디스플레이 및 밝기</span><i aria-hidden="true">›</i><span>자동 잠금</span></span>을 '안 함'이나 발표 시간보다 긴 값으로 바꾸세요.</li>
-    <li>제어 센터(화면 오른쪽 위 모서리에서 아래로 쓸어 내리기)에서 방해 금지를 켜고 화면 회전 잠금을 켜세요. 알림이 맨 위 버튼을 가리지 않고, 거치대에 세운 방향 그대로 화면이 고정됩니다.</li>
-    <li>충전기를 연결하거나 배터리를 넉넉히 채우세요.</li>
-    <li>세로로 세우면 한 화면에 줄이 더 많이 보이고, 가로로 세우면 폭이 1100px 이상인 기종에서 오른쪽에 애드리브 칸이 생깁니다. 리허설한 방향 그대로 세우세요.</li>
-    <li>프로젝터에 iPad 화면을 미러링하면 대본도 청중에게 보입니다. 슬라이드는 다른 기기로 띄우세요.</li>
-    <li>이제부터 대본은 고치지 마세요. 한 글자만 고쳐도 위치와 시간이 처음으로 돌아갑니다.</li>
-  </ol>
-  <p>발표 중에 음성 인식이 안 되면 '◀' '▶', 리모컨, 어절 누르기로 넘기며 그대로 발표하세요.</p>
-</section>
-
-<!-- ============ 대본 준비 ============ -->
 <section id="script">
-  <h2>대본 준비</h2>
-
-  <h3>대본 넣기</h3>
-  <ul>
-    <li>편집 화면의 큰 칸에 붙여넣거나 직접 쓰세요. 칠 때마다 이 Safari에 저장됩니다.</li>
-    <li>문단 사이에는 빈 줄을 두세요. 자동 줄이기와 '발표 준비'(<a href="#time">시간 맞추기</a>)는 문단 단위로 동작합니다. 빈 줄이 하나도 없으면 줄마다 한 문단으로 봅니다.</li>
-    <li>대본을 AI로 쓰거나 고치려면 위 'AI 도구'를 누르세요(<a href="#ai">AI 기능과 키</a>).</li>
-    <li>AI에는 자료로 확인하지 못한 사실에 '[확인 필요]'를 붙이라고 요청합니다. 표시가 빠질 수도 있으니 숫자와 사실은 모두 직접 확인하세요. 이 표시가 남아 있으면 '발표'를 누를 때 확인 창이 뜹니다.</li>
-  </ul>
-
-  <h3>대본 여러 개 쓰기</h3>
-  <div class="row">
-    <div>
-      <ul>
-        <li>편집 화면 위 대본 고르기 상자에서 대본을 바꾸세요. 맨 아래 '＋ 새 대본'을 고르면 이름을 묻고 빈 대본을 만듭니다. 이름은 40자까지입니다.</li>
-        <li>목표 시간, 질문, 버전, 발표 준비 결과, 애드리브는 대본마다 따로 저장됩니다.</li>
-        <li>이름을 바꾸려면 '⋯' 메뉴에서 '이름 바꾸기'를 누르세요.</li>
-        <li>지우려면 '⋯' 메뉴 맨 아래 '대본 삭제'를 누르세요. 그 대본의 버전 기록까지 지워지고 되돌릴 수 없습니다. 마지막 대본을 지우면 빈 '대본 1'이 새로 생깁니다.</li>
-        <li>'예시 대본 열기'는 예시 대본을 새 대본으로 한 번 더 엽니다.</li>
-        <li>'사용 안내서'는 이 안내서를 새 탭으로 엽니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/13-ipad-menu.jpg" width="800" height="1151" loading="lazy" alt="편집 화면의 ⋯ 메뉴 창. 제목 '예시: 라이브스크립트 소개' 아래 '이 대본' 묶음의 '이름 바꾸기', '버전 저장', '버전 보기', '파일로 내보내기', '발표 준비와 정리' 묶음의 'Q&amp;A 준비', '애드리브 정리', '인식 기록 내려받기', '가져오기·설정' 묶음의 '파일 가져오기', '예시 대본 열기', 'AI 키', '사용 안내서', 접힌 '데이터가 가는 곳', 빨간 테두리 '대본 삭제', '닫기'가 있습니다."></div>
-      <figcaption>'⋯' 메뉴. 제목은 지금 대본 이름이고, 버튼은 '이 대본', '발표 준비와 정리', '가져오기·설정'으로 묶여 있습니다. '대본 삭제'는 맨 아래 따로 있습니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3>목표 시간과 예상 시간</h3>
-  <figure class="strip">
-    <div class="scroll"><img src="img/02b-zoom-editor-footer.png" width="800" height="59" loading="lazy" alt="편집 화면 아래 줄 확대. '목표' 칸에 3, '분', 주황색 '예상 4:11 (+1:11) / 목표 3:00', 오른쪽 끝에 체크된 '자동 줄이기'."></div>
-    <figcaption>편집 화면 아래 줄. 목표 3분에 예상 4:11이라 넘는 시간 '(+1:11)'이 주황색으로 붙었습니다.</figcaption>
+  <h2>대본과 목표 시간</h2>
+  <p class="lead">붙여넣으면 바로 저장돼요.</p>
+  <ol>
+    <li>위 상자에서 '＋ 새 대본'을 고르고 대본을 붙여넣어 주세요. 문단 사이를 한 줄 띄우면 문단마다 시간을 재요.</li>
+    <li>아래 '목표'에 발표 시간을 분으로 넣어 주세요.</li>
+    <li>'예상 4:11 (+1:11)'은 목표보다 1분 11초 길다는 뜻이에요.</li>
+  </ol>
+  <p class="note">대본을 고치면 읽던 자리와 시간이 처음으로 돌아가요.</p>
+  <figure>
+    <div class="win"><img src="img/02-editor-example.png" width="320" height="60" loading="lazy" alt="편집 화면 맨 아래 줄. 목표 3분 옆에 주황 글씨로 '예상 4:11 (+1:11) / 목표 3:00'이 있어요."></div>
+    <figcaption>맨 아래에 목표와 예상 시간이 보여요</figcaption>
   </figure>
-  <ul>
-    <li>편집 화면 아래 '목표' 칸에 분을 넣으세요. 1에서 600까지이고, 2.5처럼 소수도 됩니다.</li>
-    <li>'예상'은 소리 내어 읽는 글자 수로 계산한 발표 시간입니다. 공백, 문장부호, '[확인 필요]'는 빼고, 숫자와 영어 약어는 읽는 소리로 셉니다(2026은 '이천이십육', AI는 '에이아이').</li>
-    <li>예상이 목표보다 길면 넘는 시간이 주황색으로 붙습니다. iPad처럼 폭이 넓은 화면에서는 '/ 목표 3:00'처럼 목표도 같이 보입니다.</li>
-    <li>말 속도는 처음에 1초에 5글자로 잡습니다. 발표에서 1분 넘게 대본을 따라 읽으면 그 발표에서 잰 속도 쪽으로 바뀌고(처음 값 5글자와 조금 섞어 셉니다), 이 기기의 모든 대본에 같이 씁니다. 손으로 넘긴 부분, 애드리브, 질의응답 시간은 속도 계산에서 뺍니다.</li>
-    <li>목표를 넣으면 '자동 줄이기' 체크가 나타납니다(<a href="#time">시간 맞추기와 자동 줄이기</a>).</li>
-  </ul>
-
-  <h3>버전 기록</h3>
-  <div class="row">
-    <div>
-      <p>대본이 바뀌기 전 모습을 대본마다 최근 30개까지 남깁니다.</p>
-      <ul>
-        <li>저절로 남는 때와 목록에 보이는 이름은 다음과 같습니다. 바로 앞 버전과 내용이 같으면 새로 만들지 않습니다.
-          <ul>
-            <li>발표 화면에 들어갈 때: '발표 시작'</li>
-            <li>AI 결과를 적용하기 전: 'AI 적용 전'</li>
-            <li>애드리브를 넣기 전: '애드리브 넣기 전'</li>
-            <li>버전을 되돌리기 전: '되돌리기 전'</li>
-            <li>'다른 말'(<a href="#ai">AI 기능과 키</a>)로 바꾸기 전: '다른 말 전'</li>
-          </ul>
-        </li>
-        <li>직접 남기려면 '⋯' 메뉴의 '버전 저장'을 누르세요.</li>
-        <li>보려면 '⋯' 메뉴의 '버전 보기'를 누르세요. 목록에서 버전을 누르면 그 버전과 지금 대본의 차이가 보입니다. 더한 말은 초록, 지운 말은 빨강입니다. 같은 내용이 길면 '… 같은 내용 N자 …'로 접혀 있고, 누르면 나머지가 보입니다.</li>
-        <li>'이 버전으로 되돌리기'를 누르면 지금 대본을 '되돌리기 전' 버전으로 남긴 뒤 고른 버전으로 바꿉니다.</li>
-        <li>저장 공간이 모자라면 오래된 버전부터 지우고 알려 줍니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/19-ipad-versions.jpg" width="800" height="1151" loading="lazy" alt="'버전' 창. 설명 글과 '버전 저장' 버튼, 버전 두 개 '10/12 02:14 · 직접 저장'과 골라진 '10/12 02:05 · 발표 시작'의 목록, '10/12 02:05 버전 → 지금 대본: 예상 4:11 → 4:11 (+0:00)', 비교에서 빨간 취소선 '안녕하세요.'와 초록 밑줄 '안녕하세요, 여러분.', 아래 '이 버전으로 되돌리기'와 '닫기'가 있습니다."></div>
-      <figcaption>'버전' 창. '발표 시작' 버전을 고르면 그 뒤에 지운 '안녕하세요.'가 빨강, 더한 '안녕하세요, 여러분.'이 초록으로 보입니다. 버전 아래 작은 글은 그 대본을 마지막으로 바꾼 방법('직접 고침', '파일에서 가져옴')과 예상 시간입니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3>파일로 옮기기</h3>
-  <ul>
-    <li>'⋯' 메뉴의 '파일로 내보내기'를 누르면 '대본 이름.livescript.json' 파일을 받습니다. 대본, 목표 시간, 발표 정보, 질문, 발표 준비 결과가 들어가고, 버전, 애드리브, 발표 시간 기록, '자동 줄이기' 켜짐 상태는 들어가지 않습니다. iPad Safari가 받은 파일은 파일 앱에서 찾을 수 있습니다. Safari가 다운로드할지 물으면 '다운로드'를 누르세요. 받은 파일은 처음 설정으로는 iCloud Drive의 '다운로드' 폴더에 저장되어 iCloud에도 올라갑니다. iPad에만 두려면 <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>앱</span><i aria-hidden="true">›</i><span>Safari</span><i aria-hidden="true">›</i><span>다운로드</span></span>에서 '나의 iPad'를 고르세요(iPadOS 17 이하: 설정 › Safari › 다운로드). iPad에서 받아 보지는 않았습니다.</li>
-    <li>'⋯' 메뉴의 '파일 가져오기'로 .json이나 .txt 파일(2MB까지)을 여세요. 가져온 파일은 늘 새 대본으로 더해지고, 이름이 겹치면 ' (2)'처럼 번호가 붙습니다. .txt 파일은 파일 이름이 대본 이름이 됩니다.</li>
-    <li>PC에서 대본과 질문을 준비해 내보내고, AirDrop, iCloud Drive, 메일 같은 방법으로 iPad에 옮긴 뒤 '파일 가져오기'로 열면 iPad에서 AI를 다시 쓰지 않아도 됩니다. 가져온 대본은 '자동 줄이기'가 꺼진 채로 열리니 편집 화면 아래 '자동 줄이기'를 다시 켜세요. 판정 모델을 쓰려면 iPad에서도 한 번 받으세요.</li>
-    <li>'Q&amp;A 준비' 창(<a href="#qa">질의응답</a>)의 '내보내기'로 받은 qa-pack.json은 질문만 든 파일입니다. 이 파일은 'Q&amp;A 준비' 창의 '가져오기'로 여세요.</li>
-  </ul>
 </section>
 
-<!-- ============ 발표 화면 ============ -->
-<section id="screen">
-  <h2>발표 화면 구성</h2>
-  <p>대본이 있으면 앱을 열 때 바로 발표 화면이 열립니다. 편집 화면은 왼쪽 위 '편집'을 누르면 나옵니다.</p>
-
-  <h3>맨 위 줄</h3>
-  <figure class="strip">
-    <div class="scroll"><img src="img/05b-zoom-header-listening.png" width="800" height="66" loading="lazy" alt="듣는 중인 발표 화면 맨 위 줄 확대. 왼쪽부터 '편집', 상태줄 '여유 0:02'와 '0:16 · 9%', '가', 'Q&amp;A', 빨간 '정지' 버튼. 아래 진행 막대에 흰 세로 눈금이 있습니다."></div>
-    <figcaption>듣는 중의 맨 위 줄. 왼쪽부터 '편집', 상태줄, '가', 'Q&amp;A', 마이크 버튼이고, 그 아래 가는 막대가 진행 막대입니다.</figcaption>
-  </figure>
-  <div class="tbl">
-    <table>
-      <thead><tr><th>자리</th><th>하는 일</th></tr></thead>
-      <tbody>
-        <tr><td class="nw">'편집'</td><td>편집 화면으로 갑니다. 듣는 중이면 멈출지 먼저 묻습니다.</td></tr>
-        <tr><td>상태줄('편집' 오른쪽 시간 표시. iPad 맨 위의 시계·배터리 줄과는 다릅니다)</td><td>시간과 진행을 두 줄로 보여 줍니다. 아래 표를 보세요.</td></tr>
-        <tr><td class="nw">'가'</td><td>글자 크기, 글 폭, 전체 화면을 바꿉니다(<a href="#view">'가' 보기 설정</a>).</td></tr>
-        <tr><td class="nw">'Q&amp;A'</td><td>질의응답 화면을 엽니다. 진행률이 95% 이상이면 연한 파란색으로 강조됩니다.</td></tr>
-        <tr><td class="nw">마이크 버튼</td><td>듣기를 시작하고 멈춥니다. 상태에 따라 글자가 바뀝니다.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>상태줄</h3>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>상황</th><th>위 큰 글</th><th>아래 작은 글</th></tr></thead>
-      <tbody>
-        <tr><td>목표 없음</td><td>경과 시간 <span class="st">1:23</span></td><td>진행률 <span class="st">45%</span></td></tr>
-        <tr><td>목표 있음, 시작 전</td><td>회색 <span class="st pre">예상 +0:20</span> 또는 <span class="st pre">예상 -0:17</span></td><td>경과 · 진행률</td></tr>
-        <tr><td>목표 있음, 발표 중</td><td><span class="st">여유 1:05</span> 또는 주황 <span class="st late">초과 0:04</span></td><td>경과 · 진행률</td></tr>
-        <tr><td>질의응답 중</td><td><span class="st">질의응답 0:25</span></td><td>멈춘 발표 경과 · 진행률</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <ul>
-    <li>'여유'와 '초과'는 지금 말 속도로 남은 대본을 다 읽으면 목표보다 얼마나 일찍 또는 늦게 끝날지 미리 계산한 값입니다.</li>
-    <li>iPad에서는 아래 작은 글에 경과와 진행률이 같이 보입니다. 창 폭이 520px 이하이면 진행률 글이 숨고 진행 막대로만 보입니다.</li>
-    <li>경과 시간은 대본 끝에 닿거나 'Q&amp;A'를 누르면 멈춥니다. 질의응답 시간은 발표 경과에 넣지 않습니다.</li>
-    <li>30분 넘게 쉬었다가 이어 하면 쉰 시간은 경과에서 뺍니다.</li>
-    <li>대본 처음에서 '● 시작'을 누르면 새 발표로 보고 시간을 처음부터 잽니다.</li>
-  </ul>
-
-  <h3>진행 막대</h3>
-  <p>파랗게 채운 폭이 읽은 만큼(진행률)이고, 늦어지면 주황색이 됩니다. 흰 세로 눈금은 목표 시간에 맞추려면 지금 있어야 할 자리(경과 시간 ÷ 목표 시간)입니다. 채운 끝이 눈금보다 오른쪽에 있으면 목표보다 빠르게 가고 있는 것입니다. 눈금은 목표가 있고 발표를 시작했을 때만 보입니다.</p>
-
-  <h3>대본 부분</h3>
-  <div class="anat">
-    <figure class="ipad portrait">
-      <div class="bezel">
-        <div class="pins">
-          <img src="img/05-ipad-present-reading.jpg" width="800" height="1151" loading="lazy" alt="읽는 중인 세로 iPad 발표 화면에 A부터 E까지 표시를 붙인 그림. A는 흐린 읽은 글, B는 파란 배경의 지금 문장, C는 밑줄 그은 지금 어절과 읽는 줄 표시가 있는 줄, D는 아직 읽지 않은 글, E는 아래 줄의 들은 말을 가리킵니다.">
-          <span class="pin" style="left:93%;top:16.5%" aria-hidden="true">A</span>
-          <span class="pin" style="left:93%;top:30.4%" aria-hidden="true">B</span>
-          <span class="pin" style="left:97.2%;top:37.6%" aria-hidden="true">C</span>
-          <span class="pin" style="left:35%;top:85.6%" aria-hidden="true">D</span>
-          <span class="pin" style="left:84%;top:97.3%" aria-hidden="true">E</span>
-        </div>
-      </div>
-      <figcaption>읽는 중인 발표 화면. 그림의 A~E는 옆(좁은 화면에서는 아래) 설명의 같은 글자와 짝입니다.</figcaption>
-    </figure>
-    <ul class="legend">
-      <li><span class="pin-k" aria-hidden="true">A</span><div><span class="lg-t">읽은 글</span>회색으로 흐려집니다.</div></li>
-      <li><span class="pin-k" aria-hidden="true">B</span><div><span class="lg-t">지금 문장</span>파란 배경으로 보입니다.</div></li>
-      <li><span class="pin-k" aria-hidden="true">C</span><div><span class="lg-t">지금 어절과 읽는 줄 표시</span>지금 어절('보이고,')에 흰 밑줄이 있고, 그 줄 왼쪽 끝에 파란 세로 막대가 있습니다. 지금 줄은 늘 화면 위에서 3분의 1 지점에 옵니다.</div></li>
-      <li><span class="pin-k" aria-hidden="true">D</span><div><span class="lg-t">아직 읽지 않은 글</span>흰 글자 그대로입니다.</div></li>
-      <li><span class="pin-k" aria-hidden="true">E</span><div><span class="lg-t">들은 말</span>음성 인식이 알아들은 말의 끝부분입니다. 오류와 안내 글도 이 자리에 나옵니다. 양옆 버튼은 '◀'(이전 문장)와 '▶'(다음 문장)입니다.</div></li>
-    </ul>
-  </div>
-  <p>문장을 많이 바꿔 말해서 글자 비교가 맞지 않으면, 앱은 문장마다 뽑아 둔 키워드로 위치를 짐작합니다. 이때는 문장 전체에 흰 점선 밑줄을 그어 짐작한 위치라는 것을 알립니다.</p>
-
-  <h3>마이크 버튼</h3>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>버튼</th><th>뜻</th><th>할 일</th></tr></thead>
-      <tbody>
-        <tr><td class="nw">'● 시작'</td><td>듣지 않는 중</td><td>누르면 듣기 시작</td></tr>
-        <tr><td><span class="st rec">● 정지</span> 원이 채워짐</td><td>듣는 중이고 방금(1.5초 안에) 알아들은 말이 있음</td><td>누르면 정지</td></tr>
-        <tr><td><span class="st rec">○ 정지</span> 원이 비어 있음</td><td>듣는 중이지만 조용함</td><td>누르면 정지</td></tr>
-        <tr><td class="nw">'연결 중' (점선 테두리)</td><td>음성 인식이 잠깐 끊겨 다시 켜는 중</td><td>기다리면 대개 저절로 돌아옵니다(<a href="#retry">음성 인식이 끊겼을 때</a>)</td></tr>
-        <tr><td class="nw">'다시 듣기' (점선 테두리)</td><td>4초 넘게 다시 켜지지 못함</td><td>누르세요. 정지하지 않고 인식만 다시 켭니다</td></tr>
-        <tr><td class="nw">'준비 중'</td><td>질의응답용 판정 모델(<a href="#qa-model">판정 모델</a>)을 불러오는 중</td><td>PC에서는 2초 안팎이었고 iPad에서는 재 보지 않았습니다. 질문(바꿔 묻는 말 포함)을 고치거나 다른 대본으로 바꾼 뒤 처음에는 질문을 다시 계산하느라 수십 초 걸릴 수 있으니 발표 전에 발표 화면을 한 번 열어 두세요</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>대본 밖 상태</h3>
-  <div class="row">
+<section id="talk">
+  <h2>발표하기</h2>
+  <p class="lead">읽는 곳을 파랗게 표시하고 화면을 내려 줘요.</p>
+  <div class="split">
     <div>
-      <p>대본에 없는 말을 3초 넘게 이어 하면 '대본 밖' 상태가 됩니다.</p>
-      <ul>
-        <li>지금 문장의 파란 배경이 빠지고, 지금 어절 아래에 하늘색 점선이 생기며, 읽는 줄 표시도 하늘색이 됩니다.</li>
-        <li>아래 줄에 하늘색 굵은 글 <span class="st off">대본 밖 · 돌아오면 이어 가요</span>가 나옵니다.</li>
-        <li>커서는 그 자리에서 기다립니다. 대본으로 돌아와 읽으면 다시 따라갑니다.</li>
-        <li>손으로 옮긴 직후 3초 동안과, 쉬었다가 다시 말한 첫마디는 대본 밖으로 보지 않습니다.</li>
-        <li>이때 한 말은 애드리브로 모입니다(<a href="#adlib">애드리브 정리</a>).</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/06-ipad-off-script.jpg" width="800" height="1151" loading="lazy" alt="대본 밖 상태의 세로 iPad 발표 화면. 지금 어절 '고개를' 아래에 하늘색 점선이 있고 왼쪽 읽는 줄 표시도 하늘색입니다. 아래 줄에 하늘색 '대본 밖 · 돌아오면 이어 가요'와 들은 말이 보입니다. 상태줄은 주황 '초과 0:35'와 '0:40 · 10%'입니다."></div>
-      <figcaption>대본 밖 상태. 지금 어절 '고개를' 아래에 하늘색 점선이 생기고, 아래 줄에 안내와 들은 말이 보입니다. 대본 밖 말을 하는 동안에도 경과 시간은 흘러서 상태줄이 주황 '초과'가 되었습니다.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<!-- ============ 발표 중 조작 ============ -->
-<section id="control">
-  <h2>발표 중 조작</h2>
-
-  <h3>문장 단위로 옮기기</h3>
-  <ul>
-    <li>'◀': 지금 문장 처음으로 갑니다. 이미 문장 처음이면 앞 문장 처음으로 갑니다.</li>
-    <li>'▶': 다음 문장 처음으로 갑니다.</li>
-  </ul>
-
-  <h3>어절을 눌러 옮기기</h3>
-  <div class="row">
-    <div>
-      <p>위치가 어긋났으면 지금 읽을 어절을 누르세요. 그 자리로 옮기고, 5초 동안 '여기로 옮겼어요'와 '되돌리기'가 보입니다.</p>
-      <ul>
-        <li>잘못 눌렀으면 5초 안에 '되돌리기'를 누르세요. 여러 번 잇달아 눌렀어도 처음 누르기 전 자리로 돌아갑니다.</li>
-        <li>거치대에 세운 iPad는 손바닥이 화면에 스쳐 위치가 옮겨지기도 합니다. 그럴 때도 '되돌리기'로 돌아가세요.</li>
-        <li>'◀' '▶'로 옮길 때는 이 막대가 뜨지 않습니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/07-ipad-undo-bar.jpg" width="800" height="1151" loading="lazy" alt="어절 '그렇다고'를 눌러 옮긴 직후의 세로 iPad 발표 화면. 그 문장 '그렇다고 아무 말에나 끌려가지는 않습니다.'에 파란 배경이 있고, 아래쪽에 '여기로 옮겼어요'와 '되돌리기' 막대가 떠 있습니다. 상태줄은 '여유 0:16'과 '1:36 · 39%', 마이크 버튼은 빈 원 '정지', 아래 줄에 '애드리브 1' 버튼이 있습니다."></div>
-      <figcaption>어절 '그렇다고'를 누른 직후. 마이크 버튼 앞 원이 비어 있는 것은 지금 조용하다는 뜻입니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3 id="keys">키보드와 발표 리모컨</h3>
-  <div class="tbl">
-    <table>
-      <thead><tr><th>키</th><th>동작</th></tr></thead>
-      <tbody>
-        <tr><td class="nw"><kbd>→</kbd> 또는 <kbd>Page Down</kbd></td><td>다음 문장('▶'와 같음)</td></tr>
-        <tr><td class="nw"><kbd>←</kbd> 또는 <kbd>Page Up</kbd></td><td>이전 문장('◀'와 같음)</td></tr>
-        <tr><td class="nw"><kbd>Space</kbd></td><td>시작·정지. '다시 듣기'가 보일 때는 정지하지 않고 다시 듣기</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <ul>
-    <li>iPad에 블루투스로 연결한 키보드와, Page Up·Page Down이나 방향키를 보내는 발표 리모컨에서 같은 키로 씁니다. 리모컨 대부분은 Page Up·Page Down을 보냅니다.</li>
-    <li>발표 화면에서만 동작합니다. 편집 화면, 질의응답 화면, 입력칸이나 열린 창 안에서는 동작하지 않습니다.</li>
-    <li>마이크 버튼이 '준비 중'일 때는 <kbd>Space</kbd>가 동작하지 않습니다.</li>
-    <li>실제 iPad에서, 특히 전체 화면에서 키가 들어오는지는 아직 확인하지 않았습니다. 발표 전에 한 번 눌러 보세요.</li>
-  </ul>
-
-  <h3 id="view">'가' 보기 설정</h3>
-  <div class="row">
-    <div>
-      <ul>
-        <li>'글자 크기': '가−'와 '가+'로 2씩 바꿉니다. 16에서 64까지입니다. 처음 값은 iPad 같은 태블릿(터치 화면이면서 화면 짧은 변이 600px 이상)이 34, 휴대폰과 PC가 28입니다. 실제 iPad에서 34로 시작하는지는 확인하지 않았으니, 다르면 '가−' '가+'로 맞추세요. 질의응답 답 카드 글자도 이 크기를 따릅니다.</li>
-        <li>'글 폭': '좁게', '보통'(처음 값), '넓게'. 세로 iPad에서 글자 크기가 34쯤이면 '보통'과 '넓게'가 모두 화면 폭을 거의 다 써서 둘의 차이가 작습니다. 줄을 짧게 하려면 '좁게'를 고르세요.</li>
-        <li>'화면': '전체 화면'. 아래 <a href="#fullscreen">전체 화면</a>을 보세요.</li>
-        <li>글자 크기와 글 폭은 이 기기의 모든 대본에 같이 적용됩니다.</li>
-        <li>'보기' 창은 바깥을 어둡게 가리지 않아서, 위쪽 대본에서 바뀐 크기와 폭을 바로 확인할 수 있습니다. '닫기'나 창 바깥(위쪽이나 양옆)을 누르면 닫힙니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/08-ipad-view-sheet.jpg" width="800" height="1151" loading="lazy" alt="아래에서 올라온 '보기' 창. '글자 크기'의 '가−', 34, '가+', '글 폭'의 '좁게', 골라진 '보통', '넓게', '화면'의 '전체 화면', 키보드와 발표 리모컨 안내 줄, '닫기'가 있습니다. 창 위로 대본이 그대로 보입니다."></div>
-      <figcaption>'가'를 누르면 아래에서 올라오는 '보기' 창. 글자 크기 34, 글 폭 '보통'이 골라져 있고, 아래에 키보드·발표 리모컨 키 안내가 있습니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3 id="fullscreen">전체 화면</h3>
-  <ul>
-    <li>'가' 창의 '전체 화면'은 Safari 주소 막대를 숨겨 대본을 더 보여 주려고 둔 버튼입니다. 한 번 더 누르면 풀리게 만들었습니다.</li>
-    <li>브라우저가 전체 화면을 지원할 때만 '화면' 줄이 보입니다.</li>
-    <li>편집 화면으로 가면 전체 화면이 풀립니다. iPad는 전체 화면에서 글자 입력을 막는다고 알려져 있기 때문입니다. 같은 이유로 전체 화면에서는 키보드·리모컨 키가 들어오지 않을 수 있으니, 리모컨을 쓰려면 전체 화면에서 미리 눌러 보세요.</li>
-    <li>켜지지 않으면 주소 막대가 그대로 보입니다. '보기' 창을 바로 닫으면 화면 아래에 “전체 화면으로 바꾸지 못했어요.”가 잠깐 보일 수 있습니다.</li>
-    <li>전체 화면은 실제 iPad에서도, 사진을 찍은 데스크톱 브라우저에서도 켜 보지 않았습니다. 위 '보기' 창 사진은 버튼이 보이는 것만 보여 줍니다.</li>
-  </ul>
-
-  <h3 id="retry">음성 인식이 끊겼을 때</h3>
-  <p>Safari의 음성 인식은 발표 중에 저절로 끝나기도 한다고 알려져 있습니다(iPad에서 재 보지는 않았습니다). 앱은 듣는 중이면 곧바로 다시 켭니다.</p>
-  <ul>
-    <li>다시 켜는 틈이 0.7초를 넘으면 마이크 버튼이 점선 테두리의 '연결 중'으로 바뀝니다. 대개 저절로 돌아옵니다.</li>
-    <li>4초가 지나도 돌아오지 않으면 '다시 듣기'로 바뀝니다. iPad Safari는 화면을 누르지 않으면 인식을 다시 켜지 못할 때가 있다고 해서 이 버튼을 두었습니다. '다시 듣기'나 <kbd>Space</kbd>를 누르세요. 정지하지 않고 인식만 다시 켜서 위치와 시간은 그대로입니다.</li>
-    <li>리허설 때 '다시 듣기'가 자주 보이면 인터넷 연결을 확인하세요.</li>
-  </ul>
-  <figure class="strip">
-    <div class="scroll"><img src="img/24-zoom-header-mic-retry.png" width="800" height="66" loading="lazy" alt="음성 인식이 멈췄을 때의 맨 위 줄 확대. '편집', 주황색 '초과 1:39'와 '4:14 · 74%', '가', 'Q&amp;A', 흰 점선 테두리가 있는 빨간 '다시 듣기' 버튼, 아래 주황색 진행 막대."></div>
-    <figcaption>음성 인식이 4초 넘게 다시 켜지지 않았을 때. 마이크 버튼이 점선 테두리의 '다시 듣기'로 바뀝니다. 늦어진 상태라 상태줄과 진행 막대가 주황색입니다.</figcaption>
-  </figure>
-
-  <h3>편집 화면에 다녀오기</h3>
-  <ul>
-    <li>'편집'을 누르면 편집 화면으로 갑니다. 듣는 중이면 “발표를 멈추고 편집 화면으로 갈까요? …”를 묻습니다.</li>
-    <li>대본을 고치지 않고 '발표'로 돌아오면 그 위치에서 이어 할 수 있습니다.</li>
-  </ul>
-  <div class="note warn">
-    <p class="note-h">주의</p>
-    <p><strong>대본을 한 글자라도 고치면 위치가 처음으로 돌아가고, 발표 시간도 처음부터 잽니다.</strong> 발표 직전에는 대본을 고치지 마세요.</p>
-  </div>
-
-  <h3>화면 꺼짐과 새로고침</h3>
-  <ul>
-    <li>발표 화면에 있는 동안은 화면이 꺼지지 않게 Safari에 요청합니다. 정지하고 차례를 기다릴 때와 질의응답 중에도 그렇습니다. 다른 탭이나 앱에 다녀오면 다시 요청합니다.</li>
-    <li>iPad에서 이 요청이 통하는지는 아직 확인하지 않았습니다. 발표 전에 <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>디스플레이 및 밝기</span><i aria-hidden="true">›</i><span>자동 잠금</span></span>에서 시간을 늘려 두세요.</li>
-    <li>새로고침해도 대본, 위치, 경과 시간이 이어집니다. 마이크는 '● 시작'을 다시 눌러야 켜집니다. Safari가 마이크를 다시 물으면 '허용'을 누르세요.</li>
-    <li>앱은 화면을 아래로 당겨 새로고침하는 동작을 막아 두었습니다. iPad Safari에서 실제로 막히는지는 확인하지 않았습니다.</li>
-    <li>기기를 돌릴 때의 동작은 <a href="#layout">화면 방향과 멀티태스킹</a>에 있습니다.</li>
-  </ul>
-
-  <h3>대본 끝</h3>
-  <p>대본 끝에 닿으면 경과 시간이 멈추고 애드리브도 더 모으지 않습니다. 듣기는 계속됩니다. 정지한 뒤 다시 '● 시작'을 누르면 “대본 끝이에요. 처음부터 다시 할까요?”를 묻습니다.</p>
-</section>
-
-<!-- ============ 시간 ============ -->
-<section id="time">
-  <h2>시간 맞추기와 자동 줄이기</h2>
-  <p>목표 시간을 넣으면 발표 화면이 남는 시간과 넘는 시간을 알려 줍니다. '자동 줄이기'를 켜 두면 늦어질 때 덜 중요한 문장을 발표 화면에서 숨깁니다. 숨길 문장은 발표 전에 '발표 준비'로 미리 정해 두고, 발표 중에는 AI(Claude)에 요청하지 않습니다.</p>
-
-  <h3>준비 순서</h3>
-  <div class="row">
-    <div>
-      <ol class="seq">
-        <li>대본을 다 쓴 뒤 편집 화면 아래 '목표'에 분을 넣으세요.</li>
-        <li>'AI 도구'를 누르고 '발표 준비' 탭을 고르세요.</li>
-        <li>'발표 준비 하기'를 누르세요. 키가 없으면 '프롬프트 복사'를 누르세요. 아래에 붙여넣을 칸이 열리면 챗봇이 돌려준 답을 그 칸에 붙여넣고 '적용'을 누르세요.</li>
-        <li>“발표 준비를 저장했어요. …”가 나오면 '닫기'로 창을 닫고 편집 화면 아래 '자동 줄이기'를 켜세요.</li>
-        <li>'발표'를 누르세요. 원문이 목표보다 길면 '목표 시간보다 길어요' 창이 뜹니다.</li>
+      <ol>
+        <li>'발표'를 눌러 주세요. 줄일지 물어도 원래 대본은 그대로예요.</li>
+        <li>첫 단어에서 '● 시작'을 누르고 읽어 주세요. 중간에서 누르면 지난 시간에 이어 재요.</li>
       </ol>
-      <p>예시 대본에는 목표 시간(3분)과 발표 준비 결과가 들어 있고 '자동 줄이기'도 켜져 있어서 1~4단계가 필요 없습니다.</p>
+      <h3>화면 보기</h3>
+      <dl>
+        <div><dt>상태줄</dt><dd>'여유'·'초과'는 이 빠르기면 목표보다 남거나 넘는 시간이에요.</dd></div>
+        <div><dt>진행 막대</dt><dd>채운 만큼 읽었어요. 흰 눈금은 지금 있어야 할 자리예요.</dd></div>
+        <div><dt>읽는 줄</dt><dd>왼쪽 파란 막대가 지금 줄, 흰 밑줄이 지금 단어예요.</dd></div>
+      </dl>
+      <h3>넘기기</h3>
+      <dl>
+        <div><dt>'◀' '▶'</dt><dd>앞뒤 문장으로 가요.</dd></div>
+        <div><dt>단어 누르기</dt><dd>그 자리로 옮겨요. 잘못 눌렀으면 5초 안에 '되돌리기'를 눌러요.</dd></div>
+        <div><dt>키보드·리모컨</dt><dd><kbd>→</kbd> <kbd>Page Down</kbd> 다음, <kbd>←</kbd> <kbd>Page Up</kbd> 이전, <kbd>스페이스</kbd> 시작·정지</dd></div>
+      </dl>
     </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/15-ipad-ai-tools-prep.jpg" width="800" height="1151" loading="lazy" alt="'AI 도구' 창의 '발표 준비' 탭. 설명 글, '10/11 15:00에 지금 대본으로 했어요.', '흐린 글 = 늦으면 뺄 문장' 아래 일부 문장에 흐린 취소선이 그어진 대본, '프롬프트 복사'와 '결과 붙여넣기', 키 안내와 'AI 키 넣기', '닫기'가 있습니다."></div>
-      <figcaption>'AI 도구'의 '발표 준비' 탭. 준비한 때와 함께, 늦어지면 뺄 수 있는 문장이 모두 흐린 취소선으로 보입니다. 키가 없어서 '프롬프트 복사'와 '결과 붙여넣기'만 있습니다.</figcaption>
+    <figure>
+      <div class="phone"><img src="img/12-phone-talk.png" width="824" height="1830" loading="lazy" alt="휴대폰에서 읽는 중. 위에 '편집', 주황 '초과 0:54', '가', 'Q&amp;A', '정지'가 있고 그 아래 진행 막대가 있어요. 지금 문장은 파란 배경, 지금 단어엔 흰 밑줄, 줄 왼쪽엔 파란 막대가 있어요. 맨 아래에 '◀'과 '▶'이 있어요."></div>
+      <figcaption>휴대폰 크기 화면</figcaption>
     </figure>
-  </div>
-
-  <h3>'발표 준비'가 정하는 것</h3>
-  <ul>
-    <li>문단마다 중요도: 1은 빼면 발표 목적이 무너지는 문단, 2는 보통, 3은 예시나 여담입니다.</li>
-    <li>문단마다 꼭 남길 문장 1~2개와 늦으면 뺄 문장.</li>
-    <li>키워드마다 다른 말 1~4개. 발표에서 키워드를 다른 낱말로 말해도 따라가게 합니다.</li>
-    <li>AI는 원문 문장 가운데서 고르기만 하고 새 문장은 쓰지 않습니다. 다음 문장이 '그래서', '이처럼'처럼 앞 문장을 가리키면 그 앞 문장은 빼지 않습니다.</li>
-  </ul>
-  <p>대본을 고친 뒤에도 문단 수와 문장 수가 같으면 결과를 그대로 씁니다. 문단이나 문장 수가 바뀌면 '발표 준비'를 다시 해야 자동 줄이기가 동작합니다. 이때 “자동 줄이기는 지금 대본으로 한 '발표 준비' 결과가 있어야 해요. …” 알림이 나옵니다.</p>
-
-  <h3>시작할 때 고르기</h3>
-  <p>'목표 시간보다 길어요' 창(<a href="#quick">빠른 시작</a> 3단계 그림)에서 고르세요.</p>
-  <ul>
-    <li>'줄인 대본으로 시작': 앞으로 처음부터 발표할 때마다 줄인 대본으로 시작합니다.</li>
-    <li>'원문 그대로 시작': 대본 전체로 시작합니다. '자동 줄이기'는 켜진 채라서, 발표 중에 늦어지면 그때 줄입니다.</li>
-    <li>다 줄여도 목표를 넘으면 창의 안내 글 끝에 “다 줄여도 m:ss 넘어요.”가 붙습니다.</li>
-    <li>한 번 고르면 같은 대본과 같은 발표 준비 결과로는 다시 묻지 않습니다. 다시 고르려면 '자동 줄이기'를 껐다 켜세요.</li>
-    <li>이 창은 대본 처음 위치에서 발표 화면에 들어갈 때만 뜹니다.</li>
-  </ul>
-
-  <h3>발표 중에 줄어드는 방식</h3>
-  <ul>
-    <li>지금 읽는 문단이 바뀔 때마다, 그리고 대본 밖 말을 하다가 대본으로 돌아왔을 때 남은 시간을 다시 계산합니다. 목표보다 10초 일찍 끝나도록 맞춥니다.</li>
-    <li>줄이는 단계는 둘입니다. '줄임'은 뺄 문장을 숨기고, '요약'은 꼭 남길 문장만 남깁니다. 줄인 문단 왼쪽에는 파란 세로선과 '줄임' 또는 '요약' 표시가 붙습니다.</li>
-    <li>지금 위치에서 약 300글자(1분쯤) 안에서 시작하는 글은 줄이지도 되돌리지도 않습니다. 눈앞의 문장이 갑자기 바뀌지 않게 하려는 것입니다.</li>
-    <li>다시 시간이 남으면 아직 읽지 않은 뒷부분이 원문으로 돌아옵니다.</li>
-    <li>계산 단위는 문단입니다. 150자보다 짧은 문단은 다음 문단과 묶고, 600자보다 긴 문단은 약 300자씩 나눕니다.</li>
-  </ul>
-  <div class="shots">
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/23-ipad-condensed-paragraphs.jpg" width="800" height="1151" loading="lazy" alt="'줄인 대본으로 시작'한 세로 iPad 발표 화면. 문단 왼쪽에 파란 세로선과 작은 글자 '줄임', '줄임', '요약'이 붙은 줄어든 문단들이 이어지고, 지금 문장 '그렇다고 아무 말에나 끌려가지는 않습니다.'에 파란 배경이 있습니다. 상태줄은 회색 '예상 -1:22'와 '0:00 · 40%', 마이크 버튼은 '● 시작', 아래 줄에 '애드리브 2'가 있습니다."></div>
-      <figcaption>'줄인 대본으로 시작'한 뒤 시작 전에 '▶'로 내려 본 화면. 줄인 문단 왼쪽에 파란 세로선과 '줄임', '요약' 표시가 붙습니다. 회색 '예상 -1:22'는 이 자리(40%)부터 읽을 때의 계산입니다.</figcaption>
-    </figure>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/23b-ipad-auto-shrink-late.jpg" width="800" height="1151" loading="lazy" alt="원문으로 시작했다가 늦어진 세로 iPad 발표 화면. 상태줄은 주황 '초과 1:22'와 '3:57 · 74%', 진행 막대도 주황색입니다. 지금 문장 '새로 쓴 문장은 없어서 화면의 글은 모두 발표자가 쓴 원문입니다.' 아래 문단들에 파란 세로선과 '요약', '요약', '요약', '줄임' 표시가 붙어 있습니다."></div>
-      <figcaption>'원문 그대로 시작'했다가 늦어진 화면(주황 '초과 1:22'). 지금 문장 뒤의 문단이 저절로 '요약'과 '줄임'으로 줄었습니다. 바로 다음 문단은 300글자보다 멀리 있을 때 줄여 두었고, 가까워진 뒤에도 그대로 남았습니다.</figcaption>
-    </figure>
-  </div>
-  <p>줄이는 순서는 다음과 같습니다. 같은 순서 안에서는 뒤쪽 문단부터 줄입니다.</p>
-  <div class="tbl">
-    <table>
-      <thead><tr><th>순서</th><th>줄이는 것</th></tr></thead>
-      <tbody>
-        <tr><td>1</td><td>중요도 3 문단을 '줄임'</td></tr>
-        <tr><td>2</td><td>중요도 3 문단을 '요약', 중요도 2 문단을 '줄임'</td></tr>
-        <tr><td>3</td><td>중요도 2 문단을 '요약', 중요도 1 문단을 '줄임'</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p>첫 문단, 마지막 문단, 중요도 1 문단은 '줄임'까지만 갑니다.</p>
-
-  <div class="note">
-    <p class="note-h">바뀌지 않는 것</p>
-    <ul>
-      <li>편집 화면의 대본은 바뀌지 않습니다. 숨긴 문장은 발표 화면에서만 빠집니다.</li>
-      <li>새로 쓴 문장은 없습니다.</li>
-      <li>발표 중에는 AI(Claude)에 요청하지 않습니다.</li>
-      <li>질의응답 중과 대본 밖 상태에서는 다시 계산하지 않습니다.</li>
-    </ul>
-    <p>자동 줄이기가 동작하려면 듣는 중이고, 목표가 있고, '자동 줄이기'가 켜져 있고, 지금 대본에 맞는 발표 준비 결과가 있어야 합니다.</p>
   </div>
 </section>
 
-<!-- ============ 질의응답 ============ -->
+<section id="check">
+  <h2>발표 점검</h2>
+  <p class="lead">연습하면서 구간마다 시간과 빠르기를 재요.</p>
+  <dl>
+    <div><dt>리딩</dt><dd>힌트 없이 걸린 시간만 재요.</dd></div>
+    <div><dt>연습</dt><dd>'천천히', '빠르게' 같은 힌트를 하나씩 띄워요.</dd></div>
+    <div><dt>실전</dt><dd>새로 열면 늘 실전이에요. '천천히'만 흐리게 띄워요. 모드는 '가'에서 바꿔요.</dd></div>
+  </dl>
+  <ol>
+    <li>'⋯' › '발표 점검'에서 '리딩으로 시작'이나 '연습으로 시작'을 눌러 주세요.</li>
+    <li>'● 리딩'이나 '● 연습'을 누르고 20초 넘게 읽은 뒤 '정지'를 눌러요.</li>
+    <li>결과 창의 '다음에 해 볼 것'을 따라 해 보세요.</li>
+  </ol>
+  <p class="note">높낮이와 쉼은 PC Chrome의 리딩·연습에서 재요('가' › '목소리 분석'). 감정은 재지 않아요.</p>
+  <figure>
+    <div class="win"><img src="img/06-check-result-top.png" width="720" height="704" loading="lazy" alt="발표 점검 결과 창. '리딩으로 시작', '연습으로 시작', 기록, 목표 3분, '3:50 · 목표보다 0:50 길어요', 평균 빠르기, '다음에 해 볼 것' 3개, '프롬프트 복사', '결과 붙여넣기'가 있어요."></div>
+    <figcaption>정지하면 뜨는 결과 창</figcaption>
+  </figure>
+</section>
+
 <section id="qa">
-  <h2>질의응답</h2>
-  <p>발표가 끝나고 질문을 받을 때 씁니다. 미리 준비한 질문 목록에서 청중 질문과 가까운 후보 3개를 고르고, 발표자가 하나를 누르면 답 카드를 보여 줍니다. 후보를 고르는 계산은 iPad 안에서 하고, 앱이 질문 글을 따로 보내지는 않습니다. 다만 따라 말한 질문의 소리는 대본을 읽을 때처럼 Apple(Safari)로 가서 글자로 바뀝니다.</p>
-
-  <h3>질문 준비</h3>
-  <ol class="seq">
-    <li>편집 화면 '⋯' 메뉴의 'Q&amp;A 준비'를 누르세요. 'AI 도구'의 'Q&amp;A 준비' 탭을 눌러도 같은 창이 열립니다.</li>
-    <li>'주제', '청중', '질문 수'(1~40, 처음 값 20)를 확인하세요.</li>
-    <li>'AI로 만들기'를 누르세요. 키가 없으면 '프롬프트 복사'를 누르세요. 아래에 붙여넣을 칸이 열리면 챗봇이 돌려준 답 전체를 그 칸에 붙여넣고 '적용'을 누르세요.</li>
-    <li>만든 질문을 읽고 고치세요. 질문마다 '바꿔 묻는 말 (한 줄에 하나)'과 '답 (한 줄에 하나)'을 고칠 수 있고, '질문 추가'와 '삭제'로 늘리고 줄입니다.</li>
-    <li>'저장'을 누르세요.</li>
+  <h2>질문 받기</h2>
+  <p class="lead">청중 질문을 따라 말하면 준비한 답을 찾아 줘요.</p>
+  <ol>
+    <li>미리 '⋯' › 'Q&amp;A 준비'에서 질문과 답을 만들고 '저장'을 눌러 주세요.</li>
+    <li>발표 화면에서 'Q&amp;A'를 눌러요.</li>
+    <li>'질문'을 누르고 질문을 따라 말한 뒤 한 번 더 눌러요.</li>
+    <li>후보 3개 중 맞는 것을 누르면 답 카드가 떠요. 끝나면 '대본'을 눌러요.</li>
   </ol>
-  <div class="shots">
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/20-ipad-qa-prep-top.jpg" width="800" height="1151" loading="lazy" alt="'Q&amp;A 준비' 창 위쪽. 설명 글, '주제', '청중', '질문 수' 20, '프롬프트 복사'와 '결과 붙여넣기', 키 안내와 'AI 키 넣기', '질문 8개' 아래 '질문 1' 무료로 쓸 수 있나요?와 '바꿔 묻는 말 (한 줄에 하나)', '답 (한 줄에 하나)', 근거, '직접 확인' 체크칸과 '삭제', 아래 고정 줄의 '저장', '내보내기', '가져오기', '닫기'."></div>
-      <figcaption>'Q&amp;A 준비' 창 위쪽. 아래 '저장', '내보내기', '가져오기', '닫기' 줄은 창을 내려도 늘 보입니다.</figcaption>
-    </figure>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/21-ipad-qa-prep-bottom.jpg" width="800" height="1151" loading="lazy" alt="'Q&amp;A 준비' 창 맨 아래. 마지막 질문 '질문 판정은 기기 안에서 하나요?'의 바꿔 묻는 말과 답, '질문 추가', '판정 모델' 설명과 '모델 받기 (약 135MB, 와이파이 권장)', 답 카드 바로 열기 체크칸, JEV 모드 체크칸과 설명, 아래 고정 줄."></div>
-      <figcaption>같은 창 맨 아래의 '판정 모델' 칸. JEV 모드 줄은 이 사진을 찍은 데스크톱 브라우저가 WebGPU를 지원해서 보입니다. iPad Safari에서 보이는지는 확인하지 않았습니다.</figcaption>
-    </figure>
-  </div>
-  <div class="note warn">
-    <p class="note-h">주의</p>
-    <p><strong>'저장'을 눌러야 질의응답에 쓰입니다.</strong> 저장하지 않은 수정은 이 탭에만 남아 새로고침해도 이어지지만, '닫기'를 누르면 버릴지 묻습니다.</p>
-  </div>
-  <ul>
-    <li>AI에는 대본에 있는 내용만으로 답을 3줄 안에서 쓰고 근거가 된 대본 문장을 옮기라고 요청합니다. 그래도 틀린 답이 있을 수 있으니 저장하기 전에 모두 읽어 보세요. 대본만으로 답할 수 없는 질문은 '직접 확인'이 켜져 노란 테두리로 보이니, 이런 답은 내용을 확인해 고치세요.</li>
-    <li>질문은 60개, 바꿔 묻는 말은 질문마다 12개, 답은 6줄까지 저장합니다.</li>
-    <li>'내보내기'는 질문만 qa-pack.json 파일로 받고, '가져오기'는 그 파일을 엽니다. 질문은 대본마다 따로 있고, 대본을 '파일로 내보내기'하면 같이 들어갑니다.</li>
-  </ul>
-
-  <h3>질문 받기</h3>
-  <ol class="steps">
-    <li>
-      <div>
-        <p class="step-t">'Q&amp;A'를 누르세요</p>
-        <p>발표 화면 위 'Q&amp;A'를 누르면 질의응답 화면이 열리고 대본 따라가기가 멈춥니다. 그 버튼 글자는 '대본'으로 바뀝니다. 상태줄은 <span class="st">질의응답 0:00</span>부터 셉니다.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/09-ipad-qa-before.jpg" width="800" height="1151" loading="lazy" alt="질문 전의 질의응답 화면. 맨 위 줄에 '편집', '질의응답 0:01'과 '2:06 · 39%', '가', '대본', '정지'. 그 아래 '질문 8개 · 글자 비교로 고르는 중', 큰 '질문' 버튼, 안내 글, 채팅 질문 입력칸, '전체 질문 목록', '판정 모델 받기 (약 135MB, 와이파이 권장)' 버튼."></div>
-        <figcaption>질문을 받기 전. 아래 작은 글 '2:06 · 39%'는 멈춘 발표 경과와 진행률입니다. 판정 모델이 없어서 '글자 비교로 고르는 중'으로 나옵니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">'질문'을 누르고 질문을 따라 말하세요</p>
-        <p>청중이 한 질문을 발표자가 소리 내어 따라 말하세요. 버튼이 빨간 '● 듣는 중 · 다시 누르면 고르기'로 바뀌고, 말하는 동안 후보가 계속 바뀌어 보입니다. 마이크가 꺼져 있었으면 저절로 켜집니다.</p>
-        <p>이때 보이는 후보를 바로 눌러도 답 카드가 열립니다.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/10-ipad-qa-listening.jpg" width="800" height="1151" loading="lazy" alt="질문을 따라 말하는 중인 질의응답 화면. 빨간 '● 듣는 중 · 다시 누르면 고르기' 버튼 아래에 들은 말 '이 앱은 무료로 쓸 수 있는 건가요 아니면'과 번호 없는 후보 세 개 '무료로 쓸 수 있나요?', '아이폰이나 안드로이드에서도 되나요?', '인터넷과 마이크가 꼭 있어야 하나요?'가 있습니다."></div>
-        <figcaption>따라 말하는 중. 들은 말 '이 앱은 무료로 쓸 수 있는 건가요 아니면' 아래로 후보가 계속 바뀝니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">버튼을 한 번 더 누르세요</p>
-        <p>번호 1~3이 붙은 후보와 '해당 없음'이 나옵니다. 1순위에는 파란 테두리가 있습니다.</p>
-        <p>채팅으로 온 질문은 '채팅 질문을 붙여넣고 Enter' 칸에 붙여넣고 <kbd>Enter</kbd>(화면 키보드에서는 리턴 자리의 키로, '검색'이라고 보일 수 있습니다)를 누르면 같은 결과가 나옵니다. 칸을 누르면 글 전체가 선택되어, 붙여넣으면 앞 질문이 바로 바뀝니다.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/10b-ipad-qa-voice-candidates.jpg" width="800" height="1151" loading="lazy" alt="판정 뒤의 후보. 파란 테두리의 '1 무료로 쓸 수 있나요?', '2 아이폰이나 안드로이드에서도 되나요?', '3 인터넷과 마이크가 꼭 있어야 하나요?', '해당 없음', 그 아래 '글자 비교로 골랐어요'."></div>
-        <figcaption>'질문'을 다시 누른 뒤. 번호 붙은 후보 3개와 '해당 없음'이 나오고, 1순위 '무료로 쓸 수 있나요?'에 파란 테두리가 있습니다.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <div>
-        <p class="step-t">맞는 후보를 누르세요</p>
-        <p>답 카드가 열리고, 위 버튼은 작은 '다음 질문'으로 바뀝니다. 앱이 카드를 화면 위로 올려서 '다음 질문'은 위로 밀려 있습니다. 다음 질문을 받으려면 화면에 손가락을 대고 아래로 끌어 맨 위까지 올린 뒤 '다음 질문'을 누르세요. 발표 화면으로 돌아가려면 위 '대본'을 누르세요.</p>
-      </div>
-      <figure class="ipad portrait">
-        <div class="bezel"><img src="img/12b-ipad-qa-answer-card-scrolled.jpg" width="800" height="1151" loading="lazy" alt="후보를 누른 직후의 질의응답 화면. 답 카드가 화면 위로 올라와 '인식한 질문: 질문 내용이 서버로 가나요?'와 제목 '질문 판정은 기기 안에서 하나요?'부터 보이고, 큰 글씨의 답 세 줄, 근거, '혹시 이 질문인가요?' 아래 다른 후보 두 개가 있습니다."></div>
-        <figcaption>후보를 누른 직후(이 사진은 아래 채팅 질문 '질문 내용이 서버로 가나요?'의 후보 1을 누른 것입니다). 카드가 화면 위로 올라와 '다음 질문' 버튼은 보이지 않습니다.</figcaption>
-      </figure>
-    </li>
-  </ol>
-  <div class="shots">
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/11-ipad-qa-chat-candidates.jpg" width="800" height="1151" loading="lazy" alt="채팅 칸에 '질문 내용이 서버로 가나요?'를 넣은 뒤의 후보. 파란 테두리의 '1 질문 판정은 기기 안에서 하나요?', '2 제 목소리는 어디로 가나요?', '3 무료로 쓸 수 있나요?', '해당 없음', '글자 비교로 골랐어요'."></div>
-      <figcaption>채팅 질문 '질문 내용이 서버로 가나요?'를 넣고 <kbd>Enter</kbd>를 누른 결과.</figcaption>
-    </figure>
-  </div>
-
-  <h3>후보와 답 카드</h3>
-  <ul>
-    <li>후보 아래 글은 고른 방법입니다. '글자 비교로 골랐어요' 또는 'AI 판정 NNms · 이 기기 안'이 나옵니다. AI 판정이면 후보마다 ' · 유사도 0.xx'가 붙습니다.</li>
-    <li>“확신 낮음: 맞는 질문이 없을 수도 있어요”가 보이면 1순위를 그대로 믿지 말고 후보를 모두 읽어 보세요.</li>
-    <li>맞는 후보가 없으면 '해당 없음'을 누르세요. '전체 질문 목록'이 열리고, '검색' 칸에 낱말을 치면 질문과 바꿔 묻는 말에서 찾습니다.</li>
-    <li>'Q&amp;A 준비'에서 '직접 확인'이 켜진 질문(AI가 대본만으로 답할 수 없다고 본 질문 포함)의 카드에는 노란 '직접 확인'이 붙습니다. 답이 비어 있으면 “준비된 답이 없어요.”가 보입니다.</li>
-    <li>카드는 다음 질문을 시작할 때까지 바뀌지 않습니다. 카드 글자 크기는 '가'의 글자 크기를 따릅니다.</li>
-  </ul>
-
-  <h3>질의응답과 시간</h3>
-  <ul>
-    <li>상태줄 '질의응답 m:ss'는 질의응답 화면에 들어온 뒤 지난 시간이고, 아래 작은 글은 멈춘 발표 경과입니다. 질의응답 시간은 발표 경과에 넣지 않습니다.</li>
-    <li>질의응답 중에 한 말은 애드리브로 모으지 않고, 대본 위치도 움직이지 않습니다.</li>
-    <li>발표 전에 질의응답 화면에서 마이크를 먼저 켜도, 발표 시간은 대본을 따라 읽기 시작하거나 손으로 위치를 옮길 때부터 잽니다.</li>
-  </ul>
-
-  <h3 id="qa-model">판정 모델</h3>
-  <p>판정 모델은 청중 질문과 준비한 질문이 얼마나 비슷한지 기기 안에서 계산하는 작은 AI 모델(multilingual-e5-small)입니다. 화면에는 'e5'라고도 나옵니다. 받지 않아도 질의응답을 쓸 수 있고, 그때는 글자(음절) 비교로 고릅니다.</p>
-  <ul>
-    <li>받는 곳은 두 군데입니다. 'Q&amp;A 준비' 창의 '모델 받기 (약 135MB, 와이파이 권장)'와 질의응답 화면 맨 아래 '판정 모델 받기 (약 135MB, 와이파이 권장)'.</li>
-    <li>와이파이에서 받으세요. 실행 파일까지 합치면 처음 한 번 약 163MB를 받고, 그 뒤에는 이 iPad의 Safari에 남아 계속 씁니다. Safari가 7일 동안 열지 않은 사이트의 데이터를 지우면 다시 받아야 합니다(<a href="#data">데이터와 개인정보</a>).</li>
-    <li>받는 동안에도 '질문'과 마이크를 쓸 수 있고, 그동안은 글자 비교로 고릅니다.</li>
-    <li>받은 뒤에는 저장한 질문이 있으면 발표 화면에 들어갈 때 저절로 불러옵니다. 이때 마이크 버튼이 잠깐 '준비 중'이 됩니다. 질문(바꿔 묻는 말 포함)을 고치거나 다른 대본으로 바꾼 뒤 처음에는 질문을 다시 계산하느라 더 걸릴 수 있습니다.</li>
-    <li>실패하면 버튼이 '다시 시도'로 바뀝니다.</li>
-    <li>iPad에서 판정 속도와 메모리 사용량은 아직 재 보지 않았습니다.</li>
-  </ul>
-
-  <div class="faqs">
-  <details class="faq">
-  <summary>답 카드 바로 열기와 JEV 모드(실험) 자세히</summary>
-  <div class="faq-b">
-  <ul>
-    <li>'Q&amp;A 준비' 창의 '확신이 높으면 답 카드를 바로 열기 (e5 판정일 때)'를 켜면, 판정 모델이 확실할 때 후보를 누르지 않아도 카드가 열립니다. 1등 점수가 0.95 이상이고 2등과 0.07 이상 차이 날 때입니다. 처음에는 꺼져 있고, 기기마다 따로 정합니다.</li>
-    <li>'JEV 모드 (실험)'는 웹에서 그래픽 처리 장치를 쓸 수 있는(WebGPU) 기기에서만 보입니다. 켜면 선택지 가운데 하나를 고르는 더 큰 판정 모델(Kev-0.6B)이 e5가 고른 후보 5개와 '해당 없음' 가운데서 다시 고릅니다. 'JEV 모델 받기 (약 340MB, 와이파이 권장)'로 한 번 받아야 하고, e5 판정 모델도 받아 두어야 동작합니다. 만든 사람의 시험에서는 정확도가 더 좋아지지 않았습니다.</li>
-    <li>JEV가 2초 안에 답하지 않거나 오류가 나면 e5로 판정하고 JEV를 멈춥니다. 다시 쓰려면 'Q&amp;A 준비' 창에서 'JEV 다시 시도'를 누르세요. 휴대폰과 태블릿에서는 데이터와 메모리가 많이 들어 권하지 않습니다.</li>
-  </ul>
-  </div>
-  </details>
-  </div>
+  <figure>
+    <div class="win"><img src="img/08-qa-candidates.png" width="900" height="356" loading="lazy" alt="질의응답 화면. '질문' 버튼 아래에 번호 붙은 후보 3개와 '해당 없음'이 있고, 1번에 파란 테두리가 있어요. 그 아래에 채팅 질문 칸이 있어요."></div>
+    <figcaption>맞는 질문을 눌러요</figcaption>
+  </figure>
 </section>
 
-<!-- ============ 애드리브 ============ -->
 <section id="adlib">
-  <h2>애드리브 정리</h2>
-  <p>발표 중 대본에 없던 말을 따로 모아 둡니다. 발표가 끝난 뒤 다듬어서 대본에 넣을지 고를 수 있습니다.</p>
-
-  <h3>모으는 말</h3>
-  <ul>
-    <li>대본이 마지막으로 맞은 뒤부터 다시 맞을 때까지 들은 말이 애드리브 하나입니다. 손으로 옮기거나, 'Q&amp;A'를 누르거나, 정지해도 그 구간이 끝납니다.</li>
-    <li>'어', '음', '그' 같은 군말을 빼고 10음절(2초쯤)보다 짧으면 버립니다.</li>
-    <li>질의응답 중, 대본 끝에 닿은 뒤, 발표 시작 전에는 모으지 않습니다.</li>
-    <li>애드리브는 대본마다 최근 50개까지 저장합니다. 새로고침해도 남고, 대본을 고쳐도 지우지 않습니다.</li>
-  </ul>
-  <div class="note warn">
-    <p class="note-h">주의</p>
-    <p><strong>대본 처음에서 '● 시작'을 눌러 새 발표를 시작하면 지난 애드리브가 지워집니다.</strong> 리허설 뒤 남길 애드리브가 있으면 먼저 정리하거나 '복사'해 두세요.</p>
-  </div>
-
-  <h3>보는 곳</h3>
-  <div class="row">
-    <div>
-      <ul>
-        <li>세로 iPad와 폭이 1100px보다 좁은 창: 아래 줄에 '애드리브 N' 버튼이 생깁니다. 누르면 오른쪽에서 '애드리브 정리' 창이 나옵니다.</li>
-        <li>가로 iPad(폭 1100px 이상): 발표 화면 오른쪽 칸에 '애드리브 N개'와 '복사', '정리'가 보입니다(<a href="#layout">화면 방향과 멀티태스킹</a>의 가로 사진).</li>
-        <li>발표가 끝난 뒤: 편집 화면 '⋯' 메뉴의 '애드리브 정리'.</li>
-        <li>항목 첫 줄은 '#번호 · 발표 시작 뒤 시각 · 앞 문장의 끝 다음'이고, 그 아래가 들은 말입니다. 최근 것이 위에 옵니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/17-ipad-adlib-sheet.jpg" width="800" height="1151" loading="lazy" alt="세로 발표 화면에서 연 '애드리브 정리' 창이 오른쪽에서 나와 있습니다. 설명 글, '프롬프트 복사', '결과 붙여넣기', '복사' 버튼, 키 안내와 'AI 키 넣기', 항목 카드 '#1 · 0:34 · '…1 지점에 옵니다.' 다음'과 들은 말, '닫기'."></div>
-      <figcaption>발표 화면에서 '애드리브 1'을 눌러 연 '애드리브 정리' 창. 오른쪽에서 나오고, 여기서는 '대본에 넣기'가 없어서 편집 화면의 '⋯' 메뉴에서 하라고 안내합니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3>대본에 넣기</h3>
-  <p>대본에 넣기는 편집 화면에서만 할 수 있습니다.</p>
-  <ol class="seq">
-    <li>편집 화면 '⋯' 메뉴의 '애드리브 정리'를 누르세요.</li>
-    <li>넣을 항목의 '대본에 넣기'를 누르세요. 이미 넣은 항목은 '한 번 더 넣기'로 보입니다.</li>
-    <li>'지금 대본과 비교: 더할 말'에서 초록 밑줄로 넣을 자리를 확인하세요. 애드리브 바로 앞 문장 뒤, 같은 문단 안에 들어갑니다.</li>
-    <li>창 아래 '적용'을 누르세요. 그만두려면 '취소'를 누르세요.</li>
+  <h2>애드리브</h2>
+  <p class="lead">대본에 없는 말을 해도 그 자리에서 기다려요.</p>
+  <ol>
+    <li>아래에 '대본 밖 · 돌아오면 이어 가요'가 떠요.</li>
+    <li>그때 한 말은 모여요. 발표 뒤 '⋯' › '애드리브 정리' › '대본에 넣기' › '적용'을 눌러 주세요.</li>
+    <li>처음부터 다시 시작하면 지난 애드리브가 지워져요. 남길 말은 '복사'해 두세요.</li>
   </ol>
-  <div class="shots">
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/18a-ipad-adlib-editor.jpg" width="800" height="1151" loading="lazy" alt="편집 화면에서 연 '애드리브 정리' 창. 설명 글, '프롬프트 복사', '결과 붙여넣기', '복사', 키 안내와 'AI 키 넣기', 항목 카드 #2(2:09)와 #1(0:34) 아래에 각각 '대본에 넣기' 버튼, '닫기'."></div>
-      <figcaption>편집 화면 '⋯' 메뉴에서 연 같은 창. 항목마다 '대본에 넣기'가 있고, 최근 것(#2)이 위에 옵니다.</figcaption>
-    </figure>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/18-ipad-adlib-insert-diff.jpg" width="800" height="1151" loading="lazy" alt="'대본에 넣기'를 누른 뒤의 창. 위에 '바뀌는 곳을 확인하고 '적용'을 누르세요.' 알림, 항목 #2 카드 안 '지금 대본과 비교: 더할 말' 아래 대본에 초록 밑줄로 넣을 문장, 접힌 '… 같은 내용 453자 …'와 '… 같은 내용 1141자 …', 창 아래 '적용', '취소', '닫기'."></div>
-      <figcaption>#2의 '대본에 넣기'를 누른 뒤. 넣을 문장이 초록 밑줄로 보이고, '적용'을 눌러야 대본이 바뀝니다.</figcaption>
-    </figure>
-  </div>
-  <ul>
-    <li>넣기 전 대본은 버전으로 남고, 어느 버전에 있는지 알려 줍니다. 되돌리려면 '⋯' 메뉴의 '버전 보기'에서 고르세요.</li>
-    <li>'AI 정리'를 하지 않았거나 AI가 '대본에 넣지 않아도 돼요'로 본 항목은 군말을 뺀 들은 말에 마침표만 붙여 그대로 넣습니다. 말을 다듬으려면 'AI 정리'를 먼저 하거나, 넣은 뒤 직접 고치세요.</li>
-    <li>대본이 바뀌므로 발표 위치는 처음으로 돌아갑니다. 넣은 말만큼 문장 수가 늘어나서, 자동 줄이기를 쓰려면 'AI 도구'의 '발표 준비'를 다시 해야 합니다.</li>
-  </ul>
-
-  <h3>'AI 정리'와 '복사'</h3>
-  <ul>
-    <li>'AI 정리'(키가 있을 때)나 '프롬프트 복사', '결과 붙여넣기'로 정리하면 항목마다 짧은 제목과 요점 1~3줄이 붙습니다. 그 아래에 '대본에 넣을 만해요: …' 또는 '대본에 넣지 않아도 돼요'가 나옵니다. 인사, 진행 말, 말실수를 고친 말은 넣지 않아도 되는 쪽으로 봅니다.</li>
-    <li>AI에는 애드리브 글과 그 앞뒤 대본 문장만 보냅니다. 대본 전체는 보내지 않습니다.</li>
-    <li>'복사'는 애드리브 전체를 오래된 것부터 글로 복사합니다. 메모나 과제 기록에 붙여 둘 때 쓰세요.</li>
-  </ul>
 </section>
 
-<!-- ============ AI ============ -->
 <section id="ai">
-  <h2>AI 기능과 키</h2>
-  <p>AI 기능은 Anthropic의 Claude를 씁니다. Claude는 발표 전에 대본과 질문을 준비할 때와, 발표가 끝난 뒤 애드리브를 정리할 때만 씁니다. 발표 중의 따라가기, 자동 줄이기, 질문 고르기는 Claude에 요청하지 않습니다. 말소리를 글자로 바꾸는 일만 Apple(Safari)이나 Google(Chrome)이 합니다.</p>
-
-  <h3>'AI 도구' 창</h3>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>탭</th><th>하는 일</th><th>대본</th></tr></thead>
-      <tbody>
-        <tr><td class="nw">'새로 쓰기'</td><td>'주제', '청중', '목적·핵심 메시지', '목표 시간(분)', '말투', '슬라이드 개요 (한 줄에 슬라이드 하나)', '참고 자료 (선택)'로 대본 초안을 씁니다. 슬라이드 하나에 문단 하나로 씁니다.</td><td>'적용'을 누르면 전체가 바뀝니다</td></tr>
-        <tr><td class="nw">'지시로 고치기'</td><td>'어떻게 고칠까요?'에 지시를 쓰거나 '30초 줄이기', '더 쉽게', '도입을 질문으로'를 누릅니다. 편집창에서 글을 골라 두고 창을 열면 '고른 문단만 고치기'가 켜집니다.</td><td>'적용'을 누르면 바뀝니다</td></tr>
-        <tr><td class="nw">'발표 준비'</td><td>늦어지면 뺄 문장과 키워드의 다른 말을 정합니다(<a href="#time">시간 맞추기</a>).</td><td>바뀌지 않습니다</td></tr>
-        <tr><td class="nw">'Q&amp;A 준비'</td><td>'Q&amp;A 준비' 창을 엽니다(<a href="#qa">질의응답</a>).</td><td>바뀌지 않습니다</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="shots">
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/14-ipad-ai-tools-new.jpg" width="800" height="1151" loading="lazy" alt="'AI 도구' 창. 탭 '새로 쓰기'(골라짐), '지시로 고치기', '발표 준비', 'Q&amp;A 준비'. 설명 글과 '주제' 라이브스크립트 소개, '청중' 같은 과 학생과 교수님, '목적·핵심 메시지', '목표 시간(분)' 3, '말투' 합니다체, '슬라이드 개요 (한 줄에 슬라이드 하나)', '참고 자료 (선택)' 칸, '프롬프트 복사'와 '결과 붙여넣기', 키 안내와 'AI 키 넣기', '닫기'."></div>
-      <figcaption>'AI 도구' 창의 '새로 쓰기' 탭. 키가 없어서 'AI로 쓰기' 대신 '프롬프트 복사', '결과 붙여넣기', 'AI 키 넣기'가 있습니다. 주제와 청중은 'Q&amp;A 준비' 창과 같은 값을 씁니다.</figcaption>
-    </figure>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/14b-ipad-ai-tools-edit.jpg" width="800" height="1151" loading="lazy" alt="'AI 도구' 창의 '지시로 고치기' 탭. '어떻게 고칠까요?' 입력 칸, 빠른 지시 버튼 '30초 줄이기', '더 쉽게', '도입을 질문으로', '프롬프트 복사'와 '결과 붙여넣기', 키 안내와 'AI 키 넣기', '닫기'."></div>
-      <figcaption>'지시로 고치기' 탭. '어떻게 고칠까요?' 칸과 빠른 지시 '30초 줄이기', '더 쉽게', '도입을 질문으로'가 있습니다.</figcaption>
-    </figure>
-  </div>
-  <ul>
-    <li>결과가 오면 '예상 m:ss / 목표 m:ss (+N%)'와 지금 대본과의 차이가 보입니다. 지울 말은 빨강, 더할 말은 초록입니다.</li>
-    <li>'적용'을 눌러야 대본이 바뀝니다. 바뀌기 전 대본은 'AI 적용 전' 버전으로 남습니다.</li>
-    <li>'새로 쓰기' 결과가 목표와 10% 넘게 다르면 '줄이기' 또는 '늘리기'가 나타납니다.</li>
-    <li>AI에는 자료로 확인하지 못한 사실에 '[확인 필요]'를 붙이라고 요청합니다. 표시가 빠질 수도 있으니 숫자와 사실은 모두 직접 확인하세요.</li>
-    <li>하는 동안 버튼이 '멈추기'로 바뀝니다. 창을 닫아도 뒤에서 계속 받습니다.</li>
-    <li>'새로 쓰기'와 'Q&amp;A 준비'의 주제, 청중 같은 발표 정보는 대본마다 저장됩니다.</li>
-  </ul>
-
-  <h3>키 없이 쓰기</h3>
-  <ol class="seq">
-    <li>쓰려는 창에서 '프롬프트 복사'를 누르세요.</li>
-    <li>claude.ai 같은 챗봇에 붙여넣고 답을 받으세요. iPad에서는 Safari 탭을 하나 더 열거나 챗봇 앱을 Split View로 옆에 두면 오가기 편합니다.</li>
-    <li>'결과 붙여넣기'를 누르고, 받은 답을 칸에 그대로 붙여넣은 뒤 그 아래 '적용'을 누르세요.</li>
-    <li>대본을 바꾸는 결과면 비교를 확인하고 '적용'을 한 번 더 누르세요.</li>
+  <h2>AI로 준비하기</h2>
+  <p class="lead">AI 키가 없어도 복사와 붙여넣기로 써요.</p>
+  <ol>
+    <li>위 'AI 도구'에서 탭을 고르고 '프롬프트 복사'를 눌러 주세요.</li>
+    <li>claude.ai 같은 챗봇에 붙여넣고 답을 받아요.</li>
+    <li>답을 '결과 붙여넣기'에 넣고 '적용'을 눌러요. 비교 화면이 뜨면 한 번 더 '적용'해요.</li>
   </ol>
-  <p>복사한 프롬프트에는 대본 전체나 발표 정보(애드리브 정리는 애드리브와 그 앞뒤 문장)가 들어 있어서, 붙여넣은 챗봇 서비스로 그 내용이 갑니다.</p>
-  <p>챗봇이 붙인 코드 블록 표시, 제목 줄과 '여기 대본입니다:' 같은 흔한 앞뒤 인사말은 앱이 지웁니다. 대본의 일부일 수 있는 말은 남기니 '적용' 전에 비교에서 확인하세요. 이 방법은 대본 쓰기, 고치기, 발표 준비, Q&amp;A 준비, 애드리브 정리에서 모두 됩니다. '다른 말'만 키가 있어야 합니다.</p>
-
-  <h3>'다른 말'</h3>
-  <p>키가 있을 때 편집창에서 한 줄 안의 40자 이하 글을 고르면 아래 줄에 '다른 말' 버튼이 나옵니다. 누르면 대신 쓸 말 3개가 나오고, 하나를 누르면 그 자리만 바뀝니다. 바꾼 직후에는 버튼이 '되돌리기'가 되어 한 번 되돌릴 수 있습니다. 숫자, 영어, 고유명사는 바꾸지 않습니다.</p>
-
-  <h3>AI 키 넣기</h3>
-  <div class="row">
-    <div>
-      <ol class="seq">
-        <li>편집 화면 '⋯' 메뉴의 'AI 키'를 누르세요. 각 창의 'AI 키 넣기' 버튼으로도 열립니다.</li>
-        <li>'Anthropic API 키' 칸에 키를 붙여넣으세요.</li>
-        <li>이 기기에서 계속 쓸 때만 '이 기기에 기억 (끄면 이 탭을 닫을 때 지워집니다)'을 켜세요.</li>
-        <li>'저장'을 누르세요.</li>
-      </ol>
-      <ul>
-        <li>'이 기기에 기억'을 끄면(처음 값) 키는 이 탭에만 있고 탭을 닫으면 지워집니다. 켜면 이 Safari에 남습니다.</li>
-        <li>'키 지우기'는 탭과 기기 양쪽에서 키를 지웁니다.</li>
-        <li>키가 있으면 'AI로 쓰기', 'AI로 만들기', 'AI 정리' 같은 버튼이 나타나고, 키가 없을 때의 안내 글은 숨습니다.</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/22-ipad-key-dialog.jpg" width="800" height="1151" loading="lazy" alt="빈 'AI 키' 창. 'AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송됩니다.', '저장된 키가 없어요.', 비어 있는 'Anthropic API 키' 입력칸, 꺼진 '이 기기에 기억' 체크칸과 그 아래 github.io 저장 공간 경고 글, '저장', '키 지우기', '닫기' 버튼."></div>
-      <figcaption>'AI 키' 창. '이 기기에 기억'은 처음에 꺼져 있습니다. 그 아래 github.io 저장 공간 경고는 앱 주소(gepi2.github.io)에서 열었을 때 보입니다.</figcaption>
-    </figure>
-  </div>
-  <div class="note warn">
-    <p class="note-h">주의</p>
-    <p><strong>'이 기기에 기억'을 켜면 같은 gepi2.github.io 주소 아래의 다른 사이트도 그 키를 읽을 수 있습니다.</strong> 저장 공간을 같이 쓰기 때문입니다. 여럿이 같이 쓰는 키나 선생님이 나눠 준 키는 '이 기기에 기억'을 켜지 말고 이 탭에만 두세요. 이 탭에 둔 키도 같은 탭에서 그 사이트들을 열면 읽힐 수 있으니, 다 쓴 뒤(특히 여럿이 같이 쓰는 iPad에서는) '키 지우기'를 누르세요.</p>
-  </div>
-
-  <h3>비용과 보내는 데이터</h3>
-  <ul>
-    <li>키로 AI를 쓸 때마다 그 키의 Anthropic 계정에 사용료가 듭니다. 앱은 비용을 보여 주지 않으니 결제와 한도는 Claude Console에서 확인하세요.</li>
-    <li>보내는 것은 기능마다 다릅니다.
-      <ul>
-        <li>'새로 쓰기': 발표 정보(주제, 청중, 목적, 말투, 개요, 참고 자료, 목표 시간)</li>
-        <li>'지시로 고치기': 대본 전체와 지시</li>
-        <li>'발표 준비': 대본 전체</li>
-        <li>'Q&amp;A 준비': 대본 전체와 주제·청중</li>
-        <li>'애드리브 정리': 애드리브와 그 앞뒤 문장</li>
-        <li>'다른 말': 고른 말과 그 문장</li>
-      </ul>
-    </li>
-    <li>'다른 말'은 작고 빠른 모델을, 나머지 기능은 큰 모델을 씁니다(모델 이름은 404 오류 안내에만 나옵니다).</li>
-    <li>오류는 번호와 함께 이유를 알려 줍니다. 401은 키가 맞지 않을 때, 402나 지출 한도 안내는 크레딧이나 한도 문제, 429는 요청이 너무 많을 때(1분쯤 뒤 다시)입니다.</li>
-  </ul>
-</section>
-
-<!-- ============ 화면 방향 ============ -->
-<section id="layout">
-  <h2>화면 방향과 멀티태스킹</h2>
-  <p>배치는 기기 종류가 아니라 Safari 창의 폭으로 정해집니다. 그래서 같은 iPad라도 세로로 둘 때, 가로로 둘 때, 다른 앱과 화면을 나눌 때 모습이 달라집니다.</p>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>iPad를 둔 모습</th><th>창 폭</th><th>발표 화면</th></tr></thead>
-      <tbody>
-        <tr><td>가로로 둔 iPad 대부분(10.2형, 9.7형, 5세대까지의 7.9형 iPad mini는 아래 줄)</td><td class="nw">1100px 이상</td><td>오른쪽에 애드리브 칸이 따로 생깁니다.</td></tr>
-        <tr><td>세로로 둔 iPad, 10.2형·9.7형·7.9형 mini 가로, 가로 화면을 반으로 나눈 창</td><td class="nw">521~1099px</td><td>한 열. 애드리브는 아래 줄 '애드리브 N' 버튼으로 봅니다. 상태줄에 진행률 글도 보입니다.</td></tr>
-        <tr><td>Slide Over, 좁게 나눈 창, 세로 화면을 반으로 나눈 창</td><td class="nw">520px 이하</td><td>한 열. 상태줄의 진행률 글이 숨고 진행 막대로만 봅니다. 420px 이하에서는 편집 화면의 '/ 목표'도 숨습니다.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>세로로 둘 때</h3>
-  <div class="row">
-    <div>
-      <ul>
-        <li>대본이 한 열로 보입니다.</li>
-        <li>애드리브가 모이면 아래 줄 오른쪽에 '애드리브 N' 버튼이 생깁니다. 누르면 오른쪽에서 '애드리브 정리' 창이 나옵니다(<a href="#adlib">애드리브 정리</a>).</li>
-        <li>상태줄 아래 작은 글에 경과 시간과 진행률이 같이 보입니다.</li>
-        <li>한 줄이 너무 길게 느껴지면 '가'의 '글 폭'에서 '좁게'를 고르세요(<a href="#view">'가' 보기 설정</a>).</li>
-      </ul>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/16-ipad-adlib-button.jpg" width="800" height="1151" loading="lazy" alt="세로 iPad 발표 화면. 상태줄 '여유 0:20'과 '1:01 · 23%', 빨간 '정지', 지금 문장 '어미를 바꾸거나 낱말을 건너뛰어도 하이라이트가 따라갑니다.'에 파란 배경이 있고, 아래 줄 오른쪽에 '애드리브 1' 버튼이 있습니다."></div>
-      <figcaption>세로 iPad(폭 820). 애드리브를 하고 대본으로 돌아온 화면입니다. 폭이 1100px보다 좁아서 애드리브는 아래 줄 '애드리브 1' 버튼으로 봅니다.</figcaption>
-    </figure>
-  </div>
-  <figure class="strip">
-    <div class="scroll"><img src="img/16b-zoom-footer-adlib.png" width="800" height="59" loading="lazy" alt="세로 발표 화면 아래 줄 확대. 왼쪽부터 '◀', 들은 말 '…, 사파리는 애플 서버로 보냅니다. 대본을 그대로 읽지 않아도 괜찮습니다.', '애드리브 1', '▶'."></div>
-    <figcaption>세로 화면의 아래 줄. 왼쪽부터 '◀', 들은 말, '애드리브 1', '▶'입니다.</figcaption>
+  <dl>
+    <div><dt>'자동 줄이기'</dt><dd>'발표 준비'를 해 두고 목표를 넣은 뒤 켜면, 늦을 때 덜 중요한 문장을 숨겨요.</dd></div>
+    <div><dt>숫자와 사실</dt><dd>AI가 쓴 것은 직접 확인해 주세요.</dd></div>
+    <div><dt>'AI 키'</dt><dd>넣으면 앱에서 바로 돼요. 쓴 만큼 요금이 들어요. '이 기기에 기억'을 켜면 같은 github.io 주소의 다른 사이트도 키를 읽을 수 있어요. 다 쓰면 '키 지우기'를 눌러요.</dd></div>
+  </dl>
+  <figure>
+    <div class="win"><img src="img/11-ai-tools.png" width="720" height="688" loading="lazy" alt="'AI 도구' 창의 '새로 쓰기' 탭. 주제, 청중, 목표 시간, 말투, 슬라이드 개요 칸 아래에 '프롬프트 복사'와 '결과 붙여넣기'가 있어요."></div>
+    <figcaption>키 없이 쓰는 'AI 도구'</figcaption>
   </figure>
-
-  <h3>가로로 둘 때</h3>
-  <ul>
-    <li>창 폭이 1100px 이상이면 발표 화면 오른쪽에 '애드리브 N개' 칸이 생기고, 그 위에 '복사'와 '정리' 버튼이 있습니다. 아래 줄의 애드리브 버튼은 없어집니다.</li>
-    <li>가로 폭이 1100px보다 좁은 기종(10.2형 iPad는 1080px)에서는 가로로 두어도 '애드리브 N' 버튼으로 봅니다.</li>
-    <li>편집 화면은 폭을 다 써서 한 줄에 글이 더 많이 들어갑니다. 대본을 쓰거나 'AI 도구'를 쓸 때는 가로가 편합니다.</li>
-    <li>질의응답 화면은 가운데 900px 폭 안에 모여 보입니다.</li>
-  </ul>
-  <figure class="ipad land">
-    <div class="bezel"><img src="img/25-ipad-landscape-reading-adlib.jpg" width="800" height="556" loading="lazy" alt="가로 iPad 발표 화면. 왼쪽에 대본이 있고 지금 문장 '대본에 없던 말은 따로 모아 두었다가, 발표가 끝난 뒤 대본에 넣을지 고를 수 있습니다.'에 파란 배경이 있습니다. 오른쪽 칸에 '애드리브 2개'와 '복사', '정리' 버튼, 애드리브 카드 두 개가 있습니다. 상태줄은 '여유 0:02'와 '2:17 · 56%'입니다."></div>
-    <figcaption>가로 iPad(폭 1180). 오른쪽 칸에 '애드리브 2개'와 '복사', '정리', 애드리브 카드 두 개가 있고, 아래 줄에는 애드리브 버튼이 없습니다. 안내서에 싣느라 줄여서 글자가 실제보다 작게 보입니다.</figcaption>
-  </figure>
-  <div class="shots">
-    <figure class="ipad land">
-      <div class="bezel"><img src="img/27-ipad-landscape-qa-card.jpg" width="800" height="556" loading="lazy" alt="가로 iPad 질의응답 화면. 상태줄 '질의응답 1:17', '대본', '정지'. 가운데에 '다음 질문' 버튼, '글자 비교로 골랐어요', 답 카드 '질문 판정은 기기 안에서 하나요?'와 큰 글씨 답, '혹시 이 질문인가요?' 아래 다른 후보 두 개, 채팅 질문 칸, '전체 질문 목록'."></div>
-      <figcaption>가로 질의응답 화면. 답 카드와 버튼이 가운데 900px 폭 안에 모입니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3>화면 나누기와 창 모드</h3>
-  <ul>
-    <li>Safari 창을 다른 앱과 나누거나 작게 띄우면 그 창의 폭에 맞춰 배치가 바뀝니다(맨 위 표). iPadOS 버전에 따라 Split View, Slide Over, 스테이지 매니저, 창 모드처럼 이름이 다릅니다.</li>
-    <li>Keynote나 PDF를 옆에 띄우고 발표할 수 있습니다. 다만 다른 앱 쪽을 만지고 있을 때도 Safari의 음성 인식이 이어지는지는 아직 확인하지 않았습니다. 이렇게 쓰려면 미리 리허설하세요.</li>
-    <li>키보드와 리모컨 키는 iPad가 지금 고른 창으로 갑니다. 다른 앱 창을 만진 뒤에는 키가 라이브스크립트로 가지 않을 수 있습니다.</li>
-  </ul>
-  <figure class="ipad split">
-    <div class="bezel"><div class="split-in">
-      <img src="img/28-ipad-splitview-present.jpg" width="800" height="1112" loading="lazy" alt="폭 590px 창의 발표 화면. 상태줄 주황 '초과 1:01'과 '3:25 · 64%', 빈 원 '정지', 지금 문장 '말하는 속도는 실제로 대본을 따라간 글자 수로 재고, 손으로 넘긴 부분과 애드리브 시간은 뺍니다.'에 파란 배경과 '수로' 밑줄이 있고, 아래 줄에 '◀', 들은 말, '애드리브 2', '▶'가 있습니다.">
-      <div class="other" aria-hidden="true">다른 앱 자리</div>
-    </div></div>
-    <figcaption>Split View 절반 크기. 왼쪽은 폭 590px 창으로 찍은 발표 화면이고, 오른쪽 칸은 다른 앱 자리를 나타낸 그림입니다. 한 열 배치에 '애드리브 2' 버튼이 있고, 상태줄에 진행률(64%)도 보입니다.</figcaption>
-  </figure>
-
-  <h3>돌리거나 창 크기를 바꿀 때</h3>
-  <ul>
-    <li>기기를 돌리거나 창 크기를 바꾸면 지금 줄을 다시 화면 위에서 3분의 1 지점에 둡니다.</li>
-    <li>높이만 120px 이하로 바뀌는 정도(주소 막대가 숨거나 나올 때)는 손으로 내린 자리를 그대로 둡니다.</li>
-    <li>편집 화면이나 질의응답 화면에서 돌렸으면, 발표 화면으로 돌아올 때 맞춥니다.</li>
-    <li>발표 중에 화면이 돌지 않게 하려면 iPad 제어 센터에서 화면 회전을 잠그세요.</li>
-    <li>iPad를 AirPlay(화면 미러링)나 HDMI로 프로젝터에 연결해 미러링하면 iPad 화면이 그대로 보여서 대본도 청중에게 보입니다. 앱은 연결한 화면에 다른 내용을 따로 띄우지 못하니, 슬라이드는 다른 기기로 띄우세요.</li>
-  </ul>
 </section>
 
-<!-- ============ 데이터 ============ -->
-<section id="data">
-  <h2>데이터와 개인정보</h2>
-  <p>라이브스크립트에는 서버와 계정이 없습니다. 대본과 설정은 지금 쓰는 브라우저(iPad에서는 Safari) 안에만 저장되고, 다른 브라우저나 기기와 공유되지 않습니다. 다만 앱 주소(gepi2.github.io)는 같은 주소 아래의 다른 GitHub Pages 사이트와 저장 공간을 같이 써서, 그 사이트들이 이 저장 공간(대본 포함)을 읽을 수 있습니다.</p>
-
-  <h3>저장되는 곳</h3>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>무엇</th><th>어디에</th><th>사라지는 때</th></tr></thead>
-      <tbody>
-        <tr><td>대본, 읽던 위치, 목표 시간, 발표 시간, 발표 정보, 질문, 버전, 발표 준비 결과, 자동 줄이기 상태, 애드리브</td><td>이 브라우저의 저장 공간(대본마다 따로, 모두 합쳐 약 5MB)</td><td>직접 지우거나 브라우저 데이터를 지울 때. iPad Safari는 7일 동안 열지 않으면 지울 수 있음</td></tr>
-        <tr><td>글자 크기, 글 폭, 말 속도, 답 카드 바로 열기, JEV 설정</td><td>같은 곳(기기에 하나)</td><td>같음</td></tr>
-        <tr><td>AI 키</td><td>이 탭(처음 값) 또는 이 브라우저('이 기기에 기억'을 켰을 때)</td><td>탭에 둔 키는 탭을 닫을 때, 기억한 키는 '키 지우기'를 누르거나 브라우저 데이터를 지울 때</td></tr>
-        <tr><td>인식 기록, 저장하지 않은 Q&amp;A 수정</td><td>이 탭</td><td>탭을 닫을 때</td></tr>
-        <tr><td>판정 모델</td><td>브라우저 캐시</td><td>브라우저 데이터를 지울 때</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>밖으로 보내는 것</h3>
-  <div class="tbl wide">
-    <table>
-      <thead><tr><th>무엇</th><th>받는 곳</th><th>언제</th></tr></thead>
-      <tbody>
-        <tr><td>말소리</td><td>Apple(Safari) 또는 Google(Chrome)</td><td>마이크가 켜져 있는 동안. 질의응답에서 따라 말한 질문도 포함</td></tr>
-        <tr><td>대본과 발표 정보</td><td>Anthropic(키로 쓸 때) 또는 프롬프트를 붙여넣은 챗봇 서비스</td><td>AI 기능을 쓸 때만</td></tr>
-        <tr><td>애드리브로 한 말과 그 앞뒤 문장</td><td>Anthropic(키로 쓸 때) 또는 프롬프트를 붙여넣은 챗봇 서비스</td><td>'AI 정리'를 누르거나 프롬프트를 복사해 붙여넣을 때만</td></tr>
-        <tr><td>질의응답 질문 글</td><td>보내지 않음</td><td>판정은 기기 안에서 합니다</td></tr>
-        <tr><td>판정 모델 파일(e5, JEV를 켜면 JEV도)</td><td>Hugging Face에서 받음</td><td>기기마다 한 번</td></tr>
-        <tr><td>내보낸 대본 파일, 인식 기록 파일, qa-pack.json</td><td>iCloud Drive(Safari 다운로드 위치가 iCloud Drive일 때, 처음 설정)</td><td>'파일로 내보내기', '인식 기록 내려받기', '내보내기'를 누를 때</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="row">
-    <div>
-      <p>비슷한 안내가 앱의 '⋯' 메뉴 '데이터가 가는 곳'에도 있습니다. 누르면 내용이 보입니다.</p>
-    </div>
-    <figure class="ipad portrait">
-      <div class="bezel"><img src="img/13b-ipad-menu-data.jpg" width="800" height="1151" loading="lazy" alt="⋯ 메뉴의 '데이터가 가는 곳'을 펼친 모습. 말소리는 Google(Chrome) 또는 Apple(Safari)로, 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로, 애드리브는 'AI 정리'를 누를 때만 Anthropic으로 가고, 질의응답 질문은 기기 안에서 판정하며, 판정 모델은 Hugging Face에서 받는다는 글과 iPhone·iPad Safari 7일 삭제 안내가 있습니다."></div>
-      <figcaption>'⋯' 메뉴의 '데이터가 가는 곳'을 펼친 모습. 아래 문단에 iPhone·iPad Safari의 7일 삭제 안내가 있습니다.</figcaption>
-    </figure>
-  </div>
-
-  <h3>지워지지 않게 하기</h3>
-  <div class="note warn">
-    <p class="note-h">주의</p>
-    <p><strong>iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있습니다.</strong> 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
-  </div>
-  <ul>
-    <li>Safari의 개인 정보 보호 브라우징 창에서 쓴 대본은 창을 닫으면 사라집니다.</li>
-    <li>홈 화면에 추가한 앱은 Safari와 저장 공간이 따로라서 Safari에서 쓰던 대본이 보이지 않습니다. 홈 화면 앱에서는 음성 인식도 안 될 수 있으니 Safari에서 쓰세요.</li>
-    <li>다른 기기로 옮길 때도 '파일로 내보내기'를 쓰세요.</li>
-    <li>저장 공간이 차면 “이 기기의 저장 공간이 가득 차서 저장하지 못했어요. …”가 나옵니다. 쓰지 않는 대본을 지우고, 그동안 지금 대본은 다른 곳에 복사해 두세요.</li>
-  </ul>
-
-  <h3>인식 기록 내려받기</h3>
-  <p>'⋯' 메뉴 '발표 준비와 정리'의 '인식 기록 내려받기'를 누르면 'livescript-log-날짜시각.json' 파일을 받습니다. 따라가기가 어긋났던 발표를 나중에 다시 확인하거나, 앱을 고치는 사람에게 문제를 알릴 때 씁니다.</p>
-  <ul>
-    <li>들어가는 것: 대본 전문, 음성 인식이 받아 적은 말 원문(질의응답에서 따라 말한 질문 포함), 위치를 옮긴 기록(목소리, 키워드, 누르기, '◀', '▶', 되돌리기), 자동 줄이기 단계, 질문 판정과 고른 후보, 애드리브 목록, 브라우저 정보.</li>
-    <li>기록은 이 탭에만 있습니다. 탭을 닫기 전에 받으세요.</li>
-    <li>리허설 뒤 대본을 고쳤다면 고치기 전 대본과 그 발표의 기록을 받습니다.</li>
-    <li>대본 처음에서 '● 시작'을 누르면 새 발표로 보고 기록을 비웁니다.</li>
-  </ul>
-  <div class="note">
-    <p class="note-h">보내기 전에</p>
-    <p>이 파일에는 대본 전체와 발표에서 한 말이 그대로 들어 있습니다. 남에게 보내기 전에 내용을 확인하세요.</p>
-  </div>
+<section id="faq">
+  <h2>자주 묻는 질문</h2>
+  <details>
+    <summary>“마이크 권한을 허용해 주세요”가 나와요</summary>
+    <p>Chrome 탭에서 주소창 왼쪽 아이콘을 눌러 마이크를 허용하고 새로고침해 주세요.</p>
+  </details>
+  <details>
+    <summary>파란 표시가 따라오지 않아요</summary>
+    <p>마이크 버튼이 '다시 듣기'면 눌러 주세요. 읽을 단어를 누르면 거기서 다시 따라와요.</p>
+  </details>
+  <details>
+    <summary>인터넷이 없어도 되나요?</summary>
+    <p>한 번 열었던 기기라면 열려요. 음성 인식은 안 돼서 '◀' '▶'로 넘겨요.</p>
+  </details>
+  <details>
+    <summary>다른 기기에서 이어 쓰고 싶어요</summary>
+    <p>'⋯' › '파일로 내보내기'로 받고, 그 기기에서 '파일 가져오기'로 열어 주세요.</p>
+  </details>
 </section>
 
-<!-- ============ 문제 해결 ============ -->
-<section id="trouble">
-  <h2>문제 해결</h2>
-  <div class="faqs">
-    <details class="faq">
-      <summary>“마이크 권한을 허용해 주세요”가 나와요</summary>
-      <div class="faq-b">
-        <p>Safari가 이 사이트의 마이크를 막은 상태입니다. <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>앱</span><i aria-hidden="true">›</i><span>Safari</span><i aria-hidden="true">›</i><span>마이크</span></span>(iPadOS 17 이하는 설정 › Safari › 마이크)에서 허용하세요. 그다음 페이지를 새로고침하고 '● 시작'을 누르세요. PC Chrome에서는 주소창 왼쪽의 사이트 정보 아이콘을 눌러 마이크를 허용하세요.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>“음성 인식이 꺼져 있어요”가 나와요</summary>
-      <div class="faq-b">
-        <p>iPad의 받아쓰기가 꺼져 있을 때 나오는 것으로 알려져 있습니다(iPad에서 띄워 보지는 않았습니다). <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>일반</span><i aria-hidden="true">›</i><span>키보드</span><i aria-hidden="true">›</i><span>받아쓰기</span></span>를 켠 뒤 다시 '● 시작'을 누르세요. Android나 PC에서 나오면 Chrome으로 열었는지 확인하세요.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>“Safari에서 열어 주세요”나 “이 브라우저는 음성 인식이 안 돼요”가 나와요</summary>
-      <div class="faq-b">
-        <p>첫 글은 iPhone·iPad의 다른 브라우저나 홈 화면 앱에서 나옵니다. 같은 주소를 Safari에서 여세요. 홈 화면 앱은 저장 공간이 따로라서, 그 앱에서 쓴 대본은 '파일로 내보내기'로 옮기세요.</p>
-        <p>둘째 글은 브라우저에 음성 인식 기능이 없을 때 나오고, 마이크 버튼이 눌리지 않습니다. iPad는 Safari, Android와 PC는 Chrome으로 여세요. 그동안에도 '◀' '▶'와 어절 누르기로 넘길 수 있고, 질의응답의 채팅 질문 칸도 쓸 수 있습니다.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>마이크 버튼에 '연결 중'이나 '다시 듣기'가 보여요</summary>
-      <div class="faq-b">
-        <p>'연결 중'은 음성 인식이 잠깐 끊겨 다시 켜는 중이라는 뜻이고, 대개 저절로 돌아옵니다. 4초가 지나도 돌아오지 않으면 '다시 듣기'로 바뀝니다. 그 버튼이나 <kbd>Space</kbd>를 누르세요. 위치와 시간은 그대로입니다. iPad Safari는 끊긴 인식을 저절로 다시 켜지 못할 때가 있다고 알려져 있습니다. 자주 생기면 인터넷 연결을 확인하세요.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>하이라이트가 따라오지 않거나 늦게 따라와요</summary>
-      <div class="faq-b">
-        <p>앱은 들은 말과 대본 글자를 맞춰 따라갑니다. 어미를 바꾸거나 낱말 몇 개를 건너뛰는 정도는 따라가지만, 문장을 많이 바꿔 말하면 놓칠 수 있습니다.</p>
-        <ul>
-          <li>아래 줄의 들은 말을 보세요. 비어 있으면 마이크나 음성 인식 문제입니다. 글자는 나오는데 따라오지 않으면 대본과 다르게 말한 것입니다.</li>
-          <li>문장 전체에 흰 점선 밑줄이 있으면 키워드로 짐작한 위치입니다. 대본대로 읽으면 글자 비교가 다시 맞고 점선이 사라집니다.</li>
-          <li>바로 고치려면 읽을 어절을 누르세요.</li>
-          <li>앱은 확인 없이 한 번에 30글자까지만 앞으로 갑니다. 앞질러 가는 것보다 조금 늦는 쪽을 골랐기 때문입니다. 문단을 통째로 건너뛰었다면 '▶'나 어절 누르기로 옮기세요.</li>
-          <li>'발표 준비'를 해 두면 키워드를 다른 말로 말해도 따라갑니다.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>리모컨이나 키보드로 넘어가지 않아요</summary>
-      <div class="faq-b">
-        <ul>
-          <li>리모컨이나 키보드가 iPad에 블루투스로 연결되어 있는지 <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>블루투스</span></span>에서 보세요. 목록에 없으면 리모컨을 연결 모드로 켜고 나온 이름을 누르세요.</li>
-          <li>키는 발표 화면에서만 동작합니다. 편집 화면, 질의응답 화면, 열린 창 안에서는 동작하지 않으니 창을 닫으세요.</li>
-          <li>Split View로 다른 앱을 옆에 두었다면 키가 그 앱으로 갈 수 있습니다.</li>
-          <li>전체 화면에서 키가 안 들어오면 '가'에서 전체 화면을 풀고 해 보세요.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>“인터넷 연결을 확인해 주세요”가 나와요</summary>
-      <div class="faq-b">
-        <p>음성 인식 서버에 닿지 못할 때 나옵니다. 앱은 계속 다시 시도합니다. 와이파이 연결을 확인하고, 연결이 돌아올 때까지는 손으로 넘기세요.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>발표 중에 화면이 꺼져요</summary>
-      <div class="faq-b">
-        <p>앱은 발표 화면에 있는 동안 화면이 꺼지지 않게 요청하지만, iPad에서 통하는지는 확인하지 않았고 절전 설정에 따라 통하지 않을 수 있습니다. 발표 전에 <span class="path in"><span>설정</span><i aria-hidden="true">›</i><span>디스플레이 및 밝기</span><i aria-hidden="true">›</i><span>자동 잠금</span></span>에서 시간을 늘리세요. 다른 탭이나 앱에 다녀오면 앱이 다시 요청합니다.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>대본이 사라졌어요</summary>
-      <div class="faq-b">
-        <ul>
-          <li>편집 화면 위 대본 고르기 상자에 다른 대본이 있는지 보세요. 예시 대본을 열면 새 대본이 따로 생깁니다.</li>
-          <li>같은 기기, 같은 브라우저인지 확인하세요. 대본은 연 브라우저에만 저장됩니다. 홈 화면 앱과 Safari도 서로 다른 저장 공간입니다.</li>
-          <li>대본을 잘못 고쳤으면 '⋯' 메뉴의 '버전 보기'에서 되돌리세요.</li>
-          <li>개인 정보 보호 브라우징 창이었거나 Safari가 7일 동안 열지 않은 데이터를 지웠다면 되살릴 수 없습니다. 내보내 둔 파일이 있으면 '파일 가져오기'로 여세요.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>판정 모델 받기가 안 돼요</summary>
-      <div class="faq-b">
-        <ul>
-          <li>와이파이에 연결하고 '다시 시도'를 누르세요.</li>
-          <li>'Q&amp;A 준비' 창의 '판정 모델' 칸에 “지난번에 모델을 불러오다 멈췄어요. 이 기기에서는 자동으로 불러오지 않아요.”가 보이면 '다시 시도'를 누르세요. 또 멈추면 이 기기는 메모리가 모자랄 수 있으니 모델 없이 글자 비교로 쓰세요.</li>
-          <li>같은 칸에 “… 페이지를 새로고침한 뒤 다시 시도해 주세요.”가 보이면 새로고침하세요. 받아 둔 모델이 있으면 발표 화면에 들어갈 때 저절로 불러옵니다. 받기 버튼이 다시 보이면 그 버튼을 누르세요. 질의응답 화면에서는 '판정 모델 받기 (약 135MB, 와이파이 권장)', 'Q&amp;A 준비' 창에서는 '모델 받기 (약 135MB, 와이파이 권장)'입니다.</li>
-          <li>모델이 없어도 글자 비교로 고르므로 질의응답은 그대로 쓸 수 있습니다.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>질의응답 후보에 맞는 질문이 없어요</summary>
-      <div class="faq-b">
-        <ul>
-          <li>1순위가 틀릴 수 있으니 후보 3개를 모두 보고 고르세요.</li>
-          <li>맞는 것이 없으면 '해당 없음'을 누르고 '전체 질문 목록'에서 검색하세요.</li>
-          <li>자주 틀리는 질문은 'Q&amp;A 준비'에서 그 질문의 '바꿔 묻는 말'에 청중이 쓸 만한 표현을 더하고 '저장'하세요.</li>
-          <li>판정 모델을 받아 두면 낱말이 달라도 뜻이 비슷한 질문을 고를 수 있습니다.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>'자동 줄이기'가 동작하지 않아요</summary>
-      <div class="faq-b">
-        <ul>
-          <li>목표 시간이 있고 '자동 줄이기'가 켜져 있는지 보세요.</li>
-          <li>“자동 줄이기는 지금 대본으로 한 '발표 준비' 결과가 있어야 해요. …”가 나오면 'AI 도구'의 '발표 준비'를 다시 하세요. 문단이나 문장 수를 바꾸면 이전 결과가 맞지 않게 됩니다.</li>
-          <li>듣는 중에만, 지금 문단이 바뀔 때 다시 계산합니다. 지금 위치에서 약 300글자 안은 바꾸지 않으므로 대본 끝에 가까우면 줄일 곳이 없을 수 있습니다.</li>
-        </ul>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>앱을 열면 바로 발표 화면이 나와요</summary>
-      <div class="faq-b">
-        <p>대본이 있으면 발표 화면으로 열립니다. 편집 화면은 왼쪽 위 '편집'을 누르면 나옵니다. 대본에 '[확인 필요]'가 남아 있으면 열 때 알림이 나옵니다.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>발표 시간이 처음부터 다시 재져요</summary>
-      <div class="faq-b">
-        <p>대본 처음에서 '● 시작'을 누르거나 대본을 고치면 새 발표로 봅니다. 중간부터 이어 하려면 대본을 고치지 말고, 위치가 처음이 아닌 상태에서 '● 시작'을 누르세요.</p>
-      </div>
-    </details>
-    <details class="faq">
-      <summary>“저장 공간이 가득 차서”가 나와요</summary>
-      <div class="faq-b">
-        <p>이 브라우저의 저장 공간(약 5MB)이 찼습니다. 필요한 대본은 '파일로 내보내기'로 받아 둔 뒤, 쓰지 않는 대본을 '대본 삭제'로 지우세요. 앱은 공간이 모자라면 오래된 버전부터 지웁니다.</p>
-      </div>
-    </details>
-  </div>
+<section id="note">
+  <h2>데이터가 가는 곳</h2>
+  <dl>
+    <div><dt>말소리</dt><dd>글자로 바꾸려고 Google로 가요.</dd></div>
+    <div><dt>대본·애드리브</dt><dd>AI를 쓸 때만 Anthropic이나 붙여넣은 챗봇으로 가요.</dd></div>
+    <div><dt>AI 코칭</dt><dd>구간 번호와 잰 숫자만 보내요.</dd></div>
+    <div><dt>질문 고르기·목소리 분석</dt><dd>이 기기 안에서 해요. 소리는 저장하지 않아요.</dd></div>
+    <div><dt>저장</dt><dd>대본과 기록은 이 브라우저에만 있어요. 지워질 수 있으니 '파일로 내보내기'로 받아 두고, 공용 PC에선 다 쓰면 '대본 삭제'를 눌러요.</dd></div>
+  </dl>
+  <p class="note">실제 마이크와 휴대폰으로는 아직 확인하지 못했어요. 발표 전날 쓸 기기로 끝까지 연습해 보세요.</p>
 </section>
-
-<!-- ============ 한계 ============ -->
-<section id="limits">
-  <h2>알아 둘 한계</h2>
-  <ul>
-    <li>따라가기는 들은 말과 대본 글자를 비교합니다. 글로 적은 문장을 음성 인식 결과처럼 넣어 시험했습니다(7문장, 12문장 대본 두 개). 말한 어절 가운데 커서가 맞는 문장에 있던 비율은 대본대로 읽기 100%, 조금 바꿔 읽기 84~87%, 많이 바꿔 읽기 24~42%였습니다.</li>
-    <li>질문 판정은 글로 적은 시험 질문 30개로 쟀습니다(만든 사람이 직접 만든 질문입니다). 판정 모델의 1순위가 맞은 것은 24개, 후보 3개 안에 든 것은 28개였습니다. 그래서 후보 3개 가운데 발표자가 고르는 것을 기본으로 두었고, 답 카드 바로 열기는 처음에 꺼져 있습니다.</li>
-    <li>애드리브가 다음 문장의 키워드로 끝나고 곧바로 그 문장을 읽거나, 애드리브 뒤 30글자 안쪽을 건너뛰고 읽으면 애드리브 끝부분이 잘릴 수 있습니다. 키워드로 두 번 옮긴 애드리브는 앞부분이 빠지고 넣을 자리가 한 문장 뒤를 가리킬 수 있습니다.</li>
-    <li>지금까지의 확인은 데스크톱 브라우저에서 흉내 낸 음성 인식과 가짜 AI 응답으로 했습니다. 실제 iPad와 마이크, 실제 Claude 키는 아직 쓰지 않았습니다.</li>
-    <li>iPad에서 아직 확인하지 않은 것: Safari 음성 인식이 끊기는 간격과 저절로 다시 켜지는지, '다시 듣기'가 얼마나 자주 필요한지, 전체 화면에서 리모컨 키와 <kbd>Space</kbd>, 화면 꺼짐 방지, 화면을 나눠 Safari가 아닌 창을 쓸 때 인식이 이어지는지, 판정 모델 속도와 메모리, JEV 모드, 처음 글자 크기 34가 적용되는지, 화면을 당겨 새로고침하는 동작이 막히는지, 받아쓰기를 끈 상태의 안내와 다른 브라우저에서 나오는 “Safari에서 열어 주세요” 안내가 실제로 뜨는지, 전체 화면이 켜지는지, 받은 파일이 어디에 저장되는지.</li>
-    <li>AI 응답 시간과 비용은 실제 키로 재지 않았습니다.</li>
-    <li>저장 공간은 브라우저마다 약 5MB이고, iPad Safari는 7일 동안 열지 않은 사이트의 데이터를 지울 수 있습니다.</li>
-    <li>'다른 말'은 AI 키가 있어야 합니다.</li>
-  </ul>
-</section>
-
-<!-- ============ 다른 기기 ============ -->
-<section id="other">
-  <h2>다른 기기에서</h2>
-  <p>같은 주소를 다른 기기에서도 엽니다. iPad와 다른 점만 적었습니다.</p>
-
-  <h3>iPhone</h3>
-  <ul>
-    <li>Safari로 여세요. 다른 브라우저나 홈 화면에 추가한 앱에서는 음성 인식이 안 될 수 있습니다.</li>
-    <li>설정할 곳은 iPad와 같습니다. 받아쓰기는 설정 › 일반 › 키보드 › 받아쓰기, 마이크는 설정 › 앱 › Safari › 마이크(iOS 17 이하는 설정 › Safari › 마이크)입니다.</li>
-    <li>처음 글자 크기는 28입니다.</li>
-    <li>좁은 화면이라 상태줄의 진행률 글이 숨고, 폭이 420px 이하인 기종에서는 편집 화면의 '/ 목표'도 숨습니다. 진행은 막대로 보세요.</li>
-    <li>애드리브는 아래 줄 '애드리브 N' 버튼으로 봅니다.</li>
-    <li>'가' 창에 '전체 화면'이 없습니다.</li>
-    <li>세로 화면에서는 '글 폭'의 '좁게'도 화면보다 넓어서 세 버튼의 차이가 보이지 않습니다.</li>
-  </ul>
-
-  <h3>Android 휴대폰과 태블릿</h3>
-  <ul>
-    <li>Chrome으로 여세요. 삼성 인터넷이나 카카오톡 같은 앱 안의 화면에서는 음성 인식이 안 될 수 있습니다.</li>
-    <li>말소리는 Google 서버가 글자로 바꿉니다.</li>
-    <li>처음 글자 크기는 휴대폰 28, 태블릿(터치 화면이면서 화면 짧은 변이 600px 이상) 34입니다.</li>
-    <li>태블릿 배치는 iPad처럼 창 폭으로 정해집니다.</li>
-  </ul>
-
-  <h3>PC</h3>
-  <ul>
-    <li>Chrome으로 여세요.</li>
-    <li>편집 화면이 넓어서 대본을 쓰고 'AI 도구'를 쓰기에 알맞습니다. 처음 글자 크기는 28입니다.</li>
-    <li>창 폭이 1100px 이상이면 발표 화면 오른쪽에 애드리브 칸이 있고, 상태줄에 진행률 글도 보입니다.</li>
-    <li>키보드 단축키와 '전체 화면'을 쓸 수 있습니다.</li>
-    <li>JEV 모드(실험)는 PC Chrome에서만 권합니다.</li>
-    <li>PC에서 준비하고 iPad로 발표하는 방법은 <a href="#script">대본 준비</a>의 '파일로 옮기기'에 있습니다.</li>
-  </ul>
-</section>
-
-<footer class="colophon">
-  <p>이 안내서는 2026년 10월 12일의 앱 화면을 기준으로 썼습니다. 앱은 <a href="../">라이브스크립트</a>(https://gepi2.github.io/livescript/)에서 엽니다.</p>
-  <p>화면 사진은 실제 iPad가 아니라 데스크톱 브라우저를 iPad 화면 크기(세로 820×1180, 가로 1180×820, Split View 절반 590×820)로 맞춰 예시 대본으로 찍었고, 안내서에 싣느라 폭 800으로 줄이거나 늘렸습니다. 터치 화면으로 흉내 내지 않아서 iPad의 처음 글자 크기 34는 직접 맞췄습니다. 음성은 흉내 낸 입력으로 넣었고, 사진 속 시간 숫자는 실제 발표 기록이 아닙니다. 'AI 키' 창 사진의 github.io 경고는 시험 주소에서는 숨어 있어서, 앱 주소에서 보이는 모습에 맞추려고 그 사진에서만 보이게 했습니다.</p>
-  <p>실제 iPad에서의 동작은 아직 확인하지 않았습니다. 확인하지 않은 항목은 <a href="#limits">알아 둘 한계</a>에 모아 두었습니다.</p>
-</footer>
-
-</main>
-</div>
 </body>
 </html>

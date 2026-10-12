@@ -1,13 +1,13 @@
 // 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=9';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=9';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=9';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=9';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=9';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=9';
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=10';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=10';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=10';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=10';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=10';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=10';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, mRow, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, secRows, tips, toneLines, NAME } from './check.js?v=9';
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, secRows, tips, toneLines, NAME } from './check.js?v=10';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1945,6 +1945,11 @@ $('lib').onchange = () => {
 // 메뉴 창: 버튼을 누르면 메뉴를 먼저 닫는다 (다른 창이 그 위에 열리도록)
 $('menuBtn').onclick = () => { $('menuTitle').textContent = entry().name; $('menu').showModal(); };
 $('menu').addEventListener('click', e => { if (e.target.closest('button')) $('menu').close(); }, true);
+// 앱으로 설치: Chrome이 설치할 수 있다고 알려 줄 때만 메뉴에 버튼을 보인다 (배너나 재촉은 없다). 설치한 앱 창에서는 숨긴다.
+let installEv = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; $('mInstall').hidden = matchMedia('(display-mode: standalone)').matches; });
+addEventListener('appinstalled', () => { installEv = null; $('mInstall').hidden = true; });
+$('mInstall').onclick = () => { installEv?.prompt().catch(() => {}); installEv = null; $('mInstall').hidden = true; };  // prompt()는 한 번만 된다. 닫으면 Chrome이 다음에 다시 알려 준다.
 $('mRename').onclick = () => {
   const e = entry(), name = cleanName(prompt('대본 이름', e.name));
   if (!name) return;
@@ -1978,7 +1983,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=9').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=10').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
@@ -2389,5 +2394,7 @@ showCoach();
 $('text').readOnly = false; $('toast').hidden = true;  // 여기까지 오면 앱이 다 불러와졌다 (index.html은 읽기 전용과 안내로 시작)
 showKey();
 setMode(!$('text').value.trim());
+// 오프라인에서도 열리게 (sw.js). https와 *.localhost에서만 된다. 개발 주소(localhost, 127.0.0.1)는 고친 모듈이 캐시에 가리지 않게 뺀다.
+if ('serviceWorker' in navigator && isSecureContext && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
 // 대본이 있으면 바로 발표 화면으로 열리므로 [확인 필요]는 여기서 알린다
 if (marks() && !document.body.classList.contains('editing')) tell(`대본에 [확인 필요]가 ${marks()}곳 남아 있어요. 발표 전에 편집에서 확인해 주세요.`);

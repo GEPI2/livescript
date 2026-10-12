@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:">
 <title>라이브스크립트</title>
-<link rel="icon" href="data:,">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/maskable-512.png">
 <style>
   :root { --fs: 28px; --w: 24em; color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -158,6 +161,7 @@
   #menu h3 { margin: 12px 0 0; font-size: 14px; color: #aaa; }
   #menu .grid { margin: 6px 0; }
   #menu .grid button { padding: 10px 8px; }  /* 묶음 제목이 생긴 만큼 버튼 줄을 낮춰 창이 길어지지 않게 (44px는 그대로) */
+  #mInstall { grid-column: 1 / -1; }  /* 다섯째 버튼이라 마지막 줄 두 칸을 다 쓴다 */
   #mDel { display: block; width: 100%; margin-top: 16px; background: none; color: #f88; border: 1px solid #633; }
   .diff button { padding: 0 8px; font-size: 13px; color: #999; }
   #prepDiff { max-height: 40vh; overflow: auto; }  /* 대본 전체라 길다. 아래 버튼이 화면 밖으로 밀리지 않게 */
@@ -427,6 +431,7 @@
     <button id="mSample">예시 대본 열기</button>
     <button id="keyBtn">AI 키</button>
     <a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a>
+    <button id="mInstall" hidden>앱으로 설치</button>
   </div>
   <details>
     <summary>데이터가 가는 곳</summary>
@@ -565,7 +570,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=9"></script>
-<script type="module" src="app.js?v=9"></script>
+<script src="match.js?v=10"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>

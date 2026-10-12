@@ -502,8 +502,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=9');
-  const { readScript } = await import('./lib.js?v=9');
+  const { units } = await import('./shrink.js?v=10');
+  const { readScript } = await import('./lib.js?v=10');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 

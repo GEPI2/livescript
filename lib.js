@@ -315,5 +315,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: 1 } })).prep, null);
   assert.deepEqual(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, 2] } })).prep.n, [3, 2], '문단마다 문장 수');
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, '2'] } })).prep.n, null, '깨진 문장 수는 버린다');
+
+  // 모든 ?v= 파일이 sw.js의 미리 받기 목록에 같은 버전으로 있어야 오프라인에서 열린다
+  const fs = await import('node:fs'), dir = new URL('.', import.meta.url), src = f => fs.readFileSync(new URL(f, dir), 'utf8');
+  const sw = src('sw.js'), Q = sw.match(/const Q = '(\?v=\d+)'/)[1];
+  for (const f of fs.readdirSync(dir).filter(f => /\.js$|^index\.html$/.test(f)))
+    for (const [, n, q] of src(f).matchAll(/([\w.-]+\.(?:js|json))(\?v=\d+)/g)) { assert.equal(q, Q, `${f}: ${n}${q}`); assert.ok(sw.includes(`'${n}'`), `sw.js SHELL에 없어요: ${n}`); }
   console.log('lib.js ok');
 }

@@ -1,8 +1,8 @@
 // JEV 모델(Kev-0.6B)을 도는 워커. e5와 ONNX Runtime을 나눠 쓰지 않아서 여기서 GPU 오류가 나도 e5 판정은 그대로 된다.
 // 받는 메시지: { load: true } → { progress } 여러 번, 그다음 { ready: true } 또는 { error }
 //              { id, state, opts } → { id, probs } 또는 { id, error }
-import { setup } from './qa.js?v=10';
-import { MODEL, REV, sequence, softmax, escape } from './jev.js?v=10';
+import { setup } from './qa.js?v=11';
+import { MODEL, REV, sequence, softmax, escape } from './jev.js?v=11';
 
 let judge = null, queue = Promise.resolve();
 

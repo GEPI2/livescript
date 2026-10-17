@@ -158,10 +158,8 @@
   dialog del { background: #4a1f1f; color: #f99; }
   dialog ins { background: #1f3a24; color: #9e9; }
   .drop del { background: none; color: #999; text-decoration: line-through 1px; }  /* 늦으면 뺄 문장: AI 비교의 '지울 말'과 다르게 흐리게 */
-  #menu h3 { margin: 12px 0 0; font-size: 14px; color: #aaa; }
   #menu .grid { margin: 6px 0; }
-  #menu .grid button { padding: 10px 8px; }  /* 묶음 제목이 생긴 만큼 버튼 줄을 낮춰 창이 길어지지 않게 (44px는 그대로) */
-  #mInstall { grid-column: 1 / -1; }  /* 다섯째 버튼이라 마지막 줄 두 칸을 다 쓴다 */
+  #menu .grid button { padding: 10px 8px; }  /* 버튼 줄을 낮춰 '더 보기'를 펼쳐도 창이 길어지지 않게 (44px는 그대로) */
   #mDel { display: block; width: 100%; margin-top: 16px; background: none; color: #f88; border: 1px solid #633; }
   .diff button { padding: 0 8px; font-size: 13px; color: #999; }
   #prepDiff { max-height: 40vh; overflow: auto; }  /* 대본 전체라 길다. 아래 버튼이 화면 밖으로 밀리지 않게 */
@@ -169,21 +167,14 @@
   .ver.on { outline: 1px solid #8af; background: #24304a; }
   .ver small { display: block; color: #999; }
 
-  /* 애드리브: 넓은 화면은 발표 화면 오른쪽 칸, 좁은 화면은 아래 버튼으로 여는 창. 새로 생겨도 움직이는 효과는 없다. */
+  /* 애드리브: 발표 중에는 버튼·오른쪽 칸을 숨긴다(단순화). 모은 말은 ⋯ › 더 보기 › '애드리브 정리' 창에서 본다. */
   .ad { margin: 8px 0; padding: 8px 12px; border-radius: 10px; background: #1b2233; word-break: keep-all; overflow-wrap: anywhere; }
   .ad p, .ad ul { margin: 4px 0; }
   .ad ul { padding-left: 1.2em; }
   .ad .t { font-weight: bold; }
   .ad .ok { color: #9e9; }
-  #adBtn { white-space: nowrap; padding: 8px 10px; }
-  #adSide { display: none; }
-  #adSide h2 { margin: 0; font-size: 16px; }
-  @media (max-width: 360px) { footer { gap: 4px; padding-left: 8px; padding-right: 8px; } #adBtn { padding: 8px 6px; } }
-  @media (min-width: 1100px) {
-    body:not(.editing):not(.qa) #adSide { display: block; position: fixed; z-index: 1; top: 68px; bottom: 68px; right: 16px; width: 320px; overflow-y: auto; padding-left: 12px; border-left: 1px solid #333; background: #111; }
-    body:not(.editing) #prompt { max-width: min(var(--w), calc(100% - 368px)); margin-left: max(0px, calc((100% - 368px - var(--w)) / 2)); }  /* 오른쪽 칸 자리를 비운다 */
-    #adBtn { display: none; }
-  }
+  #adBtn, #adSide { display: none; }
+  @media (max-width: 360px) { footer { gap: 4px; padding-left: 8px; padding-right: 8px; } }
   #adDlg { margin: 0 0 0 auto; width: min(520px, calc(100% - 24px)); height: 100dvh; max-height: 100dvh; border-radius: 12px 0 0 12px; }  /* 오른쪽에서 나오는 창 */
   /* 보기 시트: 아래에서 올라오고 뒤는 가리지 않아서 바꾼 글자 크기와 폭이 바로 보인다 */
   #viewDlg { margin: auto auto 0; width: min(520px, 100%); border-radius: 12px 12px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
@@ -411,27 +402,24 @@
 
 <dialog id="menu" aria-labelledby="menuTitle">
   <h2 id="menuTitle">메뉴</h2>
-  <h3>이 대본</h3>
+  <div class="grid">
+    <button id="mCheck">발표 점검</button>
+    <button id="prepBtn">Q&amp;A 준비</button>
+    <button id="mImport">파일 가져오기</button>
+    <button id="mExport">파일로 내보내기</button>
+    <a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a>
+    <button id="mInstall" hidden>앱으로 설치</button>
+  </div>
+  <details>
+  <summary>더 보기</summary>
   <div class="grid">
     <button id="mRename">이름 바꾸기</button>
     <button id="mVerSave">버전 저장</button>
     <button id="mHist">버전 보기</button>
-    <button id="mExport">파일로 내보내기</button>
-  </div>
-  <h3>발표 준비와 정리</h3>
-  <div class="grid">
-    <button id="prepBtn">Q&amp;A 준비</button>
     <button id="mAdlib">애드리브 정리</button>
     <button id="saveLog">인식 기록 내려받기</button>
-    <button id="mCheck">발표 점검</button>
-  </div>
-  <h3>가져오기·설정</h3>
-  <div class="grid">
-    <button id="mImport">파일 가져오기</button>
     <button id="mSample">예시 대본 열기</button>
     <button id="keyBtn">AI 키</button>
-    <a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a>
-    <button id="mInstall" hidden>앱으로 설치</button>
   </div>
   <details>
     <summary>데이터가 가는 곳</summary>
@@ -440,6 +428,7 @@
     <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   </details>
   <button id="mDel">대본 삭제</button>
+  </details>
   <div class="row bottom"><span class="grow"></span><button id="menuClose">닫기</button></div>
 </dialog>
 <input id="scriptFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
@@ -570,7 +559,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=10"></script>
-<script type="module" src="app.js?v=10"></script>
+<script src="match.js?v=11"></script>
+<script type="module" src="app.js?v=11"></script>
 </body>
 </html>

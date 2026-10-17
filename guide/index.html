@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
-<title>라이브스크립트 사용 안내서</title>
+<title>말랑 사용 안내서</title>
 <link rel="icon" href="../icons/icon-192.png" sizes="192x192">
 <style>
 /* 한 단 읽기: 섹션마다 큰 제목, 한 줄 요약, 단계, 화면 하나. 섹션 사이는 굵은 회색 띠 */
@@ -87,7 +87,7 @@ details p { padding: 0 0 16px; color: var(--fg); }
 </head>
 <body>
 <header>
-  <h1>라이브스크립트 사용 안내서</h1>
+  <h1>말랑 사용 안내서</h1>
   <p class="lead">소리 내어 읽으면 대본이 따라오는 발표 프롬프터예요. 가입 없이 Chrome에서 써요.</p>
   <a class="btn" href="../">앱 열기</a>
   <nav aria-label="목차">
@@ -114,29 +114,39 @@ details p { padding: 0 0 16px; color: var(--fg); }
   </ol>
   <p class="note">발표 화면에선 '편집'을 눌러야 '⋯'과 'AI 도구'가 보여요.</p>
   <figure>
-    <div class="win"><img src="img/01-first-run.png" width="576" height="276" alt="첫 화면 가운데 카드. '예시로 둘러보기', '직접 붙여넣기', '사용 안내서' 버튼이 있어요."></div>
+    <div class="win"><img src="img/01-first-run.png" width="560" height="294" alt="첫 화면 가운데 카드. '말랑' 이름 아래에 '예시로 둘러보기', '직접 붙여넣기', '사용 안내서' 버튼이 있어요."></div>
     <figcaption>처음 연 화면</figcaption>
   </figure>
 </section>
 
 <section id="script">
   <h2>대본과 목표 시간</h2>
-  <p class="lead">붙여넣으면 바로 저장돼요.</p>
+  <p class="lead">붙여넣으면 바로 저장되고, 문단마다 카드가 돼요.</p>
   <ol>
-    <li>위 상자에서 '＋ 새 대본'을 고르고 대본을 붙여넣어 주세요. 문단 사이를 한 줄 띄우면 문단마다 시간을 재요.</li>
-    <li>아래 '목표'에 발표 시간을 분으로 넣어 주세요.</li>
-    <li>'예상 4:11 (+1:11)'은 목표보다 1분 11초 길다는 뜻이에요.</li>
+    <li>위 상자에서 '＋ 새 대본'을 고르고 대본을 붙여넣어 주세요. 문단 사이를 한 줄 띄우면 문단마다 카드가 돼요.</li>
+    <li>카드를 누르면 그 문단만 고칠 수 있어요. '꼭 말할 문장'을 켜면 줄일 때도 그 문장은 남아요.</li>
+    <li>오른쪽 '발표 시간'에 목표를 분으로 넣어 주세요. 좁은 화면에서는 맨 아래 줄에 있어요.</li>
+    <li>'예상 4:10 (+1:10)'은 목표보다 1분 10초 길다는 뜻이에요.</li>
   </ol>
+  <dl>
+    <div><dt>들어보기</dt><dd>대본을 소리로 읽어 줘요. 다시 누르면 멈춰요.</dd></div>
+    <div><dt>시간이 모자랄 때</dt><dd>'AI 도구' › '발표 준비'를 해 두면 '원본', '조금 짧게', '핵심만' 중에 골라요.</dd></div>
+    <div><dt>내 발표</dt><dd>왼쪽 위 '말랑'을 누르면 대본을 카드로 보고, 연습 기록과 설정도 볼 수 있어요.</dd></div>
+  </dl>
   <p class="note">대본을 고치면 읽던 자리와 시간이 처음으로 돌아가요.</p>
   <figure>
-    <div class="win"><img src="img/02-editor-example.png" width="320" height="60" loading="lazy" alt="편집 화면 맨 아래 줄. 목표 3분 옆에 주황 글씨로 '예상 4:11 (+1:11) / 목표 3:00'이 있어요."></div>
-    <figcaption>맨 아래에 목표와 예상 시간이 보여요</figcaption>
+    <div class="win"><img src="img/03-editor-cards.png" width="1280" height="736" loading="lazy" alt="편집 화면. 왼쪽에 문단 목록, 가운데에 문단 카드, 오른쪽에 '발표 시간', '시간이 모자랄 때', '버전 기록' 카드가 있어요. 고르고 있는 2번 카드는 보라색 테두리이고 아래에 '꼭 말할 문장', '더 짧게', '더 쉽게' 단추가 있어요."></div>
+    <figcaption>문단마다 카드가 돼요</figcaption>
+  </figure>
+  <figure>
+    <div class="win"><img src="img/02-editor-example.png" width="260" height="576" loading="lazy" alt="편집 화면 오른쪽 카드. '발표 시간' 카드에 목표 3분과 주황 글씨 '예상 4:10 (+1:10) / 목표 3:00'이 있고, 아래에 '시간이 모자랄 때'(원본·조금 짧게·핵심만)와 '버전 기록' 카드가 있어요."></div>
+    <figcaption>오른쪽에 목표와 예상 시간이 보여요</figcaption>
   </figure>
 </section>
 
 <section id="talk">
   <h2>발표하기</h2>
-  <p class="lead">읽는 곳을 파랗게 표시하고 화면을 내려 줘요.</p>
+  <p class="lead">읽는 곳을 또렷하게 보여 주고 화면을 내려 줘요.</p>
   <div class="split">
     <div>
       <ol>
@@ -147,17 +157,19 @@ details p { padding: 0 0 16px; color: var(--fg); }
       <dl>
         <div><dt>상태줄</dt><dd>'여유'·'초과'는 이 빠르기면 목표보다 남거나 넘는 시간이에요.</dd></div>
         <div><dt>진행 막대</dt><dd>채운 만큼 읽었어요. 흰 눈금은 지금 있어야 할 자리예요.</dd></div>
-        <div><dt>읽는 줄</dt><dd>왼쪽 파란 막대가 지금 줄, 흰 밑줄이 지금 단어예요.</dd></div>
+        <div><dt>읽는 줄</dt><dd>읽은 곳은 흐려져요. 왼쪽 보라색 막대가 지금 줄, 굵은 글자와 흰 밑줄이 지금 단어예요.</dd></div>
+        <div><dt>줄인 문단</dt><dd>'핵심만으로 줄였어요' 옆 '원래 대본 보기'를 누르면 숨긴 문장이 흐리게 보여요.</dd></div>
+        <div><dt>남은 시간</dt><dd>목표 1분 전부터 아래에 '남은 시간 0:42'가 떠요.</dd></div>
       </dl>
       <h3>넘기기</h3>
       <dl>
-        <div><dt>'◀' '▶'</dt><dd>앞뒤 문장으로 가요.</dd></div>
+        <div><dt>화살표 단추</dt><dd>맨 아래 왼쪽은 이전 문장, 오른쪽은 다음 문장으로 가요.</dd></div>
         <div><dt>단어 누르기</dt><dd>그 자리로 옮겨요. 잘못 눌렀으면 5초 안에 '되돌리기'를 눌러요.</dd></div>
         <div><dt>키보드·리모컨</dt><dd><kbd>→</kbd> <kbd>Page Down</kbd> 다음, <kbd>←</kbd> <kbd>Page Up</kbd> 이전, <kbd>스페이스</kbd> 시작·정지</dd></div>
       </dl>
     </div>
     <figure>
-      <div class="phone"><img src="img/12-phone-talk.png" width="824" height="1830" loading="lazy" alt="휴대폰에서 읽는 중. 위에 '편집', 주황 '초과 0:54', '가', 'Q&amp;A', '정지'가 있고 그 아래 진행 막대가 있어요. 지금 문장은 파란 배경, 지금 단어엔 흰 밑줄, 줄 왼쪽엔 파란 막대가 있어요. 맨 아래에 '◀'과 '▶'이 있어요."></div>
+      <div class="phone"><img src="img/12-phone-talk.png" width="824" height="1830" loading="lazy" alt="휴대폰에서 읽는 중. 위에 '편집', 주황 '초과 1:19', '가', 'Q&amp;A', '정지'가 있고 그 아래 진행 막대가 있어요. 읽은 글은 흐리고, 지금 줄 왼쪽엔 보라색 막대, 지금 단어엔 굵은 글자와 흰 밑줄이 있어요. 맨 아래에 이전·다음 화살표 단추가 있어요."></div>
       <figcaption>휴대폰 크기 화면</figcaption>
     </figure>
   </div>
@@ -174,11 +186,17 @@ details p { padding: 0 0 16px; color: var(--fg); }
   <ol>
     <li>'⋯' › '발표 점검'에서 '리딩으로 시작'이나 '연습으로 시작'을 눌러 주세요.</li>
     <li>'● 리딩'이나 '● 연습'을 누르고 20초 넘게 읽은 뒤 '정지'를 눌러요.</li>
-    <li>결과 창의 '다음에 해 볼 것'을 따라 해 보세요.</li>
+    <li>결과 창의 '다음에 해 볼 것'을 따라 해 보세요. '2번 구간부터 연습'을 누르면 그 구간에서 다시 시작해요.</li>
   </ol>
+  <dl>
+    <div><dt>숫자 카드</dt><dd>걸린 시간, 말 빠르기(음절/분), 대본 밖 시간, 대본과 다르게 말한 곳이에요.</dd></div>
+    <div><dt>대본과 실제로 한 말</dt><dd>빼먹은 말은 취소선, 더한 말은 색 바탕, 바꿔 말한 말은 밑줄이에요.</dd></div>
+    <div><dt>대본을 이렇게 바꿀까요?</dt><dd>같은 말을 두 번 이어 바꿔 말하면 떠요. '바꾸기'를 누르면 새 버전으로 저장돼요.</dd></div>
+    <div><dt>막힌 낱말</dt><dd>두 번 넘게 바꿔 말한 낱말은 편집 화면에 점선 밑줄이 생기고, 누르면 바꿔 말한 말을 추천해요.</dd></div>
+  </dl>
   <p class="note">높낮이와 쉼은 PC Chrome의 리딩·연습에서 재요('가' › '목소리 분석'). 감정은 재지 않아요.</p>
   <figure>
-    <div class="win"><img src="img/06-check-result-top.png" width="720" height="704" loading="lazy" alt="발표 점검 결과 창. '리딩으로 시작', '연습으로 시작', 기록, 목표 3분, '3:50 · 목표보다 0:50 길어요', 평균 빠르기, '다음에 해 볼 것' 3개, '프롬프트 복사', '결과 붙여넣기'가 있어요."></div>
+    <div class="win"><img src="img/06-check-result-top.png" width="720" height="601" loading="lazy" alt="발표 점검 결과 창. '리딩으로 시작', '연습으로 시작', 기록, 목표 3분 아래에 숫자 카드 4개(걸린 시간 3:21, 말 빠르기 376 음절/분, 대본 밖 0:00, 대본과 다르게 말한 곳 2)가 있고, 그 아래 연보라 카드에 '대본을 이렇게 바꿀까요?'와 '바꾸기', '그대로 두기'가 있어요."></div>
     <figcaption>정지하면 뜨는 결과 창</figcaption>
   </figure>
 </section>
@@ -189,11 +207,12 @@ details p { padding: 0 0 16px; color: var(--fg); }
   <ol>
     <li>미리 '⋯' › 'Q&amp;A 준비'에서 질문과 답을 만들고 '저장'을 눌러 주세요.</li>
     <li>발표 화면에서 'Q&amp;A'를 눌러요.</li>
-    <li>'질문'을 누르고 질문을 따라 말한 뒤 한 번 더 눌러요.</li>
-    <li>후보 3개 중 맞는 것을 누르면 답 카드가 떠요. 끝나면 '대본'을 눌러요.</li>
+    <li>'질문 듣기'를 누르고 질문을 따라 말한 뒤 한 번 더 눌러요.</li>
+    <li>후보 3개 중 맞는 것을 누르면 답 카드가 떠요. 맨 위에 핵심 키워드가 보여요.</li>
+    <li>맞는 질문이 없으면 '해당 없음 · 관련 대본 구간 보기'를 눌러요. 질문과 가까운 대본 문장으로 갈 수 있어요. 끝나면 '대본으로'를 눌러요.</li>
   </ol>
   <figure>
-    <div class="win"><img src="img/08-qa-candidates.png" width="900" height="356" loading="lazy" alt="질의응답 화면. '질문' 버튼 아래에 번호 붙은 후보 3개와 '해당 없음'이 있고, 1번에 파란 테두리가 있어요. 그 아래에 채팅 질문 칸이 있어요."></div>
+    <div class="win"><img src="img/08-qa-candidates.png" width="900" height="649" loading="lazy" alt="질의응답 화면. '들은 질문' 카드에 “무료로 쓸 수 있나요”와 '음성으로 받음'이 있고, 그 아래 '질문 듣기' 버튼, 채팅 질문 칸, '준비한 답변' 후보 3개와 '해당 없음 · 관련 대본 구간 보기'가 있어요. 1번은 보라색으로 표시돼 있어요."></div>
     <figcaption>맞는 질문을 눌러요</figcaption>
   </figure>
 </section>
@@ -212,7 +231,8 @@ details p { padding: 0 0 16px; color: var(--fg); }
   <h2>AI로 준비하기</h2>
   <p class="lead">AI 키가 없어도 복사와 붙여넣기로 써요.</p>
   <ol>
-    <li>위 'AI 도구'에서 탭을 고르고 '프롬프트 복사'를 눌러 주세요.</li>
+    <li>위 'AI 도구'에서 '새로 쓰기'를 고르고, PPT·PDF를 올리거나 개요를 직접 적어 주세요. 슬라이드마다 한 줄이 채워져요.</li>
+    <li>듣는 사람, 발표 시간, 말투를 고르고 '프롬프트 복사'를 눌러 주세요.</li>
     <li>claude.ai 같은 챗봇에 붙여넣고 답을 받아요.</li>
     <li>답을 '결과 붙여넣기'에 넣고 '적용'을 눌러요. 비교 화면이 뜨면 한 번 더 '적용'해요.</li>
   </ol>
@@ -222,8 +242,8 @@ details p { padding: 0 0 16px; color: var(--fg); }
     <div><dt>'AI 키'</dt><dd>넣으면 앱에서 바로 돼요. 쓴 만큼 요금이 들어요. '이 기기에 기억'을 켜면 같은 github.io 주소의 다른 사이트도 키를 읽을 수 있어요. 다 쓰면 '키 지우기'를 눌러요.</dd></div>
   </dl>
   <figure>
-    <div class="win"><img src="img/11-ai-tools.png" width="720" height="688" loading="lazy" alt="'AI 도구' 창의 '새로 쓰기' 탭. 주제, 청중, 목표 시간, 말투, 슬라이드 개요 칸 아래에 '프롬프트 복사'와 '결과 붙여넣기'가 있어요."></div>
-    <figcaption>키 없이 쓰는 'AI 도구'</figcaption>
+    <div class="win"><img src="img/11-ai-tools.png" width="720" height="693" loading="lazy" alt="'AI 도구' 창의 '새로 쓰기' 탭. 점선 상자에 'PPT·PDF를 끌어다 놓거나 눌러서 고르세요'가 있고, 파일 줄과 슬라이드 조각, 주제, 듣는 사람 칩(투자자·심사위원·학생·일반 청중), 발표 시간 칩, 말투 칸이 있어요."></div>
+    <figcaption>PPT·PDF를 올리면 개요가 채워져요</figcaption>
   </figure>
 </section>
 
@@ -234,12 +254,12 @@ details p { padding: 0 0 16px; color: var(--fg); }
     <p>Chrome 탭에서 주소창 왼쪽 아이콘을 눌러 마이크를 허용하고 새로고침해 주세요.</p>
   </details>
   <details>
-    <summary>파란 표시가 따라오지 않아요</summary>
+    <summary>읽는 곳 표시가 따라오지 않아요</summary>
     <p>마이크 버튼이 '다시 듣기'면 눌러 주세요. 읽을 단어를 누르면 거기서 다시 따라와요.</p>
   </details>
   <details>
     <summary>인터넷이 없어도 되나요?</summary>
-    <p>한 번 열었던 기기라면 열려요. 음성 인식은 안 돼서 '◀' '▶'로 넘겨요.</p>
+    <p>한 번 열었던 기기라면 열려요. 음성 인식은 안 돼서 화살표 단추로 넘겨요.</p>
   </details>
   <details>
     <summary>다른 기기에서 이어 쓰고 싶어요</summary>
@@ -253,7 +273,8 @@ details p { padding: 0 0 16px; color: var(--fg); }
     <div><dt>말소리</dt><dd>글자로 바꾸려고 Google로 가요.</dd></div>
     <div><dt>대본·애드리브</dt><dd>AI를 쓸 때만 Anthropic이나 붙여넣은 챗봇으로 가요.</dd></div>
     <div><dt>AI 코칭</dt><dd>구간 번호와 잰 숫자만 보내요.</dd></div>
-    <div><dt>질문 고르기·목소리 분석</dt><dd>이 기기 안에서 해요. 소리는 저장하지 않아요.</dd></div>
+    <div><dt>발표자료·질문 고르기·목소리 분석</dt><dd>이 기기 안에서 해요. 소리는 저장하지 않아요.</dd></div>
+    <div><dt>연습 때 들은 말</dt><dd>대본마다 최근 5회까지 이 기기에 남아요. '파일로 내보내기'에는 안 들어가요.</dd></div>
     <div><dt>저장</dt><dd>대본과 기록은 이 브라우저에만 있어요. 지워질 수 있으니 '파일로 내보내기'로 받아 두고, 공용 PC에선 다 쓰면 '대본 삭제'를 눌러요.</dd></div>
   </dl>
   <p class="note">실제 마이크와 휴대폰으로는 아직 확인하지 못했어요. 발표 전날 쓸 기기로 끝까지 연습해 보세요.</p>

@@ -1,7 +1,7 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=12';
-import { cleanAi } from './adlib.js?v=12';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=12';
+import { cleanPack } from './qa.js?v=13';
+import { cleanAi } from './adlib.js?v=13';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=13';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -38,10 +38,11 @@ export const PACK_SCHEMA = {
           q: { type: 'string' },
           alts: { type: 'array', items: { type: 'string' } },
           answer: { type: 'array', items: { type: 'string' } },
+          keys: { type: 'array', items: { type: 'string' } },
           source: { type: 'string' },
           check: { type: 'boolean' },
         },
-        required: ['id', 'q', 'alts', 'answer', 'source', 'check'],
+        required: ['id', 'q', 'alts', 'answer', 'keys', 'source', 'check'],
         additionalProperties: false,
       },
     },
@@ -60,13 +61,14 @@ export function qaPrompt({ topic, audience, n, script }) {
 - alts: 같은 질문을 청중이 소리 내어 다르게 묻는 말 6~8개. 짧은 구어체로 쓰고 낱말과 어순을 다양하게 바꾼다.
 - 비슷하지만 다른 질문이 있으면(예: "아이폰에서 되나요"와 "안드로이드에서 되나요"), 한 질문의 alts에 다른 질문을 구별하는 낱말(아이폰, 안드로이드)을 넣지 않는다.
 - answer: 발표자가 바로 소리 내어 읽을 짧은 답. 최대 3줄, 한 줄에 한 문장.
+- keys: 답의 핵심 키워드 2~3개. 발표자가 한눈에 보고 말을 시작할 수 있는 짧은 말(한 개에 12자 안쪽). 답에 없는 말은 쓰지 않는다.
 - 답은 아래 자료(발표 정보와 대본)에 있는 내용으로만 쓴다. 숫자나 사실을 지어내지 않는다.
 - 자료만으로 답할 수 없으면 답에 확인할 점을 적고 check를 true로 한다. 자료에 근거가 있으면 false.
 - source: 답의 근거가 된 대본 문장을 그대로 옮긴다. 없으면 빈 문자열.
 - id: q01, q02처럼 차례로 붙인다.
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
-{"version":1,"questions":[{"id":"q01","q":"...","alts":["...","..."],"answer":["..."],"source":"...","check":false}]}`;
+{"version":1,"questions":[{"id":"q01","q":"...","alts":["...","..."],"answer":["..."],"keys":["...","..."],"source":"...","check":false}]}`;
   const user = `<발표정보>
 주제: ${topic || '(적지 않음)'}
 청중: ${audience || '(적지 않음)'}
@@ -682,9 +684,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=12');
-  const { readScript: readEx } = await import('./lib.js?v=12');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=12');
+  const { units } = await import('./shrink.js?v=13');
+  const { readScript: readEx } = await import('./lib.js?v=13');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=13');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));

@@ -1,0 +1,74 @@
+# 라이브스크립트 기술 구조도
+
+정적 웹앱이다. 서버 코드는 없고 GitHub Pages에서 파일만 내려준다. 계산은 전부 브라우저에서 한다.
+
+## 1. 전체 구조
+
+```
+┌──────────────────────── 브라우저 (Chrome / Safari) ────────────────────────┐
+│ index.html  화면 뼈대 + 대화창 12개 (CSP로 접속 가능한 주소를 제한)         │
+│      │                                                                     │
+│ app.js (2400줄)  화면 전환, 이벤트, 저장, 모든 모듈을 이어 붙임            │
+│      ├─ match.js   들은 말 ↔ 대본 비교, 읽는 위치 찾기 (음절 편집 거리)     │
+│      ├─ lib.js     대본 보관함, 버전 기록, 문장/문단 나누기, diff           │
+│      ├─ shrink.js  늦어질 때 뒤쪽 문단 줄이기 (AI 없이 계산)                │
+│      ├─ check.js   발표 점검: 구간 시간, 말 빠르기, 높낮이, 힌트            │
+│      ├─ adlib.js   대본 밖 말(애드리브) 모으기                              │
+│      ├─ qa.js      예상 질문 판정 (e5 임베딩 + 음절 비교), 관련 대본 문장     │
+│      ├─ slides.js  발표자료(PPTX 직접, PDF는 vendor/pdfjs)에서 슬라이드 글   │
+│      ├─ compare.js 연습 결과: 대본과 들은 말 비교, 수정 제안, 막힌 낱말       │
+│      ├─ jev.js ─ jev-worker.js   JEV 모드 (Kev-0.6B, WebGPU, 워커에서 실행)│
+│      └─ claude.js  Claude API 호출 / 프롬프트 복사 / 응답 검사              │
+│ sw.js + manifest  오프라인 실행, 앱으로 설치                                │
+└────────────────────────────────────────────────────────────────────────────┘
+   │ Web Speech API        │ localStorage / sessionStorage    │ vendor/ (ONNX, wasm, pdf.js)
+   ▼                       ▼                                  ▼
+ Google·Apple 음성 서버   대본·버전·준비 결과·AI 키·기록      transformers.js 로컬 실행
+                                      외부 호출은 둘뿐: api.anthropic.com (AI 키 입력 시), huggingface.co (모델 최초 1회 다운로드)
+```
+
+## 2. 화면별 구조
+
+| 화면 | 하는 일 | 주요 모듈 | 데이터 |
+|---|---|---|---|
+| **메인: 편집** (`#text`) | 대본 입력, 글자 크기·너비, 다른 말 추천(`altDlg`), 실행 취소 | app.js, lib.js | localStorage 보관함 |
+| **메인: 발표** (talk) | 마이크로 듣고 읽는 위치를 하이라이트하고 화면을 따라 내림. 어절을 탭하면 위치 수정 | match.js, app.js | 인식 결과(메모리), 기록(sessionStorage) |
+| **헤더 · 메뉴** (`menu`) | 대본 목록·가져오기·내보내기, 다른 대화창 진입 | app.js, lib.js | 보관함 JSON |
+| **보기** (`viewDlg`) | 글자 크기, 너비, 전체 화면 | app.js | 설정값 |
+| **버전** (`hist`) | 버전 저장, 비교(diff), 되돌리기 | lib.js | 버전 목록 |
+| **AI 도구** (`ai`) | 대본 쓰기 / 고치기 / 발표 준비 세 탭 | claude.js, shrink.js | 발표 준비 결과(문단 중요도, 뺄 문장) |
+| **AI 키** (`keyDlg`) | 키 입력. 기본은 탭에만, 선택하면 기기에 기억 | claude.js | sessionStorage / localStorage |
+| **Q&A 준비** (`prep`) | 예상 질문·답 만들기, 모델 받기, 벡터 미리 계산 | qa.js, claude.js | 질문 팩, 벡터 |
+| **Q&A 발표** (`#qa`) | 들은 질문을 후보 5개로 판정해 답 카드 표시 | qa.js, jev.js | 모델 캐시(transformers-cache) |
+| **자동 줄이기** (`shrinkDlg`) | 목표 시간보다 길면 원문 / 줄임 / 요약 단계 제안 | shrink.js | 발표 준비 결과 |
+| **발표 점검** (`checkDlg`) | 리딩·연습·실전 모드, 구간 시간, 빠르기·높낮이, 결과와 AI 코칭 | check.js, claude.js | 점검 기록 |
+| **애드리브** (`adSide`, `adDlg`) | 대본 밖 말을 모으고, 대본에 끼워 넣거나 복사 | adlib.js | 최근 50개 |
+
+## 3. 핵심 흐름
+
+**발표 중 하이라이트 (기기 안에서만, 1초 이내)**
+```
+마이크 → Web Speech API → 들은 말 → match.js (최근 12음절 ↔ 현재 위치 주변 대본)
+      → 커서 이동 → app.js render() → 흐리게 / 배경색 / 밑줄 + 스크롤
+                  ├→ shrink.js  (늦어지면 뒤쪽 문단 줄임)
+                  ├→ check.js   (구간 시간·빠르기 → 실시간 힌트)
+                  └→ adlib.js   (맞지 않는 말 모으기)
+```
+
+**질의응답**
+```
+발표 전: claude.js가 예상 질문·답 생성 → qa.js가 e5-small로 질문 벡터 미리 계산
+발표 중: 들은 질문 → e5 임베딩 + 음절 비교 → 상위 후보 → 카드 표시
+        (WebGPU 기기에서 JEV 모드 켜면 jev-worker가 후보 5개 + '해당 없음' 재판정)
+```
+
+**큰 AI 작업은 발표 전에** (대본 생성, 발표 준비, 예상 질문, 코칭). 발표 중에는 Claude를 부르지 않는다.
+
+## 4. 저장과 배포
+
+- 저장: 서버 없이 `localStorage`(보관함·버전·설정), `sessionStorage`(AI 키 기본값, 모드, 기록), Cache Storage(앱 파일, 모델).
+- 배포: `?v=10`을 모든 모듈 주소에 붙여 캐시를 갈아끼운다. `sw.js`가 같은 번호로 캐시 이름을 만든다. 모델 파일(`vendor/`)은 따로 캐시한다.
+- 오프라인: 앱 파일과 받아 둔 모델은 오프라인에서도 돈다. 음성 인식과 Claude 호출은 인터넷이 필요하다.
+- 순수 계산 모듈(`lib`, `match`, `shrink`, `check`, `adlib`, `qa`, `jev`, `claude`, `slides`, `compare`)은 `node 파일.js`로 자체 확인이 돈다. 화면 시험은 `e2e/run.mjs`(Playwright, 흉내 낸 음성 인식), 전체는 `./test.sh`.
+- 글꼴: `fonts/`의 IBM Plex Sans KR(OFL) 조각을 `fonts/plex.css`가 글자 범위별로 불러온다. 서비스 워커가 `livescript-fonts-1`에 따로 캐시한다.
+- 화면 구성(시안 '말랑'): 편집은 문단 카드 + 오른쪽 카드 줄(발표 시간, 시간이 모자랄 때, 버전 기록), 글이 없으면 종이 칸. 내 발표(`#home`)는 대본 카드와 연습 기록·설정. 연습 때 들은 말은 `sk('says')`에 대본마다 최근 5회까지 둔다.

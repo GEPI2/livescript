@@ -439,7 +439,17 @@ export function sumLines(run, prev, goal) {
   if (prev && prev.h !== run.h) out.push('대본이 바뀌어 구간은 비교하지 않아요.');
   return out;
 }
-// 구간 블록: head '3 · 첫 20자…', time '1:00 · 기대보다 0:15 넘음 · 줄임'(걸린 시간이 없으면 '읽지 않음'), bar { lo, hi, wall, max }(초, 전체 폭 max),
+// 결과 창 맨 위 숫자 카드(시안의 PracticeStats): 걸린 시간 / 말 빠르기 / 대본 밖. over: 목표를 넘었으니 해석을 주황으로
+export function statCards(run, prev, goal) {
+  const r = rateOf(run), d = prev ? run.wall - prev.wall : 0, full = finished(run), proj = full ? null : fullTime(run), ads = run.secs.reduce((x, s) => x + s.ad, 0);
+  const note = [full ? totalText(run.wall, goal) : `${run.pct}%까지 읽음`,
+    !full && proj == null && goal && run.wall > goal + OK_HI && totalText(run.wall, goal),
+    prev && full && finished(prev) && (Math.abs(d) < 1 ? '지난번과 같아요' : `지난번보다 ${mmss(Math.abs(d))} ${d > 0 ? '길어요' : '짧아요'}`)].filter(Boolean).join(' · ');
+  return [{ label: '걸린 시간', value: mmss(run.wall), note, over: !!goal && run.wall > goal + OK_HI },
+    ...(r != null ? [{ label: '말 빠르기', value: String(Math.round(r * 60)), unit: ' 음절/분', note: paceWord(r) + (prev && rateOf(prev) != null ? (r > rateOf(prev) * 1.05 ? ' · 지난번보다 빨라졌어요' : r < rateOf(prev) * 0.95 ? ' · 지난번보다 느려졌어요' : ' · 지난번과 비슷해요') : ' · ' + perMin(r)) }] : []),
+    { label: '대본 밖', value: mmss(run.off), note: ads ? `애드리브 ${ads}개` : '대본에 없는 말을 한 시간' }];
+}
+// 구간 블록: head '3 · 첫 20자…', time '1:00 · 기대보다 0:15 넘음 · 줄임'(걸린 시간이 없으면 '읽지 않음'), bar { lo, hi, b(목표 눈금, 목표가 없으면 null), wall, over, max }(초, 전체 폭 max),
 // words: 정도 낱말(소수 없음), nums: '숫자 보기' 안 글(첫 줄은 막대 띠와 같은 기대 시간. 막대는 화면 읽기에서 빠지므로)
 // 끝까지 가지 않은 기록에서 멈춘 구간(걸린 시간이 있는 마지막 구간)은 다 읽지 않았으므로 '짧음'을 붙이지 않는다.
 // '반음은 피아노 건반 한 칸'은 결과 창 범례에 둔다(구간 하나만 열어도 보이게)
@@ -462,7 +472,7 @@ export function secRows(run, prev, goal) {
     return {
       head: `${i + 1} · ${s.w}${s.w.length >= 20 ? '…' : ''}`,
       time: (s.wall ? mmss(s.wall) + (i === stopAt && s.wall < e.lo ? '' : ' · ' + judge(s.wall, e)) : '읽지 않음') + (s.lv ? ' · 줄임' : ''),
-      bar: { lo: e.lo, hi: e.hi, wall: s.wall, max: Math.max(e.hi, s.wall) * 1.15 }, words, nums,
+      bar: { lo: e.lo, hi: e.hi, b: e.b, wall: s.wall, over: s.wall > e.hi, max: Math.max(e.hi, s.wall) * 1.15 }, words, nums,
     };
   });
 }
@@ -502,8 +512,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=12');
-  const { readScript } = await import('./lib.js?v=12');
+  const { units } = await import('./shrink.js?v=13');
+  const { readScript } = await import('./lib.js?v=13');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -540,6 +550,12 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(sentAt([{ s: 0, n0: 0 }, { s: 1, n0: 5 }], 5), 0, '문장 끝까지 읽었으면 그 문장');
   assert.equal(sentAt([{ s: 0, n0: 0 }, { s: 1, n0: 5 }], 6), 1);
   assert.equal(sentAt([], 3), 0);
+  const run0 = { wall: 196, pct: 100, off: 5, talk: 100, heard: 500, secs: [{ ad: 1 }, { ad: 0 }] }, st = statCards(run0, null, 180);
+  assert.deepEqual(st.map(c => c.label), ['걸린 시간', '말 빠르기', '대본 밖']);
+  assert.equal(st[0].value, '3:16'); assert.equal(st[0].note, '목표보다 0:16 길어요'); assert.ok(st[0].over);
+  assert.equal(st[1].value, '300'); assert.equal(st[1].unit, ' 음절/분'); assert.equal(st[1].note, '보통 · 1분에 약 300자'); assert.equal(st[2].note, '애드리브 1개');
+  assert.equal(statCards(run0, { ...run0, talk: 100, heard: 400 }, 180)[1].note, '보통 · 지난번보다 빨라졌어요');
+  assert.ok(!statCards({ ...run0, talk: 0 }, null, 0)[0].over && statCards({ ...run0, talk: 0 }, null, 0).length === 2, '말한 시간이 짧으면 빠르기 카드를 뺀다');
 
   // 2. 모드
   assert.equal(modeOf(null), 'live'); assert.equal(modeOf('practice'), 'practice'); assert.equal(modeOf('x'), 'live');

@@ -1,7 +1,7 @@
 // 늦어지면 자동 줄이기. 발표 중에는 AI 없이 이 계산만 한다. node shrink.js 로 확인한다.
 // '발표 준비'(claude.js cleanPrep)가 문단마다 정해 둔 중요도와 뺄 문장·남길 문장 번호로, 아직 읽지 않은 뒤쪽 문단의 문장을 숨긴다.
 // 단계: 0 원문, 1 줄임(뺄 문장을 숨김), 2 요약(남길 문장만). 화면의 글자는 모두 발표자가 쓴 원문이다.
-import { sentSpans, readScript, hashText, paras } from './lib.js?v=12';  // 뒤 셋은 아래 확인(예시 대본)에만 쓴다
+import { sentSpans, readScript, hashText, paras } from './lib.js?v=13';  // 뒤 셋은 아래 확인(예시 대본)에만 쓴다
 
 export const MIN = 150, MAX = 600, PIECE = 300;  // 150자보다 짧은 문단은 다음과 묶고, 600자보다 길면 약 300자씩 나눈다
 export const FREEZE = 300;  // 지금 위치에서 300자(약 1분) 안에 시작하는 단위는 바꾸지 않는다
@@ -13,11 +13,11 @@ export const LABEL = ['원문', '줄임', '요약'];
 //   s: 문장(원문 위치 a~b, 문단 번호 p, 글자 수 n, top: 이 문장이 보이는 가장 높은 단계. 뺄 문장 0, 남길 문장 2, 나머지 1)
 //      중요도 1과 첫·마지막 문단은 줄임까지라서 그 문단의 나머지 문장도 2다. 상한은 문단마다 따로 둔다(짧아서 묶인 중요도 3 문단은 요약까지).
 //   max: 이 단위에 쓸 수 있는 가장 높은 단계. 보이는 문장이 하나는 남아야 한다.
-export function units(text, prep, len) {
-  const ps = sentSpans(text), pieces = [];
+export function units(text, prep, len, must = []) {
+  const ps = sentSpans(text), pieces = [], mus = must instanceof Set ? must : new Set(must);  // must: 꼭 말할 문장(글 그대로). 뺄 문장으로 골랐어도 남긴다
   ps.forEach((spans, p) => {
     const it = prep[p], one = it?.imp === 1 || p === 0 || p === ps.length - 1;
-    const s = spans.map(([a, b], k) => ({ a, b, p, n: len(text.slice(a, b)), top: !it ? 2 : it.drop.includes(k) ? 0 : it.keep.includes(k) || one ? 2 : 1 }));
+    const s = spans.map(([a, b], k) => ({ a, b, p, n: len(text.slice(a, b)), top: !it || mus.has(text.slice(a, b)) ? 2 : it.drop.includes(k) ? 0 : it.keep.includes(k) || one ? 2 : 1 }));
     const tot = s.reduce((x, y) => x + y.n, 0), k = tot > MAX ? Math.round(tot / PIECE) : 1, imp = it?.imp ?? 2;
     let cur = [], acc = 0, c = 0;
     for (const x of s) {
@@ -55,7 +55,7 @@ export function unitAt(U, lv, at) {
 }
 
 // 단계 lv로 보일 대본을 만든다. 숨긴 문장은 글에서 뺀다. 문장 사이, 문단 사이 공백은 원문 그대로.
-// 반환 { text, cut: [{ a, b, lv }] } cut: 줄인 단위가 보이는 대본에서 차지하는 자리(표시용, 앞에서부터)
+// 반환 { text, cut: [{ i, a, b, lv }] } cut: 줄인 단위(i번)가 보이는 대본에서 차지하는 자리(표시용, 앞에서부터)
 export function shrunk(text, U, lv) {
   const all = U.flatMap((u, i) => u.s.map(s => ({ ...s, i })));
   if (!all.length) return { text, cut: [] };
@@ -72,7 +72,7 @@ export function shrunk(text, U, lv) {
     prev = k;
   });
   out += text.slice(all[all.length - 1].b);
-  return { text: out, cut: cut.map(({ a, b, lv }) => ({ a, b, lv })) };
+  return { text: out, cut };
 }
 
 // 미리 줄이기 창의 보기: 원문을 [{ t: '=' | '-', v }]로 나눈다. 숨길 문장만 '-'(lib.js diff와 같은 모양).
@@ -133,6 +133,9 @@ export function plan(U, lv, at, sec, r, goal, freeze = FREEZE) {
   return { lv: out, over: Math.max(0, Math.round(need - MARGIN)) };
 }
 
+// 미리 줄이기 단계(시안의 원본·조금 짧게·핵심만): 모든 단위를 m단계(0 원문, 1 줄임, 2 요약)로. 단위마다 쓸 수 있는 가장 높은 단계(max)를 넘지 않는다.
+export const modeLevels = (U, m) => U.map(u => Math.min(m, u.max));
+
 // node shrink.js 로 실행하면 확인
 if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWith('shrink.js'))) {
   const assert = (await import('node:assert')).default;
@@ -164,6 +167,13 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(U.map(u => u.imp), [2, 3, 2, 2, 2, 1], '묶으면 더 중요한 쪽');
   assert.deepEqual(U.map(u => u.len[2] === u.len[1]), [true, false, true, false, false, true], '첫 문단, 마지막 문단, 중요도 1은 요약해도 줄임과 같다 (2+3은 남길·뺄 문장뿐이라 같음)');
   assert.equal(U[4].max, 1, '남길 문장이 없는 조각(4의 뒤)은 줄임까지 (다 숨지 않게)');
+  // 꼭 말할 문장은 뺄 문장으로 골랐어도 모든 단계에서 남는다
+  const sp0 = sentSpans(text), dropped = text.slice(...sp0[0][2]), Um = units(text, prep, len, [dropped]);
+  assert.equal(U[0].s[2].top, 0); assert.equal(Um[0].s[2].top, 2, '꼭 말할 문장은 뺄 문장이어도 top 2');
+  assert.ok(shrunk(text, Um, Um.map(u => u.max)).text.includes(dropped) && !shrunk(text, U, U.map(u => u.max)).text.includes(dropped), '줄여도 남는다');
+  assert.deepEqual(modeLevels(U, 0), U.map(() => 0)); assert.deepEqual(modeLevels(U, 2), U.map(u => Math.min(2, u.max)));
+  assert.ok(modeLevels(U, 2).every((l, i) => l <= U[i].max) && modeLevels(U, 1).some(Boolean), '단계는 단위의 max를 넘지 않는다');
+  assert.ok(U.reduce((x, u, i) => x + u.len[modeLevels(U, 2)[i]], 0) < U.reduce((x, u) => x + u.len[0], 0), '핵심만은 원본보다 짧다');
   assert.deepEqual(U[3].len, [7 * sn, 5 * sn, sn]);
   assert.ok(units('가.\n\n나.', [], len).every(u => u.len[u.max] === u.len[0]), '발표 준비가 없는 문단은 줄이지 않는다');
 
@@ -181,6 +191,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(d.text.split('\n\n').length, 6, '문단 사이 빈 줄은 그대로');
   assert.equal(len(d.text), U.reduce((x, u, i) => x + u.len[lv[i]], 0), '정규화 글자 수가 단위 길이의 합과 같다');
   assert.deepEqual(d.cut.map(c => c.lv), [1, 2, 1, 1, 1]);
+  assert.ok(d.cut.every((c, k) => Number.isInteger(c.i) && (!k || c.i > d.cut[k - 1].i)), '줄인 단위 번호(원래 대본 보기용)');
   for (const c of d.cut) assert.ok(d.text.slice(c.a).startsWith('이 문장은') && d.text.slice(c.a, c.b).endsWith('읽습니다.'), '줄인 단위 자리는 문장 처음부터 끝까지');
   assert.equal(d.text.slice(d.cut[1].a, d.cut[1].b), S(5), '요약한 문단 1은 남길 문장 하나');
 

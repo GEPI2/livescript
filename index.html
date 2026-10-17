@@ -9,11 +9,12 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="icons/maskable-512.png">
+<link rel="stylesheet" href="fonts/plex.css">
 <style>
   /* 말랑 디자인 시스템 (claude.ai/artifact/TrTosabV71TF5KaAkb1XvJ) 값을 그대로 옮겼다.
      밝은 화면이 기본이고, 발표·Q&A(body.editing이 아닐 때)는 어두운 값으로 바뀐다. 창(dialog)은 늘 밝고, 발표 화면 위에서 여는 보기 창만 어둡다.
      색은 지금 읽는 곳(accent)과 시간 경고(warning)에만 쓴다. */
-  :root { --font-sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; --fs: 28px; --w: 24em;
+  :root { --font-sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; --fs: 28px; --w: 960px;
     --space-4: 4px; --space-8: 8px; --space-10: 10px; --space-12: 12px; --space-14: 14px; --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
     --radius-sm: 8px; --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-2xl: 18px; --radius-pill: 999px;
     --shadow-raised: 0 1px 2px rgba(21,23,28,.12); --shadow-popover: 0 8px 24px rgba(21,23,28,.10);
@@ -55,41 +56,56 @@
   /* 선택된 칩·탭·세그먼트 */
   [aria-pressed=true], .tabs button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
   header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: var(--space-8); align-items: center; padding: 8px var(--space-24); background: var(--header-bg); }
+  header { padding-inline: max(var(--space-24), calc((100% - 1280px) / 2)); }  /* 시안: 머리줄 안쪽은 최대 1280px */
   header { top: 0; min-height: var(--header-height); padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: 10px; box-shadow: 0 1px 0 var(--border); }
   footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 var(--border); }
+  footer.p-only { padding-inline: max(var(--space-24), calc((100% - var(--prompter-max)) / 2 + var(--space-32))); padding-block: 0 max(var(--space-20), env(safe-area-inset-bottom)); box-shadow: none; }  /* 시안: 대본 폭 안에 이전·다음, 구분선 없음 */
+  footer.p-only::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--space-24); background: linear-gradient(transparent, var(--bg)); pointer-events: none; }  /* 대본이 줄 위에서 딱 잘리지 않게 */
   body:not(.editing) header button, body:not(.editing) footer button { border-color: transparent; }  /* 발표 화면 단추는 바탕색 차이로만 나눈다 */
   .grow { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .brand { display: flex; align-items: center; gap: var(--space-10); flex: none; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
   .brand svg { flex: none; }
-  /* 상태줄: 위 큰 칸은 목표 대비(목표가 없으면 경과), 아래 작은 칸은 경과. 숫자 폭이 같아서 매초 줄이 흔들리지 않는다. */
-  #status { display: flex; flex-direction: column; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  #status > span { overflow: hidden; text-overflow: ellipsis; }
-  #status .main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
-  #status .main.pre { font-weight: 400; color: var(--ink-muted); }  /* 시작 전 예상: 아직 늦은 것이 아니라 주황을 쓰지 않는다 */
-  #status .main.late { align-self: flex-start; max-width: 100%; padding: 2px var(--space-12); border-radius: var(--radius-pill); background: var(--warning-tint); color: var(--warning); font-size: 20px; }
-  #status .sub { font-size: 13px; color: var(--ink-muted); }
-  body.qa #status .main { font-size: 20px; }  /* '질의응답 0:45'가 375px에서도 다 보이게 */
-  @media (max-width: 520px) { #status .pct { display: none; } }  /* 좁으면 진행률은 위 막대로만 */
-  /* 발표 점검 실시간 힌트: 작은 칸 끝에 낱말 하나. 움직임·색 뜻 없음(주황은 쓰지 않는다), 화면 읽기로 읽지 않는다(소리가 마이크로 들어감) */
-  #cue { margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--ink); white-space: nowrap; }
+  /* 상태줄(시안의 timer): 지난 시간을 크게, 옆에 / 목표, 그 옆에 목표 대비 배지(초과 예상·여유). 목표가 없으면 시간만. 숫자 폭이 같아서 매초 줄이 흔들리지 않는다. */
+  #status { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0 12px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  #status .t { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+  #status .of { margin-left: -6px; color: var(--ink-muted); }
+  #status .main { align-self: center; padding: 4px var(--space-12); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink-muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  #status .main:empty { display: none; }
+  #status .main.pre { font-weight: 400; }  /* 시작 전 예상: 아직 늦은 것이 아니라 주황을 쓰지 않는다 */
+  #status .main.late { background: var(--warning-tint); color: var(--warning); }
+  body.qa #status { justify-content: flex-start; flex-direction: column; align-items: flex-start; gap: 0; }
+  body.qa #status .t { order: 1; font-size: 14px; font-weight: 400; color: var(--ink-muted); }  /* '발표 5:03 경과' */
+  body.qa #status .main { order: 0; align-self: flex-start; padding: 0; background: none; color: var(--ink); font-size: 18px; font-weight: 700; }  /* '질문 답변' */
+  @media (max-width: 600px) { #status .of, #status .wide { display: none; } #status .t { font-size: 22px; } #status { gap: 0 8px; } }
+  /* '듣는 중' 배지: 초록 점은 들리면 채우고, 조용하면 속을 비우고, 다시 연결하는 중이면 점선. 마이크 단추(#mic)가 듣는 중일 때만 보인다 */
+  #listen { display: none; align-items: center; gap: var(--space-8); min-height: 36px; padding: 0 var(--space-12); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink-muted); font-size: 14px; white-space: nowrap; }
+  #listen i { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--success); }
+  header:has(#mic.on) #listen { display: inline-flex; }
+  header:has(#mic.hear) #listen i { background: var(--success); }
+  header:has(#mic.gap) #listen i { border-style: dotted; border-color: var(--ink-muted); }
+  @media (max-width: 700px) { #listen { display: none !important; } }
+  /* 발표 점검 실시간 힌트: 낱말 하나. 움직임·색 뜻 없음(주황은 쓰지 않는다), 화면 읽기로 읽지 않는다(소리가 마이크로 들어감) */
+  #cue { font-size: 13px; font-weight: 400; color: var(--ink); white-space: nowrap; }
   #cue.dim { color: var(--ink-read); }
   #cue:empty, body.off #cue, body.qa #cue, body.editing #cue { display: none; }
   /* 진행 막대: 채운 곳은 읽은 만큼, 흰 눈금은 목표 시간에 맞추려면 지금 있어야 할 곳(경과 ÷ 목표) */
   #bar { --p: 0%; --t: 0%; position: absolute; left: 0; right: 0; bottom: -6px; height: 6px; background: var(--border); }  /* 첫 500ms 타이머 전에 꽉 찬 막대가 보이지 않게 */
   #bar i { display: block; height: 100%; width: var(--p); background: var(--accent); }
   #bar b { position: absolute; top: -4px; bottom: -4px; width: 2px; left: min(var(--t), calc(100% - 2px)); background: var(--ink); }
-  #bar.late i { background: var(--warning); }
   /* 마이크: 발표 화면의 주요 단추(바탕색이 ink). 듣는 중이면 '정지' 앞에 원. 들리면 채우고, 조용하면 테두리만, 다시 연결하는 동안은 원 대신 점선 테두리와 '연결 중' */
   #mic { background: var(--primary-bg); color: var(--primary-fg); }
-  #mic.on::before { content: ''; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; margin-right: 6px; border: 2px solid currentColor; border-radius: 50%; }
-  #mic.on.hear::before { background: currentColor; }
+  #mic.on::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 2px; background: currentColor; }  /* 시안: ■ 정지 */
   #mic.on::after { content: '연결 중'; display: block; height: 0; overflow: hidden; visibility: hidden; }  /* 글자가 바뀌어도 버튼 폭이 같아서 상태줄이 좁아지지 않게 (드문 '다시 듣기'일 때만 넓어진다) */
   #mic.on.gap::before { display: none; }
   #mic.on.gap { outline: 2px dashed currentColor; outline-offset: -3px; }
   #mic.on.gap:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   #prev, #next { width: var(--control-xl); height: var(--control-xl); padding: 0; border-radius: 14px; }
-  #heard { display: flex; flex-direction: column; justify-content: center; min-height: var(--control-xl); font-size: 13px; color: var(--ink-muted); text-align: center; }  /* 대본 밖 칩이 나와도 푸터 높이가 같다 */
-  #offMsg { display: block; width: fit-content; max-width: 100%; margin: 0 auto 4px; padding: 8px 14px; overflow: hidden; text-overflow: ellipsis; border-radius: var(--radius-lg); background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 500; }  /* 대본 밖이면 들은 말 위에 한 줄 (들은 말의 끝이 가려지지 않게) */
+  #heard { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-8); min-height: var(--control-xl); color: var(--ink-muted); text-align: center; }  /* 들은 말과 '대본 밖'은 칩 */
+  #heardT, #offMsg { display: block; max-width: 100%; padding: 10px var(--space-16); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-lg); background: var(--surface); font-size: 15px; }
+  #heardT { color: var(--ink-muted); }
+  #heardT:empty { display: none; }
+  #offMsg { color: var(--ink); font-weight: 400; }
+  #timeAlert { padding: 10px var(--space-16); border-radius: var(--radius-lg); background: var(--warning-tint); color: var(--warning); font-size: 15px; font-weight: 600; white-space: nowrap; }
   body:not(.off) #offMsg { display: none; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
   @media (max-width: 600px) { header, footer { padding-left: var(--space-16); padding-right: var(--space-16); } .brand span { display: none; } }
@@ -102,6 +118,41 @@
   #text::placeholder { color: var(--ink-muted); }
   #text:focus-visible { outline-offset: -3px; }
   @media (max-width: 600px) { #text { padding-inline: var(--space-16); border-inline: 0; } }
+  /* 시안: 편집 화면의 주요 단추('발표')는 머리줄 맨 오른쪽 */
+  body.editing #mode { order: 9; padding-inline: var(--space-16); }
+  body.editing #lib { margin-right: auto; }
+  button.ic { display: inline-flex; align-items: center; gap: 6px; }
+  @media (max-width: 800px) { #listenBtn span { display: none; } }  /* 좁으면 그림만 (aria-label이 이름) */
+  /* 넓은 화면: 아래 줄(목표·예상·자동 줄이기)과 '시간이 모자랄 때'·'버전 기록'이 오른쪽 카드 줄이 된다(시안). 대본 종이는 그 왼쪽에 카드로 둔다. 좁으면 aside는 없는 것과 같고 아래 줄만 막대로 남는다 */
+  #edAside { display: contents; }
+  .side { display: none; }
+  @media (min-width: 1100px) {
+    body.editing { --ed-pad: max(var(--space-24), calc((100% - 1232px) / 2)); }
+    body.editing #text { height: calc(100dvh - 112px); margin: 88px 0 24px var(--ed-pad); padding: var(--space-24) 28px; border: 1px solid var(--border); border-radius: var(--radius-xl); }  /* 종이도 카드로 */
+    #edAside { position: fixed; z-index: 1; right: var(--ed-pad); top: 88px; bottom: 24px; width: 260px; display: flex; flex-direction: column; gap: var(--space-16); overflow-y: auto; }
+    footer.e-only { position: static; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-8); padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: none; }
+    footer.e-only::before { content: '발표 시간'; grid-column: 1 / -1; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
+    footer.e-only #target { width: 100%; }
+    footer.e-only #est, footer.e-only .sw, footer.e-only #altBtn { grid-column: 1 / -1; }
+    footer.e-only #est { white-space: normal; font-size: 13px; }
+    footer.e-only .sw { justify-content: space-between; flex-direction: row-reverse; font-size: 15px; font-weight: 500; }
+    .side { display: block; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+    .side h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+    .side .small { margin: 0 0 12px; }
+    .side .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 8px; }
+    .side .seg button { min-height: 40px; padding: 0 4px; font-size: 13px; }
+    .side .seg button:disabled { opacity: .5; }
+    #modeInfo { margin: 8px 0 0; }
+    .side .sw { margin-top: 6px; }
+    #verSide { list-style: none; margin: 0 0 10px; padding: 0; }
+    #verSide li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    #verSide li:last-child { border-bottom: 0; }
+    #verSide b { display: block; font-weight: 600; }
+    #verSide small { display: block; color: var(--ink-muted); font-size: 13px; }
+    #verSide button { min-height: 36px; padding: 0 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 400; }
+    #verSide .now { color: var(--ink-muted); font-size: 13px; white-space: nowrap; }
+    #verCard .row button { min-height: 40px; font-size: 13px; }
+  }
   #target, #lib { min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 6px 8px; }
   #target { width: 4.5em; }
   #lib { max-width: 320px; font-weight: 600; padding: 7px 4px; }
@@ -115,6 +166,43 @@
   #undoBar { z-index: 3; justify-content: space-between; padding: 6px 8px 6px 14px; }
   #toastT { flex: 1; }
   /* 빈 편집 화면: 안내 글 아래 카드. 카드를 눌러도 편집창으로 가고, 버튼만 눌린다. */
+  /* 문단 카드(시안의 ml-script): 번호·첫 글·예상 시간 머리줄, 누르면 보라 2px 테두리와 글칸, 아래에 꼭 말할 문장·더 짧게·더 쉽게 */
+  body.cards #text { display: none; }
+  #cards { display: none; }
+  body.cards.editing #cards { display: flex; align-items: flex-start; gap: var(--space-24); padding: 88px var(--space-16) 96px; }
+  #cNav { display: none; }
+  #cMain { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-16); }
+  #cList { display: flex; flex-direction: column; gap: var(--space-16); }
+  .pc { position: relative; padding: var(--space-20) 22px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); cursor: text; }
+  .pc.on { border: 2px solid var(--accent); padding: 19px 21px; }
+  .pc .ph { display: flex; justify-content: space-between; gap: var(--space-12); font-size: 13px; color: var(--ink-muted); }
+  .pc .pn { font-weight: 600; }
+  .pc.on .pn { color: var(--accent-strong); }
+  .pc .pt, .pc .pta { display: block; width: 100%; margin: var(--space-10) 0 0; padding: 0; font: inherit; font-size: 17px; line-height: 1.75; color: var(--ink); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  .pc .pta { min-height: 4em; border: 0; border-radius: 0; background: transparent; resize: none; overflow: hidden; }
+  .pc .pta:focus-visible { outline: none; }
+  .pc mark.must { padding: 1px 2px; border-radius: 4px; background: var(--accent-tint); color: var(--ink); }
+  .pc .hard { text-decoration: underline dotted var(--warning); text-decoration-thickness: 2px; text-underline-offset: 4px; cursor: pointer; }
+  .ptool { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin-top: var(--space-12); padding-top: var(--space-12); border-top: 1px solid var(--border); }
+  .ptool button { min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 400; }
+  .ptool .mustb { display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--surface-muted); font-weight: 600; }
+  .ptool .mustb[aria-pressed=true] { background: var(--accent-tint); color: var(--accent-strong); box-shadow: none; }
+  .ptool .small { margin: 0; }
+  .hardpop { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: var(--space-8); max-width: 340px; padding: var(--space-12); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-popover); cursor: default; }
+  .hardpop .small { margin: 0; }
+  .hardpop .row { margin: 0; gap: 6px; }
+  .hardpop .row button { min-height: 40px; padding: 0 14px; border-radius: var(--radius-pill); border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
+  .hardpop .row button.no { border: 0; background: transparent; color: var(--ink-muted); font-weight: 400; }
+  #cAdd { align-self: flex-start; }
+  #cNav a { display: block; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--ink-muted); font-size: 12px; text-decoration: none; }
+  #cNav a i { display: block; aspect-ratio: 16 / 9; padding: 4px 6px; overflow: hidden; border-radius: 6px; background: var(--border); font-style: normal; font-size: 10px; line-height: 1.3; color: var(--ink-muted); }
+  #cNav a span { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cNav a[aria-current=true] { border: 2px solid var(--accent); padding: 5px; color: var(--accent-strong); font-weight: 600; }
+  #cNav a[aria-current=true] i { background: var(--accent-tint); }
+  @media (min-width: 1100px) {
+    body.cards.editing #cards { gap: var(--space-24); margin: 0 calc(var(--ed-pad) + 284px) 0 var(--ed-pad); padding: 88px 0 40px; }
+    #cNav { position: sticky; top: 88px; flex: 0 0 150px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 112px); overflow-y: auto; }
+  }
   #empty { position: absolute; top: 160px; left: 16px; right: 16px; max-width: 560px; margin: 0 auto; padding: var(--space-24); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); pointer-events: none; }
   #empty h1 { display: flex; align-items: center; gap: var(--space-12); margin: 0 0 var(--space-8); font-size: 30px; line-height: 1.3; letter-spacing: -0.02em; }
   #empty p { margin: 8px 0; }
@@ -123,9 +211,52 @@
   a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px var(--space-14); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font-weight: 600; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
   #empty::after { content: ''; position: absolute; top: 100%; width: 1px; height: 76px; }  /* 낮은 가로 화면에서도 카드 끝을 아래 막대 위로 올릴 만큼 내릴 수 있게 */
 
+  /* 내 발표(시안의 홈): 대본마다 카드 하나. 머리줄의 '말랑'을 누르면 열린다 */
+  button.brand { min-height: 44px; padding: 0 var(--space-8) 0 0; border: 0; background: none; color: var(--ink); }
+  #home { position: fixed; inset: var(--header-height) 0 0 0; z-index: 1; overflow: auto; background: var(--bg); }
+  body.home #edAside { display: none !important; }  /* 오른쪽 카드 줄(또는 좁을 때 아래 줄)은 홈에서 가린다 */
+  .hw { max-width: var(--content-max); margin: 0 auto; padding: var(--space-40) var(--space-24) var(--space-56); }
+  .htop { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-20); }
+  .htabs { display: flex; gap: 4px; margin: 0 0 var(--space-24); }
+  .htabs button { min-height: 44px; padding: 0 14px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ink-muted); font-weight: 400; }
+  .htabs button[aria-selected=true] { background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
+  .hsub { margin: 6px 0 var(--space-16); color: var(--ink-muted); }
+  .hlist { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); margin-top: var(--space-16); }
+  .hlist > button, .hlist > a, .hlist > div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); width: 100%; min-height: 56px; padding: 8px var(--space-20); border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; color: var(--ink); text-align: left; text-decoration: none; font-weight: 600; }
+  .hlist > :last-child { border-bottom: 0; }
+  .hlist span + span, .hlist b { color: var(--ink-muted); font-weight: 400; }
+  .hlist .row { margin: 0; gap: 6px; }
+  .hlist .row button { min-height: 40px; padding: 0 12px; }
+  #home h1 { margin: 0; font-size: 30px; line-height: 1.3; letter-spacing: -0.02em; }
+  #home h1 + p { margin: 6px 0 0; color: var(--ink-muted); }
+  #home .htop .row { margin: 0; gap: 10px; }
+  #home .htop button { min-height: 48px; padding: 0 20px; border-radius: var(--radius-lg); }
+  #home h2 { margin: var(--space-40) 0 14px; font-size: 17px; font-weight: 600; }
+  #hGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-16); }
+  .pcard { display: flex; flex-direction: column; gap: var(--space-14); height: auto; padding: var(--space-20); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); text-align: left; font-weight: 400; }
+  .pcard.on { border: 2px solid var(--accent); padding: 19px; }
+  .pcard .th { height: 120px; padding: 0 var(--space-16); overflow: hidden; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); background: var(--accent-tint); color: var(--accent-strong); font-size: 13px; font-weight: 600; text-align: center; line-height: 1.5; word-break: keep-all; }
+  .pcard .th.none { background: var(--surface-muted); color: var(--ink-muted); }
+  .pcard .nm { font-size: 17px; font-weight: 600; }
+  .pcard .mt { margin-top: 4px; color: var(--ink-muted); font-size: 14px; }
+  .pcard .ft { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+  .pcard .go { color: var(--accent-strong); font-size: 14px; font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink-muted); font-size: 13px; font-weight: 600; line-height: 1.4; }
+  .badge.over { background: var(--warning-tint); color: var(--warning); }
+  .badge.ok { background: var(--success-tint); color: var(--success); }
+  #hGrid .new { flex-direction: row; align-items: center; justify-content: center; gap: var(--space-10); min-height: 260px; border: 2px dashed var(--accent-border); background: transparent; color: var(--accent-strong); font-weight: 600; }
+  #hRuns, #hRunsAll { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+  #hRuns button, #hRunsAll button { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; width: 100%; min-height: 0; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; text-align: left; }
+  #hRuns button:last-child, #hRunsAll button:last-child { border-bottom: 0; }
+  #hRunsAll { margin-top: var(--space-16); }
+  #hRuns span + span, #hRunsAll span + span { color: var(--ink-muted); font-size: 14px; font-weight: 400; }
+  #hRuns:empty { display: none; }
+  #hRunsAll:empty::before { content: '아직 연습 기록이 없어요. 발표 점검에서 연습하면 여기에 쌓여요.'; display: block; padding: var(--space-24); color: var(--ink-muted); }
+  body.home #text, body.home #empty, body.home #cards { visibility: hidden; }
+
   /* 발표 화면 대본: 읽은 곳은 흐리게(ink-read), 지금 읽는 줄 왼쪽에 accent 막대, 지금 단어는 굵게+밑줄 */
   #prompt { max-width: var(--w); margin: 0 auto; padding: calc(100dvh / 3) 16px 70vh; font-size: var(--fs); line-height: 1.6; letter-spacing: -0.01em; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
-  @media (min-width: 600px) { #prompt { padding-inline: var(--space-24); } }
+  @media (min-width: 600px) { #prompt { padding-inline: var(--space-32); } }
   #prompt .r { color: var(--ink-read); }
   /* 굵기는 글자 둘레선으로만 더해서 낱말이 바뀔 때 줄바꿈이 흔들리지 않게 한다 */
   #prompt .c { -webkit-text-stroke: .035em currentColor; text-decoration: underline 3px var(--ink); text-underline-offset: min(8px, .25em); }
@@ -141,7 +272,10 @@
   /* 자동 줄이기로 문장을 숨긴 문단: 연보라 바탕과 작은 표시 */
   #prompt .cut { margin: 0 -6px; padding: 0 6px; border-radius: 6px; background: var(--accent-tint); }
   #prompt .cut .r { color: var(--ink-muted); }  /* 연보라 바탕 위에서도 4.5:1 */
-  #prompt .cut::before { content: attr(data-l); margin-right: 8px; font-size: max(12px, .5em); font-weight: 600; color: var(--accent-strong); vertical-align: 0.3em; }
+  /* 시안: 위에 '핵심만으로 줄였어요' 알약과 '원래 대본 보기' 글자 단추. 글자 크기와 상관없이 14px */
+  #prompt .cuthd { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 14px; line-height: 1.4; letter-spacing: 0; white-space: normal; }
+  #prompt .cuthd span { padding: 4px 10px; border-radius: var(--radius-pill); background: var(--bg); color: var(--accent-strong); font-weight: 600; }
+  #prompt .cuthd .orig { min-height: 36px; padding: 0 10px; border: 0; background: transparent; color: var(--accent-strong); font-size: 14px; font-weight: 600; }
   .sw { display: flex; align-items: center; gap: 6px; min-height: 44px; white-space: nowrap; font-size: 14px; }
   .sw input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
   @media (max-width: 420px) {
@@ -158,9 +292,20 @@
   #qaR { flex: 2 1 520px; min-width: 0; }
   @media (max-width: 600px) { #qa { padding-inline: var(--space-16); } }
   .small { font-size: 13px; color: var(--ink-muted); margin: 6px 0; }
-  #ask { display: block; width: 100%; min-height: var(--control-xl); margin: 8px 0; padding: 0 var(--space-16); border: 2px solid var(--accent); border-radius: 14px; background: transparent; font-size: 16px; }
+  .lbl { display: block; margin: 0 0 var(--space-12); font-size: 14px; font-weight: 600; color: var(--ink-muted); }
+  label.lbl { margin: var(--space-16) 0 6px; font-weight: 400; }
+  /* 왼쪽 '들은 질문': 안내 글은 작게, 들은 질문(.q)은 크게 하고 받은 길을 밑에 */
+  #live { margin: 0 0 var(--space-16); padding: var(--space-20); border-radius: var(--radius-xl); background: var(--surface); color: var(--ink-muted); line-height: 1.55; }
+  #live:empty { display: none; }
+  #live.q { color: var(--ink); font-size: 22px; font-weight: 600; line-height: 1.5; }
+  #live[data-src]::after { content: attr(data-src); display: block; margin-top: 14px; padding-left: 16px; background: radial-gradient(circle 4px at 4px 50%, var(--success) 96%, transparent) no-repeat; color: var(--ink-muted); font-size: 14px; font-weight: 400; }
+  #ask { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: var(--control-xl); margin: 0; padding: 0 var(--space-16); border: 2px solid var(--accent); border-radius: 14px; background: transparent; font-size: 16px; }
+  #ask::before, body.qa #qaBtn::before { content: ''; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }  /* 선 아이콘(굵기 1.8, 끝 둥글게) */
+  #ask::before { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='5.5' y='1.5' width='5' height='8' rx='2.5'/%3E%3Cpath d='M3 8a5 5 0 0 0 10 0M8 13v2'/%3E%3C/svg%3E"); }
   #ask.on { background: var(--accent); color: var(--on-accent); }
-  #live:not(:empty) { margin: 8px 0; padding: var(--space-12) var(--space-16); border-radius: var(--radius-xl); background: var(--surface); color: var(--ink); font-size: 17px; }
+  #ask.on::before { display: none; }
+  #qaR:not(:has(#chips > *, #card:not([hidden]), #hits:not([hidden]))) #qaH { display: none; }
+  #hits { margin: 0 0 var(--space-16); }
   .chip { display: flex; align-items: center; gap: var(--space-12); width: 100%; min-height: var(--control-lg); margin: 6px 0; padding: 8px var(--space-16); border-radius: var(--radius-lg); background: var(--surface-muted); font-size: 16px; font-weight: 400; text-align: left; }
   .chip.none { border-color: transparent; background: transparent; color: var(--accent-strong); font-weight: 600; }
   .chip small { margin-left: auto; font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
@@ -169,9 +314,20 @@
   /* 답 카드: 어두운 화면에서 밝게 떠 있는 카드(ink 바탕). 안쪽 글씨는 밝은 값을 쓴다. */
   #card { margin: 0 0 var(--space-16); padding: 26px 28px; border-radius: var(--radius-2xl); background: var(--inverse-bg); color: var(--inverse-ink); }
   #card .small { font-size: 14px; }
-  #card .chip { background: var(--surface); }
-  #cardHeard { margin-top: 0; }
-  #cardQ { margin: 4px 0 var(--space-12); font-size: 20px; line-height: 1.45; }
+  .ctop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-8); font-size: 14px; color: var(--ink-muted); }
+  .rank { padding: 3px 10px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
+  #cardQ { margin: var(--space-12) 0; font-size: 20px; line-height: 1.45; }
+  #cardKeys { display: flex; flex-wrap: wrap; gap: var(--space-8); margin: 0 0 var(--space-12); }  /* 시안의 핵심 키워드: 어두운 알약 */
+  #cardKeys:empty { display: none; }
+  #cardKeys span { padding: 6px 14px; border-radius: var(--radius-md); background: var(--ink); color: var(--bg); font-size: 17px; font-weight: 600; }
+  /* 카드 아래 다른 후보: 번호는 순위. '해당 없음'은 글자 버튼 */
+  #cardMore { margin: 0 0 var(--space-16); }
+  body:not(.carded) #cardMore { display: none; }
+  #cardMore .small { font-size: 14px; margin: 0 0 var(--space-8); }
+  body.qa #bar { display: none; }  /* 시안: 질문 답변 화면에는 진행 막대가 없다 */
+  body.qa #qaBtn { background: var(--primary-bg); color: var(--primary-fg); }
+  body.qa #qaBtn::before { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 3.5 5.5 8l4.5 4.5'/%3E%3C/svg%3E"); width: 16px; height: 16px; margin-right: 6px; display: inline-block; vertical-align: -2px; }
+  body.qa #mic { background: var(--surface); color: var(--ink); }
   #cardA { margin: 0; padding-left: 1.2em; font-size: max(20px, calc(var(--fs) * .8)); line-height: 1.65; }
   #cardA li + li { margin-top: var(--space-8); }
   .warn { display: inline-block; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--warning-tint); color: var(--warning); font-size: 13px; font-weight: 600; }
@@ -210,6 +366,31 @@
 
   /* AI 도구, 버전, 메뉴 */
   .half { flex: 1; min-width: 8em; margin: 0; }
+  /* 발표자료 올리기(시안의 업로드 영역·파일 줄·슬라이드 조각) */
+  .drop { display: flex !important; flex-direction: column; align-items: center; gap: 6px; margin: var(--space-12) 0 !important; padding: var(--space-24) var(--space-16); border: 2px dashed var(--accent-border); border-radius: var(--radius-xl); background: var(--surface); color: var(--accent); text-align: center; cursor: pointer; }
+  .drop .t { color: var(--ink); font-size: 16px; font-weight: 600; }
+  .drop .small { margin: 0; }
+  .drop.over { border-color: var(--accent); background: var(--accent-tint); }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .drop:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .uprow { display: flex; align-items: center; gap: var(--space-14); margin: var(--space-8) 0; padding: var(--space-12) var(--space-16); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+  .uprow .ext { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--warning-tint); color: var(--warning); font-size: 12px; font-weight: 700; }
+  .uprow .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .uprow .small { margin: 0; }
+  button.icon { min-width: var(--control-min); padding: 0; border-color: transparent; background: transparent; color: var(--ink-muted); }
+  #upThumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: var(--space-8) 0 var(--space-12); }
+  #upThumbs div { display: flex; align-items: flex-end; aspect-ratio: 16 / 9; padding: 6px 8px; overflow: hidden; border-radius: var(--radius-sm); background: var(--surface-muted); color: var(--ink-muted); font-size: 12px; line-height: 1.3; }
+  #upThumbs div.more { align-items: center; justify-content: center; }
+  /* 칩: 고른 칩은 보라 테두리와 연보라 바탕(aria-pressed). 듣는 사람은 동그란 칩, 발표 시간은 모서리 10px */
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-8); margin: 0 0 var(--space-8); }
+  .chip-pill, .chip-sq { min-height: var(--control-min); padding: 0 var(--space-16); border-radius: var(--radius-pill); font-weight: 400; }
+  .chip-sq { border-radius: var(--radius-md); }
+  .chips [aria-pressed=true] { font-weight: 600; border-width: 2px; box-shadow: none; }
+  .chips .direct { display: flex; align-items: center; gap: var(--space-8); min-height: var(--control-min); margin: 0; padding: 0 var(--space-12); border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--ink-muted); font-weight: 400; }
+  .chips .direct input { width: 4em; min-height: 0; padding: 0; border: 0; background: transparent; }
+  .lbl2 { margin: var(--space-16) 0 var(--space-8); font-weight: 500; }
+  #ai .seg { display: inline-flex; margin: 0 0 var(--space-8); }
+  #ai .seg button { flex: none; padding: 0 var(--space-16); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
   .grid button { padding: 12px 8px; }
   #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty), #adMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
@@ -255,26 +436,66 @@
   #checkDlg ol, #checkDlg ul { margin: 6px 0; padding-left: 1.4em; }
   #checkDlg li { margin: 4px 0; }
   #cTarget { width: 6em; }
-  #cSum p:first-child { font-size: 20px; font-weight: 700; line-height: 1.3; }  /* 걸린 시간 한 줄 */
+  /* 숫자 카드(시안의 ml-stat): 이름 → 숫자 → 한 줄 해석. 넘쳤을 때만 해석이 주황 */
+  #cStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-12); margin: var(--space-12) 0; }
+  .stat { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+  .stat .k, .stat .note { font-size: 13px; color: var(--ink-muted); }
+  .stat .v { font-size: 28px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
+  .stat .note.over { color: var(--warning); font-weight: 600; }
+  .stat .v small { margin-left: 2px; font-size: 15px; font-weight: 500; color: var(--ink-muted); }
+  /* 대본 수정 제안(시안): 연보라 카드에 바꾸기 / 그대로 두기 */
+  #cSug .sug { margin: var(--space-12) 0; padding: var(--space-20); border-radius: var(--radius-xl); background: var(--accent-tint); }
+  #cSug h3 { margin: 0 0 8px; color: var(--accent-strong); font-size: 16px; }
+  #cSug p { margin: 0 0 12px; }
+  #cSug .row { margin: 0 0 8px; }
+  #cSug .row button { flex: 1; min-height: 44px; }
+  #cSug .row .go { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+  #cSug .small { margin: 0; }
+  #cRepeat { width: 100%; margin-top: var(--space-12); }
+  #cDiffBox { margin-top: var(--space-24); padding: var(--space-20); border: 1px solid var(--border); border-radius: var(--radius-xl); }
+  #cDiffBox .lg { margin: 0 0 var(--space-12); }
+  #cDiffTxt { margin: var(--space-12) 0 0; font-size: 17px; line-height: 1.85; word-break: keep-all; }
+  #cDiffTxt u.chg { text-decoration: underline 2px var(--accent); text-underline-offset: 4px; }
+  #cDiffBox .chips { margin: 0; }
+  #cDiffBox .chips button { min-height: 36px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 400; }
+  #cHistBox { margin-top: var(--space-24); }
+  #cHist { display: grid; grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); gap: 10px; align-items: end; height: 120px; }
+  #cHist div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; font-size: 12px; color: var(--ink-muted); }
+  #cHist i { display: block; width: 100%; border-radius: 6px 6px 0 0; background: var(--chart-past); }
+  #cHist .now { color: var(--ink); font-weight: 600; }
+  #cHist .now i { background: var(--accent); }
+  .lg { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; margin-top: 20px; }
+  .lg h3 { flex: 1; margin: 0 0 4px; font-size: 16px; }
+  .lg .key { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-muted); }
+  .lg .key del, .lg .key ins { padding: 0 4px; border-radius: 3px; font-size: 13px; }
+  .lg .key u.chg { text-decoration: underline 2px var(--accent); text-underline-offset: 3px; }
+  .lg .key u { width: 12px; height: 4px; border-radius: 2px; background: var(--ink); }
+  .lg .key b { width: 12px; height: 10px; border-radius: 3px; background: var(--chart-within); }
+  .lg .key b.over { background: var(--chart-over); }
   #checkMsg:not(:empty), #coachMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
   .sec { margin: 14px 0; }
   .sec .sh { display: flex; flex-wrap: wrap; gap: 0 8px; margin: 0; }
   .sec .sh span { flex: 1 1 8em; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .sec .sh b { flex: none; font-weight: 400; color: var(--ink-muted); }
-  .cbar { position: relative; height: 12px; margin: 6px 0 4px; border-radius: 4px; background: var(--surface-muted); overflow: hidden; }
-  .cbar i { position: absolute; top: 0; bottom: 0; background: var(--chart-within); }  /* 연보라 띠: 기대 시간 */
-  .cbar b { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 3px; background: var(--accent); }  /* 진한 보라: 걸린 시간 */
+  /* 시안의 ml-timebar: 걸린 시간 막대는 기대 띠 안이면 연보라(chart-within), 넘으면 주황(chart-over). 연한 띠는 기대 시간, 검은 세로선은 목표 */
+  .cbar { position: relative; height: 18px; margin: 8px 0 6px; border-radius: 4px; background: var(--surface-muted); }
+  .cbar i { position: absolute; top: 0; bottom: 0; background: var(--accent-tint); }
+  .cbar b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--chart-within); }
+  .cbar b.over { background: var(--chart-over); }
+  .cbar u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
   .sec details { font-size: 14px; color: var(--ink-muted); }
 </style>
 </head>
 <body>
 <header>
-  <span class="brand e-only"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></span>
+  <button class="brand e-only" id="homeBtn" aria-label="내 발표 보기" aria-haspopup="true"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></button>
   <button id="mode" class="cta">발표</button>
+  <span class="p-only" id="listen" aria-hidden="true"><i></i><span>듣는 중</span></span>
   <select class="e-only grow" id="lib" aria-label="대본 고르기"></select>
+  <button class="e-only ic" id="listenBtn" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10L5 10H2.5z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5"/></svg><span>들어보기</span></button>
   <button class="e-only" id="aiBtn">AI 도구</button>
   <button class="e-only" id="menuBtn" aria-label="메뉴">⋯</button>
-  <span class="p-only grow" id="status"><span class="main" id="stMain"></span><span class="sub"><span id="stSec"></span><span class="pct" id="stPct"></span><span id="cue"></span></span></span>
+  <span class="p-only grow" id="status"><span class="t" id="stSec"></span><span class="of" id="stOf"></span><span class="main" id="stMain"></span><span id="cue"></span></span>
   <button class="p-only" id="view" aria-label="보기와 발표 점검(가)" aria-haspopup="dialog">가</button>
   <button class="p-only" id="qaBtn">Q&amp;A</button>
   <button class="p-only" id="mic">● 시작</button>
@@ -282,6 +503,14 @@
 </header>
 
 <textarea class="e-only" id="text" readonly placeholder="여기에 대본을 붙여넣으세요. 자동으로 저장됩니다."></textarea>
+<!-- 문단 카드(시안의 대본 편집): 글이 있으면 #text 대신 문단마다 카드. 글은 그대로 #text에 있고 카드에서 고치면 그 문단 자리만 바뀐다 -->
+<div class="e-only" id="cards" hidden>
+  <nav id="cNav" aria-label="문단 목록"></nav>
+  <div id="cMain">
+    <div id="cList"></div>
+    <button id="cAdd">＋ 문단 추가</button>
+  </div>
+</div>
 <div class="e-only" id="empty" hidden>
   <h1><svg width="36" height="36" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg>말랑</h1>
   <p>대본을 소리 내어 읽으면 지금 읽는 곳을 표시하고 화면을 내려 주는 발표 프롬프터예요. 계정 없이 이 브라우저에서 바로 써요.</p>
@@ -292,30 +521,68 @@
   </ol>
   <div class="row"><button id="eSample" class="cta">예시로 둘러보기</button><button id="ePaste">직접 붙여넣기</button><a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a></div>
 </div>
+<main class="e-only" id="home" hidden>
+  <div class="hw">
+    <div class="htabs" role="tablist" aria-label="내 발표">
+      <button role="tab" data-t="main" aria-selected="true">내 발표</button>
+      <button role="tab" data-t="runs" aria-selected="false">연습 기록</button>
+      <button role="tab" data-t="set" aria-selected="false">설정</button>
+    </div>
+    <div data-tp="main" role="tabpanel">
+      <div class="htop">
+        <div><h1 id="homeH" tabindex="-1">어떤 발표를 준비할까요?</h1><p>대본을 붙여넣고 소리 내어 읽으면, 대본이 따라와요.</p></div>
+        <div class="row"><button id="hPaste">대본 붙여넣기</button><button id="hNew" class="cta">＋ 새 발표 만들기</button></div>
+      </div>
+      <h2>내 발표</h2>
+      <div id="hGrid"></div>
+      <h2 id="hRunsH">최근 연습</h2>
+      <div id="hRuns"></div>
+    </div>
+    <div data-tp="runs" role="tabpanel" hidden>
+      <h1 tabindex="-1">연습 기록</h1>
+      <p class="hsub">이 기기에 남은 연습이에요. 대본마다 최근 5회까지 둬요.</p>
+      <div id="hRunsAll"></div>
+    </div>
+    <div data-tp="set" role="tabpanel" hidden>
+      <h1 tabindex="-1">설정</h1>
+      <div id="hSet" class="hlist">
+        <button id="hsKey"><span>AI 키</span><span id="hsKeyV"></span></button>
+        <div id="hsFont"><span>발표 글자 크기</span><span class="row"><button id="hsSm" aria-label="글자 작게">가−</button><b id="hsFs"></b><button id="hsBg" aria-label="글자 크게">가+</button></span></div>
+        <button id="hsInstall" hidden><span>앱으로 설치</span><span>›</span></button>
+        <a class="btn" id="hsGuide" href="guide/" target="_blank" rel="noopener"><span>사용 안내서</span><span>›</span></a>
+      </div>
+    </div>
+  </div>
+</main>
 <main class="p-only" id="prompt"></main>
 <div class="p-only" id="readline" aria-hidden="true"></div>
 
 <section class="p-only" id="qa">
   <div id="qaL">
     <div class="row"><span class="small grow" id="qaState"></span></div>
-    <button id="ask">질문</button>
-    <p class="small" id="live"></p>
-    <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="채팅 질문을 붙여넣고 Enter">
+    <h2 class="lbl">들은 질문</h2>
+    <p id="live"></p>
+    <button id="ask">질문 듣기</button>
+    <label class="lbl" for="qaText">채팅으로 들어온 질문</label>
+    <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="붙여넣고 Enter를 눌러 주세요">
   </div>
   <div id="qaR">
+    <h2 class="lbl" id="qaH">준비한 답변</h2>
     <div id="qaRes" aria-live="polite">  <!-- 판정 결과만 읽어 준다. 말하는 동안 바뀌는 칩은 aria-busy로 막는다(app.js chips) -->
       <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
       <div id="chips"></div>
       <p class="small" id="qaTime"></p>
     </div>
     <div id="card" hidden>
-      <p class="small" id="cardHeard"></p>
+      <div class="ctop"><span id="cardHeard">가장 비슷한 질문</span><span class="rank" id="cardRank" hidden></span></div>
       <h2 id="cardQ"></h2>
+      <div id="cardKeys"></div>
       <span class="warn" id="cardCheck" hidden>직접 확인</span>
       <ul id="cardA"></ul>
       <p class="small" id="cardSrc" hidden></p>
-      <div id="cardMore"></div>
     </div>
+    <div id="cardMore"></div>
+    <div id="hits" hidden><p class="small">관련 대본 구간</p><div id="hitList"></div></div>
     <details id="all">
       <summary>전체 질문 목록</summary>
       <input id="allQ" type="text" enterkeyhint="search" autocomplete="off" placeholder="검색">
@@ -328,6 +595,7 @@
   </div>
 </section>
 
+<aside id="edAside" class="e-only" aria-label="발표 준비">
 <footer class="e-only">
   <label for="target">목표</label>
   <input id="target" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"> 분
@@ -335,12 +603,25 @@
   <label class="sw" id="shrinkBox" hidden><input type="checkbox" id="shrinkOn"> 자동 줄이기</label>
   <button id="altBtn" hidden>다른 말</button>
 </footer>
+<section class="side" id="shrinkCard" aria-labelledby="shH">
+  <h2 id="shH">시간이 모자랄 때</h2>
+  <p class="small">문단마다 짧은 버전을 미리 만들어 둬요</p>
+  <div class="row seg" id="modeSeg" role="group" aria-label="줄이기 단계"><button data-m="0">원본</button><button data-m="1">조금 짧게</button><button data-m="2">핵심만</button></div>
+  <p class="small" id="modeInfo"></p>
+  <button id="modePrep" hidden>발표 준비 열기</button>
+</section>
+<section class="side" id="verCard" aria-labelledby="verH">
+  <h2 id="verH">버전 기록</h2>
+  <ol id="verSide"></ol>
+  <div class="row"><button id="verSideSave">지금 대본 저장</button><button id="verSideAll">모두 보기</button></div>
+</section>
+</aside>
 <div id="toast" role="status"><span id="toastT">불러오는 중이에요. 오래 걸리면 새로고침해 주세요.</span><button id="toastX" hidden>닫기</button></div>
 <div class="p-only" id="undoBar" role="status" hidden><span>여기로 옮겼어요</span><button id="undoBtn">되돌리기</button></div>
 
 <footer class="p-only">
   <button id="prev" aria-label="이전 문장"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l-6 6 6 6"/></svg></button>
-  <span class="grow" id="heard"><b id="offMsg">대본 밖 · 돌아오면 이어 가요</b> <span id="heardT"></span></span>
+  <span class="grow" id="heard"><b id="offMsg">대본 밖 · 돌아오면 이어 가요</b> <span id="timeAlert" hidden></span> <span id="heardT"></span></span>
   <button id="adBtn" hidden aria-haspopup="dialog" aria-live="polite"></button>
   <button id="next" aria-label="다음 문장"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5l6 6-6 6"/></svg></button>
 </footer>
@@ -404,13 +685,29 @@
   </div>
   <div data-pane="gen">
     <p class="small">발표 정보를 넣으면 AI가 대본 초안을 씁니다. 바뀌는 곳을 확인하고 '적용'을 눌러야 대본이 바뀝니다.</p>
-    <label>주제 <input data-info="topic" autocomplete="off"></label>
-    <label>청중 <input data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
-    <label>목적·핵심 메시지 <textarea data-info="goal" rows="2"></textarea></label>
-    <div class="row">
-      <label class="half">목표 시간(분) <input id="gMin" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"></label>
-      <label class="half">말투 <select data-info="tone"><option>합니다체</option><option>해요체</option></select></label>
+    <!-- 발표자료 올리기(시안): 자료는 이 기기 안에서만 읽고, 슬라이드마다 한 줄씩 아래 개요 칸에 넣는다 -->
+    <label class="drop" id="upDrop" for="slideFile">
+      <svg width="32" height="32" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24V8M11 15l7-7 7 7"/><path d="M7 24v4h22v-4"/></svg>
+      <span class="t">PPT·PDF를 끌어다 놓거나 눌러서 고르세요</span>
+      <span class="small">슬라이드 1장마다 대본 1문단을 만들어요. 자료는 이 기기 밖으로 나가지 않아요.</span>
+      <input id="slideFile" type="file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+    </label>
+    <div id="upRow" class="uprow" hidden>
+      <span class="ext" id="upExt">PDF</span>
+      <div class="grow"><div class="nm" id="upName"></div><div class="small" id="upInfo"></div></div>
+      <button id="upClear" class="icon" aria-label="파일 빼기"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l10 10M14 4 4 14"/></svg></button>
     </div>
+    <div id="upThumbs" hidden></div>
+    <label>주제 <input data-info="topic" autocomplete="off"></label>
+    <label for="aud">듣는 사람</label>
+    <div class="chips" id="audChips" role="group" aria-label="듣는 사람 고르기"><button class="chip-pill">투자자</button><button class="chip-pill">심사위원</button><button class="chip-pill">학생</button><button class="chip-pill">일반 청중</button></div>
+    <input id="aud" data-info="audience" autocomplete="off" placeholder="직접 적어도 돼요. 예: 같은 과 학생과 교수님">
+    <div class="lbl2">발표 시간</div>
+    <div class="chips" id="minChips" role="group" aria-label="발표 시간 고르기"><button class="chip-sq" data-m="3">3분</button><button class="chip-sq" data-m="5">5분</button><button class="chip-sq" data-m="10">10분</button><label class="direct">직접 <input id="gMin" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="분" aria-label="발표 시간(분)"></label></div>
+    <div class="lbl2" id="toneL">말투</div>
+    <div class="seg" id="toneSeg" role="group" aria-labelledby="toneL"><button data-t="합니다체">합니다체</button><button data-t="해요체">해요체</button></div>
+    <select data-info="tone" id="toneSel" hidden aria-hidden="true" tabindex="-1"><option>합니다체</option><option>해요체</option></select>
+    <label>꼭 전하고 싶은 말 <span class="small">(선택)</span> <textarea data-info="goal" rows="2" placeholder="예: 투자 후 6개월 안에 유료 전환을 증명하겠다"></textarea></label>
     <label>슬라이드 개요 (한 줄에 슬라이드 하나) <textarea data-info="outline" rows="4" placeholder="도입: 대본을 놓친 경험&#10;문제: 프롬프터 앱의 한계&#10;해결: 목소리로 따라가기"></textarea></label>
     <label>참고 자료 (선택) <textarea data-info="refs" rows="3" placeholder="숫자, 조사 결과, 인용할 내용"></textarea></label>
   </div>
@@ -508,6 +805,13 @@
   <div class="row bottom"><span class="grow"></span><button id="altClose">닫기</button></div>
 </dialog>
 
+<dialog id="origDlg" aria-labelledby="origTitle">
+  <h2 id="origTitle">원래 대본</h2>
+  <p class="small drop"><del>흐린 글</del> = 줄이면서 숨긴 문장</p>
+  <div class="diff drop" id="origText"></div>
+  <div class="row bottom"><span class="grow"></span><button id="origClose">닫기</button></div>
+</dialog>
+
 <dialog id="shrinkDlg" aria-labelledby="shrinkTitle">
   <h2 id="shrinkTitle">목표 시간보다 길어요</h2>
   <p id="shrinkMsg"></p>
@@ -578,12 +882,15 @@
     <label id="cRunRow">기록 <select id="cRun"></select></label>
     <div class="row"><label for="cTarget">목표</label><input id="cTarget" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음" aria-label="목표 시간(분)"> 분</div>
     <div id="cRunBox">
+      <div id="cStats"></div>
+      <div id="cSug"></div>
       <div id="cSum"></div>
       <p class="small">목소리로 감정을 알아내지는 못해요. 높낮이 폭, 쉼, 빠르기가 어땠는지만 봐요.</p>
       <div id="cTone"></div>
       <h3 id="cTipsH" tabindex="-1">다음에 해 볼 것</h3>
       <p id="cAiSum"></p>
       <ol id="cTips"></ol>
+      <button id="cRepeat" hidden></button>
       <details id="cRule" hidden><summary>규칙으로 찾은 것</summary><ol id="cRuleList"></ol></details>
       <div class="row">
         <button id="coachAi">AI 코칭</button>
@@ -598,10 +905,19 @@
         <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 JSON" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
         <div class="row"><button id="coachPasteApply">적용</button></div>
       </div>
-      <h3>구간</h3>
-      <p class="small">구간은 문단이고, 짧은 문단은 다음과 묶어요. 연보라 띠: 기대 시간 · 진한 보라: 걸린 시간<span id="cSemi"> · 반음은 피아노 건반 한 칸</span></p>
+      <div class="lg"><h3>구간별 시간</h3><span class="key"><u></u>목표</span><span class="key"><b class="ok"></b>시간 안</span><span class="key"><b class="over"></b>초과</span></div>
+      <p class="small">구간은 문단이고, 짧은 문단은 다음과 묶어요. 연보라 띠는 기대 시간이에요.<span id="cSemi"> 반음은 피아노 건반 한 칸이에요.</span></p>
       <p class="small" id="cNoGoal">목표 시간을 넣으면 목표에 맞춘 기대 시간으로 바뀌어요.</p>
       <div id="cSecs"></div>
+      <section id="cDiffBox" hidden>
+        <div class="lg"><h3 id="cDiffH">대본과 실제로 한 말</h3><span class="key"><del>빼먹음</del></span><span class="key"><ins>더함</ins></span><span class="key"><u class="chg">바꿔 말함</u></span></div>
+        <div class="chips" id="cDiffSec" role="group" aria-label="구간 고르기"></div>
+        <p id="cDiffTxt"></p>
+      </section>
+      <section id="cHistBox" hidden>
+        <div class="lg"><h3>회차별 시간</h3></div>
+        <div id="cHist"></div>
+      </section>
     </div>
   </div>
   <div class="row bottom">
@@ -626,7 +942,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=12"></script>
-<script type="module" src="app.js?v=12"></script>
+<script src="match.js?v=13"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>

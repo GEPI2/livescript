@@ -1,13 +1,15 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=12';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=12';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=12';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=12';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=12';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=12';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=13';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=13';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=13';
+import { slidesFrom, outlineLines, topicOf } from './slides.js?v=13';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey } from './compare.js?v=13';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=13';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=13';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=13';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, mRow, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, secRows, tips, toneLines, NAME } from './check.js?v=12';
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME } from './check.js?v=13';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -64,7 +66,11 @@ function build(text, cuts = []) {
         root.append(gap); gap = '';
         host = document.createElement('div');
         host.className = 'cut';
-        host.dataset.l = LABEL[cuts[ci].lv];
+        // 시안: 위에 '핵심만으로 줄였어요' 알약과 '원래 대본 보기' 단추. 단어가 아니라서 위치 계산에는 끼지 않는다
+        const hd = document.createElement('div'), pill = document.createElement('span'), ob = document.createElement('button');
+        hd.className = 'cuthd'; pill.textContent = ['', '조금 줄였어요', '핵심만으로 줄였어요'][cuts[ci].lv];
+        ob.type = 'button'; ob.className = 'orig'; ob.textContent = '원래 대본 보기'; ob.dataset.u = cuts[ci].i;
+        hd.append(pill, ob); host.append(hd);
         root.append(host);
       }
       host.append(gap);
@@ -153,6 +159,7 @@ let rec, listening = false, errored = false, lock = null, locking = false;
 let recOn = false, recOff = 0;  // 인식기가 켜져 있나, 마지막으로 꺼진 때 (크롬이 끝냈다 다시 켜는 틈을 마이크 버튼에 보인다)
 let heard = '', sessionNorm = '', cut = 0, lastHeard = 0, lastMatch = 0, lastAnchor = 0, lastResume = 0, lastMove = 0;  // lastResume: 1.5초 넘게 쉰 뒤 첫 결과, lastMove: 손으로 옮기거나 시작한 때
 let resFinal = 0;  // 이번 인식 세션에서 확정된 결과 수 (질문 구간 시작점)
+let finalSeen = 0, TX_MAX = 3000;  // 이번 세션에서 구간에 모아 둔 확정 결과 수, 구간마다 모아 둘 글자 수
 const APPROX_MS = 10000;  // ponytail: 문장 하나를 바꿔 말하는 데 걸리는 시간으로 잡은 값. 기록의 anchor 간격으로 다시 맞춘다.
 let said = 0;  // 마지막으로 커서를 옮긴 뒤 새로 들은 글자 수 (말 속도용)
 
@@ -199,7 +206,7 @@ function voiceMove(n) {
 function say(t, tail = false) {
   const n = Math.max(8, Math.floor($('heard').clientWidth / 13));
   $('heardT').textContent = tail && t.length > n ? '…' + t.slice(1 - n) : t;
-  if (qaMode && t) $('live').textContent = t;  // 질의응답 화면에는 아래 줄이 없으므로
+  if (qaMode && t) liveMsg(t);  // 질의응답 화면에는 아래 줄이 없으므로
 }
 // iPhone·iPad의 다른 브라우저(Safari 엔진을 빌려 씀)와 홈 화면 웹앱은 인식 객체가 있어도 동작하지 않는다는 보고가 있다
 const NOT_SAFARI = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent) || navigator.standalone ? 'iPhone·iPad에서는 Safari에서 열어 주세요. 다른 브라우저와 홈 화면 앱에서는 음성 인식이 안 될 수 있어요.' : '';
@@ -210,7 +217,7 @@ function initRec() {
   rec.lang = 'ko-KR';
   rec.continuous = true;
   rec.interimResults = true;
-  rec.onstart = () => { recOn = true; };
+  rec.onstart = () => { recOn = true; finalSeen = 0; };
   rec.onresult = e => {
     let t = '', q = '';
     resN++;
@@ -226,8 +233,15 @@ function initRec() {
       tape.end();
     }
     resFinal = e.results.length;
-    for (let i = e.resultIndex ?? 0; i < e.results.length; i++)  // 바뀐 결과만 (i: 이번 인식 세션 안 번호)
+    for (let i = e.resultIndex ?? 0; i < e.results.length; i++) {  // 바뀐 결과만 (i: 이번 인식 세션 안 번호)
       note({ i, final: e.results[i].isFinal, text: e.results[i][0].transcript, ...(qaMode && { qa: true }) });
+      // 확정된 말은 그때의 구간에 모아 둔다. 같은 확정 결과가 다시 오면(i가 앞서지 않으면) 세지 않는다
+      if (e.results[i].isFinal && i >= finalSeen) {
+        finalSeen = i + 1;
+        const a = accAt() ? secNow() : -1;
+        if (tx[a] != null) tx[a] = (tx[a] + ' ' + e.results[i][0].transcript).trim().slice(0, TX_MAX);
+      }
+    }
     for (let i = 0; i < e.results.length; i++) {
       t += e.results[i][0].transcript;
       if (qSeg && i >= qSeg.from) q += e.results[i][0].transcript;
@@ -253,7 +267,7 @@ function initRec() {
     recOn = false; recOff = Date.now();
     heard = (heard + sessionNorm.slice(cut)).slice(-60);
     hearReset(hs, sessionNorm.length);
-    sessionNorm = ''; cut = 0; resFinal = 0;
+    sessionNorm = ''; cut = 0; resFinal = 0; finalSeen = 0;
     if (qSeg) { qSeg.done += qSeg.cur + ' '; qSeg.cur = ''; qSeg.from = 0; }
     tape.end();  // 정지했으면 여기서 마지막 애드리브가 정해진다
     // 기다리는 사이 '정지'를 눌렀으면 다시 켜지 않는다
@@ -348,6 +362,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- 화면 ----
 function setMode(editing) {
+  stopHear();
   if (editing && qaMode) setQa(false);
   document.body.classList.toggle('editing', editing);
   document.querySelector('meta[name=theme-color]').content = editing ? '#FFFFFF' : '#0F1115';  // 주소창·제목줄 색을 화면(밝은 편집, 어두운 발표)에 맞춘다
@@ -356,7 +371,8 @@ function setMode(editing) {
   closeUndo(); sayNone();
   // iPad는 전체 화면에서 글자 입력을 막으므로 편집 화면에서는 끈다
   if (editing) {
-    stop(); letSleep(); scrollTo(0, 0); updEst(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    stop(); letSleep(); scrollTo(0, 0); updEst(); cardAt = -1; cardNew = false; renderCards();  // 연습에서 막힌 낱말과 줄이기 단계가 바뀌었을 수 있다
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     // 실전은 결과 창을 저절로 열지 않으므로 편집 화면으로 돌아오면 한 번 알린다 (저장하지 못했으면 그 안내를)
     if (runFull) { runFull = false; tell(FULL); }
     else if (liveNote) tell("방금 발표의 점검 결과는 ⋯ > '발표 점검'에서 볼 수 있어요." + (audioNote(liveNote) && ' ' + audioNote(liveNote)), { stay: true });
@@ -366,7 +382,7 @@ function setMode(editing) {
     keepAwake();
     shrinkUnits(); baseLevels();
     if (!snapshot('발표 시작')) tell(FULL);
-    else if (shr.on && target && !U) tell(NEED_PREP);  // 발표 준비 뒤에 대본을 고쳤으면 줄이지 못한다
+    else if (shr.auto && target && !U) tell(NEED_PREP);  // 발표 준비 뒤에 대본을 고쳤으면 줄이지 못한다
     show(); render(true); prepareTalk(); askShrink();
   }
 }
@@ -385,17 +401,17 @@ addEventListener('resize', () => {
 // 태블릿은 거치대에 세워 두고 멀리서 읽으므로 기본 글자를 키운다. iPad Safari는 Mac처럼 자신을 알려서 화면 크기와 터치로 가린다.
 const TABLET = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) >= 600;
 function fontSize(delta) {
-  const fs = Math.max(16, Math.min(64, (+store.get('ls.fs') || (TABLET ? 34 : 28)) + delta));
+  const fs = Math.max(16, Math.min(64, (+store.get('ls.fs') || (TABLET || innerWidth >= 900 ? 34 : 28)) + delta));
   store.set('ls.fs', fs);
   document.documentElement.style.setProperty('--fs', fs + 'px');
   $('fsNow').textContent = fs;
   if (delta && !qaMode) render();
 }
 
-// 글 폭: 좁게 18em, 보통 24em(기본), 넓게 900px. 글자 크기에 맞춰 한 줄 글자 수가 같게 em으로 둔다.
-const WIDTHS = ['18em', '24em', '900px'];
+// 글 폭: 좁게 18em, 보통 24em, 넓게 960px(기본, 시안의 prompter-max). 좁게·보통은 글자 크기에 맞춰 한 줄 글자 수가 같게 em으로 둔다.
+const WIDTHS = ['18em', '24em', '960px'];
 function textWidth(w) {
-  if (!WIDTHS.includes(w)) w = '24em';
+  if (!WIDTHS.includes(w)) w = '960px';
   document.documentElement.style.setProperty('--w', w);
   for (const b of document.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', b.dataset.w === w);
 }
@@ -412,7 +428,7 @@ const R0 = 5;  // 처음 기본 말 속도(초당 정규화 글자). 한국어 �
 let r0 = R0;  // 이번 발표의 처음 말 속도: 발표를 시작할 때 잰 속도 rate() (편집창 예상과 같은 값에서 출발)
 const saveTalk = () => {
   store.set(sk('talk'), JSON.stringify({ t0, onSec, matched, seen: seen = Date.now(), end, endQa, r0,  // seen: 마지막으로 들은 때
-    acc: acc && packAcc(acc), hs, rt: runT, kind: runKind, rd, cues, aud: runAud, re }));  // 발표 점검 (아래 '발표 점검' 참고)
+    acc: acc && packAcc(acc), hs, rt: runT, kind: runKind, rd, tx, cues, aud: runAud, re }));  // 발표 점검 (아래 '발표 점검' 참고)
   // 말 속도는 사람마다 다르므로 대본과 따로 마지막으로 잰 값을 둔다 (편집 화면의 예상 시간, AI 대본 길이)
   // ponytail: 1분 넘게 말한 마지막 발표 하나로 잰다. 리허설 여러 번을 합치려면 시간 가중 평균으로.
   if (onSec >= 60) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
@@ -427,7 +443,7 @@ const spoken = t => norm(t).length;  // 소리 내어 읽는 글자 수 ([확인
 // 새 발표: 지난 발표에서 들은 말도 비운다
 // 애드리브 목록은 실제로 시작할 때(t) 비운다. 대본을 고쳐서 부르면(0) 그대로 둔다(편집 화면에서 '대본에 넣기'를 이어서 하게).
 function resetTalk(t) { t0 = t; onSec = 0; matched = 0; end = 0; endQa = false; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0; newRun(); saveTalk(); keepLog(); tape.reset(); if (t) { clearAds(); coachCtl?.abort(); } }
-const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const mmss = s => { s = Math.max(0, Math.round(s) || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };  // 초는 반올림해 정수로(연습 기록의 걸린 시간은 소수다)
 
 setInterval(() => {
   const tNow = Date.now(), dt = (tNow - lastTick) / 1000;  // 발표 점검은 0.5초가 아니라 실제 시각 차이로 더한다 (창이 가려지면 타이머가 늦어진다)
@@ -446,6 +462,7 @@ setInterval(() => {
     m.classList.toggle('hear', Date.now() - lastHeard < 1500);
     m.classList.toggle('gap', gap);
     if (m.textContent !== label) m.textContent = label;
+    $('listen').lastChild.textContent = !gap ? '듣는 중' : stuck() ? '다시 듣기 필요' : '연결 중';
     m.setAttribute('aria-label', !gap ? '듣는 중, 누르면 정지' : stuck() ? '음성 인식이 멈췄어요. 누르면 다시 들어요' : '음성 인식 다시 연결 중');
   }
   if (editing()) return;
@@ -464,36 +481,43 @@ setInterval(() => {
   if (off) offT = Date.now();
   // 먼 위치 확인을 기다리는 중이면(pending) 확인된 뒤에 한다. 다시 계산하면 setLevels가 기다리던 위치를 버린다.
   else if (offT && !pending && Math.max(lastMatch, lastAnchor) > offT) { offT = 0; uAt = -1; }
-  if (listening && !off && !qaMode && t0 && target && shr.on && U && coach !== 'read') autoShrink(sec);  // 리딩은 재기만 한다
+  if (listening && !off && !qaMode && t0 && target && shr.auto && U && coach !== 'read') autoShrink(sec);  // 리딩은 재기만 한다
   // 상태줄 큰 칸: 목표 대비 하나(목표가 없으면 경과). 시작 전에는 편집창과 같은 '예상'이고 아직 늦은 것이 아니라 주황을 쓰지 않는다.
   // 작은 칸: 경과. 진행률은 위 막대에 있고 넓은 화면에서만 글자로도 보인다.
   // 아직 시작하지 않았으면(t0 없음) 손으로 옮겨도 '예상'이다
   const started = !!(t0 && (listening || cur)), pre = !listening && !started;
   const goal = coach === 'read' ? 0 : target;  // 리딩은 목표가 없는 것처럼: 경과만, 주황 '초과'와 눈금 없음
-  let main = mmss(sec), cls = '', late = false, d = 0;
+  let cls = '', late = false, d = 0;
   if (target) {
     // 예상 종료 = 경과 시간 + 남은 글자 / 말 속도. 처음 30초 동안은 기본 속도 쪽으로 당긴다.
     // 시작 전에는 지난 발표 값이 아니라 편집창 예상과 같은 속도(rate())로 본다 (start()가 r0 = rate()로 새로 잰다).
     const k = listening || cur ? (onSec + 30) / (matched + r0 * 30) : 1 / rate();
     d = Math.round(sec + (S.s.length - cur) * k - target * 60);
   }
+  const wide = document.createElement('span');  // 좁은 화면에서는 '예상'을 뺀다
+  wide.className = 'wide'; wide.textContent = '예상 ';
+  let badge = [];
   if (goal) {
     late = !pre && d > 0;
-    main = (pre ? `예상 ${d > 0 ? '+' : '-'}` : d > 0 ? '초과 ' : '여유 ') + mmss(Math.abs(d));
+    badge = pre ? [`예상 ${d > 0 ? '+' : '-'}${mmss(Math.abs(d))}`] : d > 0 ? ['초과 ', wide, mmss(d)] : ['여유 ' + mmss(-d)];
     cls = pre ? 'pre' : late ? 'late' : '';
   }
-  if (qaMode) { main = '질의응답 ' + mmss(Math.floor((Date.now() - qaAt) / 1000)); cls = ''; }  // 작은 칸에는 멈춘 발표 경과
-  $('stMain').textContent = main;
-  $('stMain').className = 'main ' + cls;
-  const two = goal || qaMode;  // 큰 칸이 경과가 아니면 작은 칸에 경과
-  $('stSec').textContent = two ? mmss(sec) : '';
-  $('stPct').textContent = (two ? ' · ' : '') + pct + '%';
+  // 상태줄: 지난 시간을 크게, 목표가 있으면 '/ 목표'와 목표 대비 배지. 질의응답에서는 '질문 답변'과 멈춘 발표 경과.
+  $('stSec').textContent = qaMode ? `발표 ${mmss(sec)} 경과` : mmss(sec);
+  $('stOf').textContent = goal && !qaMode ? ' / ' + mmss(Math.round(target * 60)) : '';
+  $('stMain').replaceChildren(...(qaMode ? ['질문 답변'] : badge));
+  $('stMain').className = 'main ' + (qaMode ? '' : cls);
   // 진행 막대: 채운 폭은 진행률, 흰 눈금은 목표에 맞추려면 지금 있어야 할 곳(목표가 있고 발표를 시작했을 때만)
   const bar = $('bar'), tick = goal && started;
   bar.style.setProperty('--p', pct + '%');
   bar.style.setProperty('--t', tick ? Math.min(100, sec / (target * 60) * 100) + '%' : '0%');
   bar.lastChild.hidden = !tick;
   bar.classList.toggle('late', late);
+  // 시안: 남은 시간 1분 전부터 아래에 알림 칩. 처음 나올 때 한 번 진동(되는 기기만). 목표가 지났거나 리딩·질의응답·멈춘 때는 없다
+  const remain = goal && started && listening && !qaMode && !end ? goal * 60 - sec : 0;
+  const alertOn = remain > 0 && remain <= 60;
+  if (alertOn) { $('timeAlert').textContent = `남은 시간 ${mmss(Math.ceil(remain))}`; if ($('timeAlert').hidden) navigator.vibrate?.(200); }
+  $('timeAlert').hidden = !alertOn;
   $('qaBtn').classList.toggle('hot', !qaMode && pct >= 95);
   coachTick(tNow, dt, sec, off, late, d);
 }, 500);
@@ -503,7 +527,7 @@ function setTarget(v) {
   target = Math.max(0, +v) || 0;
   target ? store.set(sk('target'), target) : store.del(sk('target'));
   for (const id of ['target', 'gMin', 'cTarget']) if (document.activeElement !== $(id)) $(id).value = target || '';
-  updEst();
+  updEst(); syncChips();
 }
 $('target').oninput = () => setTarget($('target').value);
 $('gMin').oninput = () => setTarget($('gMin').value);
@@ -521,31 +545,37 @@ function updEst() {
     if (target) { w.textContent = ` / 목표 ${mmss(Math.round(target * 60))}`; e.append(w); }
   }, 150);
   $('shrinkBox').hidden = !target;
+  updShrinkUi(); renderVerSide();
 }
 
 // ---- 늦어지면 자동 줄이기 (shrink.js) ----
-// sk('shrink') = { on, h: 대본 해시, pt: 발표 준비를 한 때, lv: 단위마다 단계(0 원문, 1 줄임, 2 요약), asked: 미리 줄인 대본을 물어본 대본,
+// sk('shrink') = { on: 줄인 단계를 쓴다(auto나 mode), auto: 발표 중 자동 줄이기(스위치), mode: 미리 줄이기 단계(0 원본, 1 조금 짧게, 2 핵심만; 시안의 세그먼트), h: 대본 해시, pt: 발표 준비를 한 때, lv: 단위마다 단계(0 원문, 1 줄임, 2 요약), asked: 미리 줄인 대본을 물어본 대본,
 //   pre: 미리 줄인 대본으로 연습하기로 했으면 그 단계(처음부터 발표할 때마다 이 단계로 시작) }
 // 단계는 대본과 '발표 준비' 결과가 그대로일 때만 쓴다. 저장해 두어서 새로고침해도 같은 글이 보인다.
-const SHR0 = { on: false, h: '', pt: 0, lv: [], asked: '', pre: null };
+const SHR0 = { on: false, auto: false, mode: 0, h: '', pt: 0, lv: [], asked: '', pre: null };
 const NEED_PREP = "자동 줄이기는 지금 대본으로 한 '발표 준비' 결과가 있어야 해요. 대본을 고쳤다면 AI 도구의 '발표 준비'를 다시 해 주세요.";
 let shr = { ...SHR0 }, U = null, uAt = -1;  // U: 줄이기 단위(지금 대본으로 한 발표 준비가 없으면 null), uAt: 마지막으로 계산한 때의 단위
 function loadShrink() {
   try {
     const v = JSON.parse(store.get(sk('shrink')));
     const lvs = a => a.map(x => [1, 2].includes(x) ? x : 0);
-    shr = { on: v.on === true, h: String(v.h || ''), pt: +v.pt || 0, lv: Array.isArray(v.lv) ? lvs(v.lv) : [], asked: String(v.asked || ''), pre: Array.isArray(v.pre) ? lvs(v.pre) : null };
+    const auto = (v.auto ?? v.on) === true, mode = [1, 2].includes(v.mode) ? v.mode : 0;  // 옛 저장값은 on이 곧 자동
+    shr = { on: auto || mode > 0, auto, mode, h: String(v.h || ''), pt: +v.pt || 0, lv: Array.isArray(v.lv) ? lvs(v.lv) : [], asked: String(v.asked || ''), pre: Array.isArray(v.pre) ? lvs(v.pre) : null };
   } catch { shr = { ...SHR0 }; }
   U = null;
-  $('shrinkOn').checked = shr.on;
+  $('shrinkOn').checked = shr.auto;
+  updShrinkUi();
 }
 const saveShrink = () => store.set(sk('shrink'), JSON.stringify(shr));
 function shrinkUnits() {
   const text = $('text').value, h = hashText(text), p = loadPrep();
-  U = prepFits(p, text) ? units(text, p.paras, spoken) : null;  // 단계(shr.h)는 해시로 보아서, 글이 바뀌면 원문부터 다시
+  U = prepFits(p, text) ? units(text, p.paras, spoken, must()) : null;  // 단계(shr.h)는 해시로 보아서, 글이 바뀌면 원문부터 다시. 꼭 말할 문장은 늘 남는다
   if (U && (shr.h !== h || shr.pt !== p.t || shr.lv.length !== U.length)) {
     if (shr.h === h && shr.lv.some(Boolean)) store.set(sk('cur'), 0);  // 같은 대본으로 발표 준비를 다시 했으면 옛 단계로 잰 위치는 맞지 않는다
-    Object.assign(shr, { h, pt: p.t, lv: U.map(() => 0), pre: null });
+    Object.assign(shr, { h, pt: p.t, lv: U.map(() => 0), pre: shr.mode ? modeLevels(U, shr.mode) : null });
+    saveShrink();
+  } else if (U && U.some((u, i) => shr.lv[i] > u.max || (shr.pre && shr.pre[i] > u.max))) {  // 꼭 말할 문장을 풀어서 단위의 최대 단계가 내려갔다
+    shr.lv = shr.lv.map((l, i) => Math.min(l, U[i].max)); if (shr.pre) shr.pre = shr.pre.map((l, i) => Math.min(l, U[i].max));
     saveShrink();
   }
 }
@@ -555,7 +585,8 @@ function shrinkUnits() {
 function baseLevels() {
   if (!shr.on || !U) return;
   cur = +store.get(sk('cur')) || 0;
-  const L0 = U.map(() => 0), lv = !target ? L0 : cur ? shr.lv : shr.pre?.length === U.length ? shr.pre : L0;
+  const L0 = U.map(() => 0), pre = shr.pre?.length === U.length ? shr.pre : L0;
+  const lv = shr.mode && !cur ? pre : !target ? L0 : cur ? shr.lv : pre;  // 미리 줄이기 단계를 골랐으면 목표가 없어도 처음부터 그 단계
   if (lv.some((l, i) => l !== shr.lv[i])) setLevels(lv, 'reset');
 }
 
@@ -599,18 +630,45 @@ function setLevels(lv, why, over = 0) {
 
 $('shrinkOn').onchange = () => {
   shrinkUnits();
-  if (!$('shrinkOn').checked && U && shr.lv.some(Boolean)) setLevels(U.map(() => 0), 'off');
-  shr.on = $('shrinkOn').checked;
-  shr.asked = ''; shr.pre = null;
-  saveShrink();
-  if (shr.on && !U) tell(NEED_PREP);
+  shr.auto = $('shrinkOn').checked;
+  shr.on = shr.auto || shr.mode > 0;
+  // 끄면 미리 줄이기 단계(없으면 원문)로 돌아간다
+  if (!shr.auto && U && shr.lv.some(Boolean)) setLevels(shr.mode ? modeLevels(U, shr.mode) : U.map(() => 0), 'off');
+  shr.asked = ''; shr.pre = shr.mode && U ? modeLevels(U, shr.mode) : null;
+  saveShrink(); updShrinkUi();
+  if (shr.auto && !U) tell(NEED_PREP);
 };
+
+// 넓은 화면에서는 '자동 줄이기' 스위치를 '시간이 모자랄 때' 카드에 둔다(시안). 좁으면 아래 줄에 둔다.
+const wideEd = matchMedia('(min-width: 1100px)');
+function placeSw() { wideEd.matches ? $('shrinkCard').append($('shrinkBox')) : $('shrinkBox').parentElement.id === 'shrinkCard' && document.querySelector('footer.e-only').insertBefore($('shrinkBox'), $('altBtn')); }
+wideEd.addEventListener('change', placeSw); placeSw();
+// 시안의 '시간이 모자랄 때' 카드: 원본 / 조금 짧게 / 핵심만. 발표 준비(AI)가 있어야 쓰고, 없으면 안내만 보인다.
+function setShrinkMode(m) {
+  shrinkUnits();
+  if (!U) return updShrinkUi();
+  shr.mode = m; shr.on = shr.auto || m > 0;
+  shr.pre = m ? modeLevels(U, m) : null;
+  shr.asked = shr.h + ':' + shr.pt;  // 단계를 골랐으니 '줄인 대본으로 연습할까요?'를 다시 묻지 않는다
+  if (!shr.lv.every((l, i) => l === (shr.pre?.[i] ?? 0))) setLevels(shr.pre || U.map(() => 0), 'mode');
+  saveShrink(); updShrinkUi();
+}
+$('modeSeg').onclick = e => { const b = e.target.closest('[data-m]'); if (b && !b.disabled) setShrinkMode(+b.dataset.m); };
+$('modePrep').onclick = () => openAi('prep');
+function updShrinkUi() {
+  const text = $('text').value, p = loadPrep(), fit = prepFits(p, text), u = fit ? units(text, p.paras, spoken, must()) : null, r = rate();
+  for (const b of $('modeSeg').children) { b.disabled = !u; b.setAttribute('aria-pressed', u ? +b.dataset.m === shr.mode : false); }
+  $('modePrep').hidden = !!u;
+  if (!u) { $('modeInfo').textContent = text.trim() ? '발표 준비를 하면 문단마다 짧은 버전을 만들어 두고 고를 수 있어요.' : ''; return; }
+  const est = lv => mmss(Math.round(u.reduce((x, y, i) => x + y.len[lv[i]], 0) / r)), L = modeLevels(u, shr.mode);
+  $('modeInfo').textContent = shr.mode ? `${['', '조금 짧게', '핵심만'][shr.mode]}: 예상 ${est(L)} (원본 ${est(u.map(() => 0))})` : `원본: 예상 ${est(u.map(() => 0))}`;
+}
 
 // 처음부터 발표할 때 원문이 목표보다 길면 미리 줄인 대본으로 연습할지 묻는다 (대본과 준비 결과마다 한 번).
 // 편집 화면의 예상 시간과 같은 말 속도를 쓰고, 300자 고정 없이 처음부터 줄인다. 리딩은 지금 대본을 재기만 하므로 묻지 않는다(연습에서 묻는다).
 let pre = null;
 function askShrink() {
-  if (coach === 'read' || !shr.on || !U || !target || cur || shr.lv.some(Boolean) || shr.asked === shr.h + ':' + shr.pt) return;
+  if (coach === 'read' || !shr.auto || !U || !target || cur || shr.lv.some(Boolean) || shr.asked === shr.h + ':' + shr.pt) return;
   const r = rate(), goal = target * 60, L0 = U.map(() => 0);
   const est = lv => Math.round(U.reduce((x, u, i) => x + u.len[lv[i]], 0) / r), s0 = est(L0);
   if (s0 <= goal) return;
@@ -626,6 +684,51 @@ const shrinkAsked = () => { shr.asked = shr.h + ':' + shr.pt; saveShrink(); $('s
 $('shrinkYes').onclick = () => { shr.pre = pre; shrinkAsked(); setLevels(pre, 'pre'); };
 $('shrinkNo').onclick = shrinkAsked;
 
+// 들어보기(시안): 편집 화면에서 지금 대본을 문장마다 소리 내어 읽어 준다(브라우저 음성 합성). 다시 누르거나 화면을 옮기면 멈춘다.
+const TTS = 'speechSynthesis' in window ? speechSynthesis : null;
+let hearing = 0;  // 읽는 중이면 읽기 번호(멈추면 0)
+function stopHear() {
+  if (!hearing) return;
+  hearing = 0; TTS.cancel();
+  $('listenBtn').setAttribute('aria-pressed', false); $('listenBtn').lastChild.textContent = '들어보기';
+}
+$('listenBtn').hidden = !TTS;
+$('listenBtn').setAttribute('aria-label', '대본 들어보기');
+$('listenBtn').onclick = () => {
+  if (hearing) return stopHear();
+  const ss = paras($('text').value).flat().map(t => t.replace(MARK, ' ').trim()).filter(Boolean);
+  if (!ss.length) return tell('먼저 대본을 쓰거나 붙여넣으세요.');
+  const id = hearing = Date.now();
+  $('listenBtn').setAttribute('aria-pressed', true); $('listenBtn').lastChild.textContent = '멈추기';
+  TTS.cancel();
+  ss.forEach((t, k) => {
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = 'ko-KR';
+    if (k === ss.length - 1) u.onend = u.onerror = () => { if (hearing === id) stopHear(); };
+    TTS.speak(u);
+  });
+};
+addEventListener('pagehide', stopHear);
+
+// 원래 대본 보기(시안): 줄인 단위의 원문. 숨긴 문장은 흐리게 취소선을 긋는다. 편집 화면의 대본은 그대로다.
+function showOrig(i) {
+  const u = U?.[i];
+  if (!u) return;
+  const text = $('text').value, box = $('origText');
+  box.replaceChildren();
+  let o = u.s[0].a;
+  for (const s of u.s) {
+    box.append(text.slice(o, s.a));
+    const x = document.createElement(s.top < shr.lv[i] ? 'del' : 'span');
+    x.textContent = text.slice(s.a, s.b);
+    box.append(x);
+    o = s.b;
+  }
+  $('origDlg').showModal();
+}
+$('prompt').addEventListener('click', e => { const b = e.target.closest('button.orig'); if (b) showOrig(+b.dataset.u); });
+$('origClose').onclick = () => $('origDlg').close();
+
 // ---- 발표 점검: 모드, 구간 시간, 말 빠르기, 실시간 힌트, 목소리 분석, 기록 (계산은 check.js) ----
 // 모드는 탭마다 sessionStorage ls.coach에 둔다. 새 탭은 늘 실전이라 전날 연습 모드가 교실 발표에 남지 않는다.
 let coach = 'live';
@@ -635,6 +738,7 @@ let cueOn = store.get('ls.cue') !== '0';  // 실시간 힌트 보기 (기기마�
 // acc: 구간마다 걸린·말한·대본 밖 시간과 글자 수(check.js newAcc), hs: 들은 음절, runKind: 모드(이어 하다 바꾸면 'mixed'),
 // rd: 구간마다 말투 신호 수, cues: [[힌트, 경과 초]], runAud: 목소리 분석(null이면 안 함, { off: 꺼진 이유, at }), re: 발표 중 새로고침했나
 // runT: 기록 번호(처음 시작한 때). t0는 질의응답 시간이나 긴 쉼만큼 뒤로 밀리므로 따로 둔다
+let tx = [];  // 구간마다 그때 들은 확정 말(연습 결과의 '대본과 실제로 한 말'). acc와 같은 때 새로 시작한다
 let SU = [], secOf = [], acc = null, hs = newHear(), runKind = null, rd = [], cues = [], runAud = null, re = false, runT = 0;
 // 메모리만: 말 빠르기 창(5초마다 한 줄), 판정 상태, 보이는 힌트, 높낮이·쉼 프레임(F), 켜진 분석(au)
 let ring = [], ringT = 0, rdT = 0, pst = newPace(), pace = null, readNow = false, flatW = null, cst = newCue(), cueK = null, F = null, au = null;
@@ -642,7 +746,7 @@ let lastTick = Date.now(), resN = 0, recProbe = 0;  // resN: 받은 인식 결�
 let runs = [], runFull = false, liveNote = null;  // runs: 이 대본의 최근 5회 기록, runFull: 저장 공간이 모자라 저장하지 못함(정지 뒤 알림), liveNote: 편집 화면에서 알릴 실전 기록
 // keep: 구간 수만 바뀌었으면(show) 발표 정보는 두고 구간 값만 새로
 function newRun(keep = false) {
-  acc = newAcc(SU.length); rd = SU.map(() => 0); F = au && frames(SU.length);  // 분석 중이면 새 구간 수로 이어 잰다
+  acc = newAcc(SU.length); rd = SU.map(() => 0); tx = SU.map(() => ''); F = au && frames(SU.length);  // 분석 중이면 새 구간 수로 이어 잰다
   if (keep) return;
   hs = newHear(); hs.base = -sessionNorm.length;  // 이번 인식 세션에서 이미 들은 말은 세지 않는다
   runT = t0; runKind = null; cues = []; runAud = null; re = false; ring = []; ringT = 0; rdT = 0; pst = newPace(); pace = null; readNow = false; cst = newCue();
@@ -678,7 +782,7 @@ function coachTick(now, dt, sec, off, late, d) {
   }
   // 인식기가 다시 켜지는 짧은 틈('연결 중')에는 두고(판정은 paceHold가 멈춤), '다시 듣기'(4초)나 대본 끝이면 지운다
   const hide = off || qaMode || !listening || stuck() || !!end;
-  showCue(cueStep(cst, { mode: coach, on: cueOn, pace, read: readNow, late, shrinkOn: shr.on && !!U, hold, hide }, now), sec);
+  showCue(cueStep(cst, { mode: coach, on: cueOn, pace, read: readNow, late, shrinkOn: shr.auto && !!U, hold, hide }, now), sec);
 }
 // 상태줄 작은 칸의 힌트. 바뀔 때만 고치고, 켜고 끌 때 기록에 남긴다.
 function showCue(c, sec = 0) {
@@ -796,6 +900,11 @@ function stopAudio(why) {
 // ---- 발표 점검 기록 (대본마다 sk('runs')에 최근 5회) ----
 // 정지, 질의응답, 탭 숨김에서 저장한다(같은 발표면 바꿔 씀). 말한 시간 20초 미만이면 저장하지 않는다(check.js buildRun).
 // 저장 공간이 모자라면 듣는 중에는 알리지 않고 runFull로 두었다가 정지 뒤 알린다.
+// 구간 i의 보이는 대본(자동 줄이기로 숨긴 문장은 뺀다)
+function secScript(i) {
+  const text = $('text').value, lv = shr.on && U ? shr.lv[i] : 0;
+  return SU[i].s.filter(x => x.top >= lv).map(x => text.slice(x.a, x.b)).join(' ');
+}
 function saveRun() {
   if (!t0 || !acc || acc.length !== SU.length) return null;
   const text = $('text').value, lv = shr.on && U ? shr.lv : null, ad = SU.map(() => 0), origSec = SU.flatMap((u, i) => u.s.map(() => i));
@@ -808,6 +917,8 @@ function saveRun() {
   if (!r) return null;
   runs = upsertRun(runs, r);
   runFull = !save(sk('runs'), saveRuns(runs));
+  // 구간마다 보인 대본과 들은 말도 같이 둔다(대본을 나중에 고쳐도 비교할 수 있게). 못 저장해도 연습 기록은 남는다
+  store.set(sk('says'), JSON.stringify(addSays(readSays(store.get(sk('says'))), { t0: r.t0, secs: packSays(SU.map((_, i) => [secScript(i), tx[i] || ''])) }, runs.map(x => x.t0))));
   liveNote = coach === 'live' ? r : null;  // 실전 뒤 연습을 하면 옛 실전 기록을 알리지 않는다
   return r;
 }
@@ -834,6 +945,88 @@ function openCheck(t) {
   showKey(); renderCheck();
   if (!$('checkDlg').open) $('checkDlg').showModal();
 }
+// ---- 연습 결과: 대본과 실제로 한 말, 대본 수정 제안, 회차별 시간, 구간부터 연습 (계산은 compare.js) ----
+let diffSec = -1;  // 결과 창에서 보고 있는 구간(-1이면 다르게 말한 곳이 가장 많은 구간)
+// 연습마다 저장한 대본·들은 말을 비교한다. 이 연습(run)까지의 { says: 이 연습, cmp: 구간별 비교, per: 연습마다 바꿔 말한 것 }. 들은 말이 없으면 null
+function compareOf(run) {
+  const all = readSays(store.get(sk('says'))), mine = all.find(x => x.t0 === run.t0);
+  if (!mine) return null;
+  const upto = runs.filter(r => r.t0 <= run.t0).flatMap(r => all.filter(x => x.t0 === r.t0));
+  const cmps = upto.map(compareRun);
+  return { says: mine, cmp: compareRun(mine), per: cmps.map(c => swaps(c.flatMap(x => x.ops))) };
+}
+const ignored = () => { try { const v = JSON.parse(store.get(sk('sugIgnore'))); return Array.isArray(v) ? v : []; } catch { return []; } };
+function renderCompare(run) {
+  const c = compareOf(run), box = $('cDiffBox');
+  $('cSug').replaceChildren(); box.hidden = !c;
+  const sec = secRows(run, null, Math.round(target * 60));
+  // 가장 많이 넘은 구간부터 연습(시안의 '2번 문단만 반복 연습')
+  const worst = sec.map((r, i) => [r.bar.wall - r.bar.hi, i]).sort((a, b) => b[0] - a[0])[0];
+  $('cRepeat').hidden = !(worst && worst[0] > 0 && run.secs.length > 1);
+  if (!$('cRepeat').hidden) { $('cRepeat').textContent = `${worst[1] + 1}번 구간부터 연습`; $('cRepeat').onclick = () => startFromSection(worst[1]); }
+  // 회차별 시간: 남은 연습 기록(최대 5회). 지금 보는 연습만 진한 보라
+  const mx = Math.max(...runs.map(r => r.wall), 1);
+  $('cHistBox').hidden = runs.length < 2;
+  $('cHist').replaceChildren(...runs.map((r, i) => {
+    const d = mk('div', '', r === run ? 'now' : ''), bar = mk('i');
+    bar.style.height = Math.max(6, Math.round(r.wall / mx * 80)) + 'px';
+    d.append(mk('span', mmss(r.wall)), bar, mk('span', `${i + 1}회`));
+    return d;
+  }));
+  if (!c) return;
+  // 4번째 숫자 카드와 제안
+  const sg = suggest(c.per, ignored()), n = c.cmp.reduce((x, y) => x + y.n, 0);
+  const card = mk('div', '', 'stat');
+  card.append(mk('div', '대본과 다르게 말한 곳', 'k'), mk('div', String(n), 'v'), mk('div', sg.length ? `대본 수정 제안 ${sg.length}개` : '대본 수정 제안 없음', 'note'));
+  $('cStats').append(card);
+  $('cSug').replaceChildren(...sg.map(g => {
+    const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), go = mk('button', '바꾸기', 'go'), no = mk('button', '그대로 두기');
+    go.onclick = () => applySuggest(g, run);
+    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), g.k])); renderCheck(); };
+    row.append(go, no);
+    d.append(mk('h3', '대본을 이렇게 바꿀까요?'), mk('p', g.runs >= 2 ? `연습 ${g.runs}번 연속 '${g.from}' 대신 '${g.to}'라고 말했어요.` : `이번 연습에서 '${g.from}' 대신 '${g.to}'라고 ${g.n}번 말했어요.`), row, mk('p', '바꾸면 새 버전으로 저장돼요', 'small'));
+    return d;
+  }));
+  // 비교할 구간: 다르게 말한 곳이 있는 구간. 고르지 않았으면 가장 많은 구간
+  const has = c.cmp.map((x, i) => [x.n, i]).filter(x => x[0] > 0);
+  if (!has.length) { $('cDiffSec').replaceChildren(); $('cDiffTxt').textContent = '대본과 다르게 말한 곳이 없어요.'; return; }
+  const pick = has.some(x => x[1] === diffSec) ? diffSec : has.sort((a, b) => b[0] - a[0])[0][1];
+  $('cDiffH').textContent = `${pick + 1} · ${run.secs[pick]?.w || '구간'} — 대본과 실제로 한 말`;
+  $('cDiffSec').replaceChildren(...c.cmp.flatMap((x, i) => x.n ? [(() => {
+    const b = mk('button', `${i + 1}번 구간 (${x.n})`);
+    b.setAttribute('aria-pressed', i === pick);
+    b.onclick = () => { diffSec = i; renderCompare(run); };
+    return b;
+  })()] : []));
+  const out = [];
+  for (const o of c.cmp[pick].ops) {
+    if (o.t === '=') out.push(o.s, ' ');
+    else if (o.t === '-') out.push(mk('del', o.s), ' ');
+    else if (o.t === '+') out.push(mk('ins', o.w), ' ');
+    else { const u = mk('u', o.s, 'chg'); u.title = `들은 말: ${o.w}`; out.push(u, ' '); }
+  }
+  $('cDiffTxt').replaceChildren(...out);
+}
+// 제안 반영: 지금 대본에서 모두 바꾸고 새 버전으로 남긴다. 대본에서 못 찾으면(그사이 고쳤으면) 알린다
+function applySuggest(g, run) {
+  const [t, n] = applyReplace($('text').value, g.from, g.to);
+  if (!n) { $('checkMsg').textContent = `대본에서 '${g.from}'을(를) 찾지 못했어요. 그사이 대본을 고쳤나 봐요.`; return; }
+  if (!snapshot('연습 제안 반영 전')) { $('checkMsg').textContent = NOKEEP; return; }
+  setText(t, '연습 제안');
+  snapshot('연습 제안 반영');
+  store.set(sk('sugIgnore'), JSON.stringify([...ignored(), g.k]));  // 바꿨으니 같은 제안은 다시 하지 않는다
+  renderCheck();
+  $('checkMsg').textContent = `'${g.from}'을(를) '${g.to}'(으)로 ${n}곳 바꿨어요. 새 버전으로 저장했어요.`;
+}
+// 구간 i부터 연습: 연습 모드로 발표 화면에 가서 그 구간의 첫 글자에 선다
+function startFromSection(i) {
+  setCoach('practice');
+  $('checkDlg').close();
+  if (qaMode) setQa(false);
+  if (editing() && !toTalk()) return;
+  jump(SU.slice(0, i).reduce((x, u, j) => x + u.len[shr.on && U ? shr.lv[j] ?? 0 : 0], 0));
+}
+
 function renderCheck() {
   $('checkNoSr').hidden = !!SR;
   $('checkBody').hidden = $('cDel').hidden = !SR;
@@ -847,13 +1040,22 @@ function renderCheck() {
   const sum = sumLines(run, prev, goal);
   if (!run.audio) sum.push(devKind() === 'desktop' ? "목소리 분석 없이 쟀어요. 발표 화면 '가'에서 '목소리 분석(높낮이·쉼)'을 켜면 높낮이와 쉼도 봐요."
     : '이 브라우저에서는 높낮이와 쉼을 재지 않아요. PC Chrome에서 연습하면 볼 수 있어요.');
-  $('cSum').replaceChildren(...sum.map(t => mk('p', t)));
+  $('cStats').replaceChildren(...statCards(run, prev, goal).map(c => {
+    const box = mk('div', '', 'stat'), n = mk('div', c.note, c.over ? 'note over' : 'note');
+    const v = mk('div', c.value, 'v');
+    if (c.unit) v.append(mk('small', c.unit));
+    box.append(mk('div', c.label, 'k'), v, n);
+    return box;
+  }));
+  renderCompare(run);
+  // 걸린 시간·평균 빠르기·대본 밖은 위 숫자 카드에 있으므로 글에서는 뺀다
+  $('cSum').replaceChildren(...sum.slice(1).filter(t => !/^(평균 빠르기|대본 밖) /.test(t)).map(t => mk('p', t)));
   const tone = toneLines(run);
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
   const rule = tips(run, goal).map(x => {
     const li = mk('li', x.text);
-    if (x.k === 'over' && !shr.on && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
+    if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
     return li;
   });
   const ai = run.ai;
@@ -872,8 +1074,10 @@ function renderCheck() {
     h.append(mk('span', r.head), mk('b', r.time));
     band.style.left = pc(r.bar.lo / m); band.style.width = pc((r.bar.hi - r.bar.lo) / m);
     w.style.width = pc(r.bar.wall / m);
+    w.classList.toggle('over', r.bar.over);  // 시안: 기대 띠를 넘으면 주황
     bar.setAttribute('aria-hidden', 'true');
     bar.append(band, w);
+    if (r.bar.b != null) { const g = mk('u'); g.style.left = pc(r.bar.b / m); bar.append(g); }  // 목표 눈금(시안의 검은 세로선)
     box.append(h, bar);
     if (r.words) box.append(mk('p', r.words, 'small'));
     if (r.nums.length) {
@@ -891,7 +1095,7 @@ $('checkClose').onclick = () => $('checkDlg').close();
 $('cDel').onclick = () => {
   if (!runs.length || !confirm('이 대본의 연습 기록을 모두 지울까요? 되돌릴 수 없어요.')) return;
   coachCtl?.abort();
-  runs = []; store.del(sk('runs'));
+  runs = []; store.del(sk('runs')); store.del(sk('says'));
   resetTalk(0);  // 이어 하던 발표의 잰 값(ls.talk)도 버린다. 남기면 다음 정지에 지운 기록이 다시 저장된다. 다음 시작이 새 발표다
   renderCheck();
   $('checkMsg').textContent = '기록을 지웠어요.';
@@ -911,7 +1115,7 @@ function shrinkFromCheck() {
   $('shrinkOn').checked = true;
   $('shrinkOn').onchange();
   renderCheck();
-  if (shr.on && U) $('checkMsg').textContent = '자동 줄이기를 켰어요. 다음 발표부터 목표보다 늦어지면 뒤 문단을 줄여요.';
+  if (shr.auto && U) $('checkMsg').textContent = '자동 줄이기를 켰어요. 다음 발표부터 목표보다 늦어지면 뒤 문단을 줄여요.';
   $('checkTitle').focus();  // 누른 단추는 다시 그려져 없어졌다
 }
 
@@ -1190,6 +1394,7 @@ function adApply() {
 
 // 대본이 바뀌면 처음부터 다시 읽는다. src: 바꾼 방법(버전 목록에 보인다)
 function textChanged(src) {
+  stopHear();
   // 저장소에는 아직 고치기 전 대본이 있다. 다른 대본에 갔다 오거나 새로고침해도 받을 수 있게 이 탭에도 둔다.
   if (log.length) { lastLog = logJson(store.get(sk('script')) || ''); try { sessionStorage.setItem('ls.last.' + logId, lastLog); } catch {} }
   const t = $('text').value;
@@ -1466,7 +1671,10 @@ $('qaRetry').onclick = () => getModel(t => t && ($('qaGetMsg').textContent = t))
 
 // ---- 질의응답 화면 ----
 let qaMode = false, qSeg = null;  // qSeg: '질문'을 누른 뒤 모으는 중인 말 { from, done, cur }
-let asked = '';  // 마지막으로 판정한 질문. 전체 목록에서 고른 카드에도 보여 준다.
+let asked = '', askedBy = 'voice';  // 마지막으로 판정한 질문과 받은 길('voice', 'chat'). 전체 목록에서 고른 카드에도 보여 준다.
+// 왼쪽 '들은 질문' 칸: 안내 글은 작게, 들은 질문은 크게
+function liveMsg(t) { const l = $('live'); l.textContent = t; l.className = ''; delete l.dataset.src; }
+function liveQ(t, by) { if (!t) return liveMsg(''); const l = $('live'); l.textContent = '“' + t + '”'; l.className = 'q'; l.dataset.src = by === 'chat' ? '채팅으로 받음' : '음성으로 받음'; }
 let judgeN = 0;  // 판정 번호. 기록에서 판정(qa: 'judge')과 고른 칩(qa: 'pick')을 잇고, 새 질문을 시작하면 늘려서 늦게 끝난 판정을 버린다.
 
 function setQa(on) {
@@ -1474,11 +1682,11 @@ function setQa(on) {
   qaMode = on; qSeg = null;
   sayNone();  // 돌아왔을 때 예전 말이 남지 않게
   document.body.classList.toggle('qa', on);
-  $('qaBtn').textContent = on ? '대본' : 'Q&A';
+  $('qaBtn').textContent = on ? '대본으로' : 'Q&A';
   askBtn();
   if (on) {
     scrollTo(0, 0); showModel(); renderAll();
-    if ($('card').hidden) $('live').textContent = pack ? "'질문'을 누르고 청중 질문을 따라 말한 뒤 한 번 더 누르세요. 채팅 질문은 아래 칸에 붙여넣으세요." : '';
+    if ($('card').hidden) liveMsg(pack ? "'질문 듣기'를 누르고 청중 질문을 따라 말한 뒤 한 번 더 누르세요. 채팅 질문은 아래 칸에 붙여넣으세요." : '');
   }
   else jump(cur);  // 질의응답 중에 들은 말에 커서가 끌려가지 않게
 }
@@ -1490,7 +1698,7 @@ $('qaBtn').onclick = () => {
 
 // 답 카드를 연 동안(body.carded)은 '질문' 버튼을 작게 줄이고 카드를 화면 위로 올린다
 function askBtn() {
-  $('ask').textContent = qSeg ? '● 듣는 중 · 다시 누르면 고르기' : $('card').hidden ? '질문' : '다음 질문';
+  $('ask').textContent = qSeg ? '듣는 중 · 다시 누르면 고르기' : $('card').hidden ? '질문 듣기' : '다음 질문 듣기';
   $('ask').classList.toggle('on', !!qSeg);
   document.body.classList.toggle('carded', !$('card').hidden);
 }
@@ -1499,14 +1707,14 @@ function ask() {
   if (!qSeg) {
     qSeg = { from: listening ? resFinal : 0, done: '', cur: '' };
     asked = ''; judgeN++;
-    $('card').hidden = true; $('chips').textContent = ''; $('chips').classList.remove('final'); $('qaTime').textContent = ''; $('qaLow').hidden = true;
-    $('live').textContent = SR ? '질문을 따라 말한 뒤 한 번 더 누르세요.' : NO_SR;
+    $('card').hidden = true; $('hits').hidden = true; $('chips').textContent = ''; $('chips').classList.remove('final'); $('qaTime').textContent = ''; $('qaLow').hidden = true;
+    liveMsg(SR ? '질문을 따라 말한 뒤 한 번 더 누르세요.' : NO_SR);
     if (!listening && SR) start();
   } else {
     const text = (qSeg.done + qSeg.cur).replace(/\s+/g, ' ').trim();
     qSeg = null;
     if (text) judge(text);
-    else $('live').textContent = '질문을 듣지 못했어요. 다시 눌러 주세요.';
+    else liveMsg('질문을 듣지 못했어요. 다시 눌러 주세요.');
   }
   askBtn();
 }
@@ -1517,16 +1725,16 @@ function onQuestion(q) {
   if (!qSeg || !pack) return;
   qSeg.cur = q;
   const text = (qSeg.done + q).replace(/\s+/g, ' ').trim();
-  $('live').textContent = text.slice(-80);
+  liveQ(text.slice(-80), 'voice');
   if (text) chips(rank(pack, qsents, text).slice(0, 3), text, false);
 }
 
 // 두 번째 탭이나 입력칸 Enter: e5 + 음절 비교로 판정. JEV 모드면 Kev가 e5 후보 5개와 '해당 없음' 가운데 다시 고른다.
 // 자동 열기를 켰으면 e5 1등이 확실할 때(JEV가 있으면 JEV도 같은 1등일 때)만 카드를 바로 연다. 판정마다 기록에 남긴다.
-async function judge(text) {
+async function judge(text, by = 'voice') {
   if (!pack) return;
   const n = ++judgeN, t = performance.now();
-  asked = text;
+  asked = text; askedBy = by;
   let qv = null;
   try { if (pipe && V) qv = await embed(pipe, [text]); } catch (e) { modelBroke(e); }
   if (n !== judgeN) return;
@@ -1560,7 +1768,7 @@ async function judge(text) {
   chips(top, text, true, jv?.noneFirst, !!qv);
   $('qaLow').hidden = !c?.low;
   $('qaTime').textContent = (qv ? `AI 판정 ${ms}ms · 이 기기 안` : '글자 비교로 골랐어요') + (jv ? ` · JEV ${jv.ms}ms` : '') + jmsg;
-  $('live').textContent = '';
+  liveQ(text, by);  // 들은 질문은 카드를 열어도 왼쪽에 남는다
   if (auto) openCard(all[0].q, top, text, 'auto', 0);
 }
 
@@ -1579,9 +1787,9 @@ function chips(top, text, final, noneFirst = false, sim = false) {
   box.classList.toggle('final', final);  // 판정이 끝난 후보는 번호를 달고 1순위에 테두리
   // 말하는 동안 바뀌는 후보는 읽어 주지 않는다 (화면 읽기 소리가 질문 인식에 섞이지 않게). 판정이 끝나면 읽어 준다.
   $('qaRes').setAttribute('aria-busy', !final);
-  const none = final && chip('해당 없음', () => {
+  const none = final && chip('해당 없음 · 관련 대본 구간 보기', () => {
     note({ qa: 'pick', j: judgeN, id: null, how: 'none' });
-    box.textContent = ''; $('qaLow').hidden = true; $('all').open = true; $('all').scrollIntoView();
+    box.textContent = ''; $('qaLow').hidden = true; showHits(asked);
   }, 'none');
   if (none && noneFirst) box.append(none);
   top.forEach((r, i) => {
@@ -1598,9 +1806,12 @@ function chips(top, text, final, noneFirst = false, sim = false) {
 function openCard(q, top = [], text = '', how = '', rank = -1) {
   if (how) note({ qa: 'pick', j: judgeN, id: q.id, how, rank });
   qSeg = null;
-  $('chips').textContent = ''; $('live').textContent = ''; $('qaLow').hidden = true;
-  $('cardHeard').textContent = text ? '인식한 질문: ' + text : '';
+  $('chips').textContent = ''; $('hits').hidden = true; liveQ(text, askedBy); $('qaLow').hidden = true;
+  $('cardHeard').textContent = rank < 0 ? '고른 질문' : rank ? '비슷한 질문' : '가장 비슷한 질문';
+  $('cardRank').hidden = rank < 0;
+  $('cardRank').textContent = (rank + 1) + '순위';
   $('cardQ').textContent = q.q;
+  $('cardKeys').replaceChildren(...(q.keys || []).map(k => mk('span', k)));
   $('cardCheck').hidden = !q.check;
   const ul = $('cardA');
   ul.textContent = '';
@@ -1611,18 +1822,43 @@ function openCard(q, top = [], text = '', how = '', rank = -1) {
   }
   $('cardSrc').textContent = q.source ? '근거: ' + q.source : '';
   $('cardSrc').hidden = !q.source;
+  // 카드 아래: 다른 후보(번호는 순위)와 '해당 없음'. 답의 일부로 보이지 않게 이름표를 단다
   const more = $('cardMore');
   more.textContent = '';
-  if (top.some(r => r.q !== q)) {  // 다른 후보가 답의 일부로 보이지 않게 이름표를 단다
-    const p = document.createElement('p');
-    p.className = 'small';
-    p.textContent = '혹시 이 질문인가요?';
-    more.append(p);
+  if (top.length) {
+    if (top.some(r => r.q !== q)) {
+      const p = document.createElement('p');
+      p.className = 'small';
+      p.textContent = '다른 후보';
+      more.append(p);
+    }
+    top.forEach((r, i) => {
+      if (r.q === q) return;
+      const b = chip(r.q.q, () => openCard(r.q, top, text, 'more', i));
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1; b.prepend(n);
+      more.append(b);
+    });
+    more.append(chip('해당 없음 · 관련 대본 구간 보기', () => {
+      note({ qa: 'pick', j: judgeN, id: null, how: 'none' });
+      showHits(asked);
+    }, 'none'));
   }
-  top.forEach((r, i) => r.q !== q && more.append(chip(r.q.q, () => openCard(r.q, top, text, 'more', i))));
   $('card').hidden = false;
   askBtn();
   $('card').scrollIntoView({ block: 'start' });
+}
+
+// '해당 없음'(시안): 들은 질문과 가까운 대본 문장을 보여 주고, 누르면 질의응답에서 나가 그 문장으로 간다. 없으면 전체 질문 목록을 연다.
+function showHits(text) {
+  const ss = sents.map((_, i) => words.filter(w => w.s === i).map(w => w.t).join(' ')), hs = text ? scriptHits(ss, text) : [];
+  $('card').hidden = true; askBtn();
+  $('hits').hidden = false;
+  $('hitList').replaceChildren(...(hs.length ? hs.map(h => {
+    const b = chip(h.t.length > 90 ? h.t.slice(0, 89) + '…' : h.t, () => { $('hits').hidden = true; setQa(false); jump(sentStart(h.i), 'tap'); });
+    const n = document.createElement('small'); n.textContent = `대본 ${h.i + 1}번째 문장`; b.append(n);
+    return b;
+  }) : [mk('p', '비슷한 대본 문장을 찾지 못했어요. 아래 전체 질문 목록에서 골라 보세요.', 'small')]));
+  if (!hs.length) { $('all').open = true; $('all').scrollIntoView(); }
 }
 
 // 마지막 수단: 검색칸이 달린 전체 질문 목록
@@ -1644,12 +1880,12 @@ $('qaText').onkeydown = e => {
   qSeg = null;
   $('card').hidden = true;
   askBtn();
-  judge(v);
+  judge(v, 'chat');
 };
 
 // ---- Q&A 준비 창 (편집 화면) ----
 let draft = [], genCtl = null;
-const copyQs = qs => qs.map(q => ({ ...q, alts: [...q.alts], answer: [...q.answer] }));
+const copyQs = qs => qs.map(q => ({ ...q, alts: [...q.alts], answer: [...q.answer], keys: [...(q.keys || [])] }));
 const prepMsg = t => { $('prepMsg').textContent = t; };
 // 저장하지 않은 질문 수정. 이 탭(sessionStorage)에 대본마다 두어서 창을 닫거나 새로고침해도 다시 열면 보인다.
 let dirty = false;
@@ -1672,6 +1908,7 @@ function fillInfo() {
   for (const el of document.querySelectorAll('[data-info]'))
     el.value = pinfo[el.dataset.info] ?? (el.tagName === 'SELECT' ? el.options[0].value : el.defaultValue);
   $('gMin').value = target || '';
+  syncChips();
 }
 for (const el of document.querySelectorAll('[data-info]'))
   el.onchange = () => { pinfo[el.dataset.info] = el.value; store.set(sk('qaInfo'), JSON.stringify(pinfo)) || tell(FULL); };
@@ -1713,6 +1950,7 @@ function renderDraft() {
       field('input', `질문 ${i + 1}`, it.q, v => { it.q = v; }),
       field('textarea', '바꿔 묻는 말 (한 줄에 하나)', it.alts.join('\n'), v => { it.alts = v.split('\n'); }),
       field('textarea', '답 (한 줄에 하나)', it.answer.join('\n'), v => { it.answer = v.split('\n'); }),
+      field('input', '핵심 키워드 (쉼표로 나눠 2~3개, 답 카드 맨 위에 보여요)', (it.keys || []).join(', '), v => { it.keys = v.split(/[,，]/); }),
       src, row,
     );
     box.append(d);
@@ -1905,6 +2143,7 @@ function loadScript() {
     runT = +v.rt || t0;
     runKind = ['read', 'practice', 'live', 'mixed'].includes(v.kind) ? v.kind : null;
     if (Array.isArray(v.rd) && v.rd.length === SU.length) rd = v.rd.map(x => +x || 0);
+    if (Array.isArray(v.tx) && v.tx.length === SU.length) tx = v.tx.map(x => String(x).slice(0, TX_MAX));
     if (Array.isArray(v.cues)) cues = v.cues;
     runAud = v.aud && typeof v.aud === 'object' ? v.aud : null;
     re = v.re === true || !!runAud;
@@ -1919,7 +2158,7 @@ function loadScript() {
   try { lastLog = sessionStorage.getItem('ls.last.' + logId); } catch { lastLog = null; }
   aiRes = null; aiJob = null; undo = null; sel = null;
   ads = readSegs(store.get(sk('adlib'))); adRes = null; tape.reset();  // adJob은 둔다: 앞 대본의 애드리브라 adSet이 맞추지 않는다
-  renderLib(); updEst(); updAlt(); renderAds(); showEmpty(); unstay();
+  renderLib(); updEst(); updAlt(); renderAds(); showEmpty(); unstay(); renderVerSide();
 }
 
 function renderLib() {
@@ -1943,6 +2182,71 @@ $('lib').onchange = () => {
   saveLib(); loadScript();
 };
 
+// ---- 내 발표 (시안의 홈): 대본마다 카드 하나, 아래에 최근 연습. 머리줄의 '말랑'을 누르면 열린다 ----
+const homeOpen = () => !$('home').hidden;
+function closeHome() { $('home').hidden = true; document.body.classList.remove('home'); }
+function renderHome() {
+  const grid = $('hGrid'), all = [];
+  grid.replaceChildren(...lib.list.map(e => {
+    const text = (store.get(sk('script', e.id)) || '').trim(), g = Math.round((+store.get(sk('target', e.id)) || 0) * 60);
+    const rs = readRuns(store.get(sk('runs', e.id))), last = rs.at(-1);
+    for (const r of rs) all.push({ e, r });
+    const b = mk('button', '', e.id === lib.cur ? 'pcard on' : 'pcard');
+    const th = mk('div', text ? text.slice(0, 60) + (text.length > 60 ? '…' : '') : '아직 비어 있어요', text ? 'th' : 'th none');
+    const badge = !text ? mk('span', '대본 쓰는 중', 'badge')
+      : !last ? mk('span', '아직 연습 전', 'badge')
+      : !g ? mk('span', `최근 ${mmss(last.wall)}`, 'badge')
+      : last.wall > g + 15 ? mk('span', `최근 ${mmss(last.wall)} · ${mmss(last.wall - g)} 초과`, 'badge over')
+      : mk('span', `최근 ${mmss(last.wall)} · 시간 안`, 'badge ok');
+    const info = mk('div'), ft = mk('div', '', 'ft');
+    info.append(mk('div', e.name, 'nm'), mk('div', `${g ? '목표 ' + mmss(g) : '목표 없음'} · ${rs.length ? `연습 ${rs.length}회` : '아직 연습 전'}`, 'mt'));
+    ft.append(badge, mk('span', !text ? '대본 쓰기' : last ? '이어서 연습' : '연습하러 가기', 'go'));
+    b.append(th, info, ft);
+    b.onclick = () => { closeHome(); if (e.id !== lib.cur) { lib.cur = e.id; saveLib(); loadScript(); } };
+    return b;
+  }));
+  const add = mk('button', '＋ 새 발표 만들기', 'pcard new');
+  add.onclick = () => { closeHome(); $('lib').value = '+'; $('lib').onchange(); };
+  grid.append(add);
+  const top = all.sort((x, y) => y.r.t0 - x.r.t0).slice(0, 3);
+  $('hRunsH').hidden = !top.length;
+  $('hRuns').replaceChildren(...top.map(({ e, r }) => {
+    const b = mk('button');
+    b.append(mk('span', e.name), mk('span', runLabel(r)));
+    b.onclick = () => { closeHome(); if (e.id !== lib.cur) { lib.cur = e.id; saveLib(); loadScript(); } openCheck(r.t0); };
+    return b;
+  }));
+}
+// 홈 탭: 내 발표 / 연습 기록 / 설정
+function setHomeTab(t) {
+  for (const b of document.querySelectorAll('.htabs [data-t]')) b.setAttribute('aria-selected', b.dataset.t === t);
+  for (const d of document.querySelectorAll('#home [data-tp]')) d.hidden = d.dataset.tp !== t;
+  if (t === 'runs') {
+    const all = lib.list.flatMap(e => readRuns(store.get(sk('runs', e.id))).map(r => ({ e, r }))).sort((x, y) => y.r.t0 - x.r.t0);
+    $('hRunsAll').replaceChildren(...all.map(({ e, r }) => {
+      const b = mk('button');
+      b.append(mk('span', e.name), mk('span', runLabel(r)));
+      b.onclick = () => { closeHome(); if (e.id !== lib.cur) { lib.cur = e.id; saveLib(); loadScript(); } openCheck(r.t0); };
+      return b;
+    }));
+  }
+  if (t === 'set') {
+    $('hsKeyV').textContent = keyStore.get() ? '넣어 둠' : '없음';
+    $('hsFs').textContent = $('fsNow').textContent;
+    $('hsInstall').hidden = !installEv;
+  }
+}
+for (const b of document.querySelectorAll('.htabs [data-t]')) b.onclick = () => setHomeTab(b.dataset.t);
+$('hsKey').onclick = () => { closeHome(); openKey(); };
+$('hsSm').onclick = () => { fontSize(-2); $('hsFs').textContent = $('fsNow').textContent; };
+$('hsBg').onclick = () => { fontSize(2); $('hsFs').textContent = $('fsNow').textContent; };
+$('hsInstall').onclick = () => $('mInstall').onclick();
+$('homeBtn').onclick = () => { if (homeOpen()) return closeHome(); renderHome(); setHomeTab('main'); $('home').hidden = false; document.body.classList.add('home'); $('homeH').focus(); };
+$('hNew').onclick = () => { closeHome(); $('lib').value = '+'; $('lib').onchange(); };
+$('hPaste').onclick = () => { closeHome(); $('text').focus(); };
+$('mode').addEventListener('click', closeHome, true);
+addEventListener('keydown', e => { if (e.key === 'Escape' && homeOpen() && !document.querySelector('dialog[open]')) closeHome(); });
+
 // 메뉴 창: 버튼을 누르면 메뉴를 먼저 닫는다 (다른 창이 그 위에 열리도록)
 $('menuBtn').onclick = () => { $('menuTitle').textContent = entry().name; $('menu').showModal(); };
 $('menu').addEventListener('click', e => { if (e.target.closest('button')) $('menu').close(); }, true);
@@ -1960,7 +2264,7 @@ $('mRename').onclick = () => {
 $('mDel').onclick = () => {
   const e = entry();
   if (!confirm(`'${e.name}' 대본과 그 버전 기록을 지울까요? 되돌릴 수 없어요.`)) return;
-  for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink', 'adlib', 'runs']) store.del(sk(k));
+  for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink', 'adlib', 'runs', 'says', 'sugIgnore']) store.del(sk(k));
   lib.list = lib.list.filter(x => x !== e);
   log = [];  // 지운 대본의 기록은 남기지 않는다 (loadScript의 keepLog가 이 탭의 것도 지운다)
   try { sessionStorage.removeItem('ls.last.' + e.id); } catch {}
@@ -1984,11 +2288,224 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=12').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=13').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
-const showEmpty = () => { $('empty').hidden = !!$('text').value.trim(); };
+const showEmpty = () => { $('empty').hidden = !!$('text').value.trim(); if (!cardEditing) renderCards(); };
+
+// ---- 문단 카드 (시안의 대본 편집) ----
+// 대본이 있으면 편집 화면은 문단마다 카드 하나(번호·첫 글·예상 시간)다. 카드를 누르면 그 문단만 글칸이 되고 아래에 '꼭 말할 문장'과 '더 짧게·더 쉽게'가 나온다.
+// 글은 그대로 숨은 #text에 있어서(저장, 버전, AI가 모두 이 칸을 읽는다) 카드에서 고치면 그 문단 자리만 #text에 반영한다.
+let cardAt = -1, cardEditing = false, cardNew = false;  // 글칸이 된 카드 번호(-1 없음), 글 치는 중(다시 그리지 않는다), 끝에 더한 빈 카드가 열려 있나
+let cardSpan = null;                                       // 글칸이 된 문단의 지금 자리 { a, b }(#text 안 위치)
+const must = () => { try { const v = JSON.parse(store.get(sk('must'))); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; } };
+const saveMust = a => a.length ? store.set(sk('must'), JSON.stringify(a.slice(0, 200))) : store.del(sk('must'));  // 꼭 말할 문장(글 그대로). shrink.js units()가 늘 남긴다
+const hardIgnore = () => { try { const v = JSON.parse(store.get(sk('hardIgnore'))); return Array.isArray(v) ? v : []; } catch { return []; } };
+const titleOf = t => { const w = t.replace(/\s+/g, ' ').trim(); return w.length > 14 ? w.slice(0, 13) + '…' : w; };
+// 연습 때 막힌 낱말(compare.js hardWords): 저장된 연습의 대본·들은 말을 다시 맞춘다. 연습 기록이 그대로면 다시 계산하지 않는다
+let hardMemo = { raw: null, list: [] };
+function hardList() {
+  const raw = store.get(sk('says')) || '';
+  if (hardMemo.raw !== raw) hardMemo = { raw, list: hardWords(readSays(raw).map(r => r.secs.flatMap(x => x.x.trim() ? align(x.s, x.x) : []))) };
+  const ig = hardIgnore();
+  return hardMemo.list.filter(h => !ig.includes(h.k));
+}
+const autosize = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+
+function renderCards() {
+  const text = $('text').value, on = !!text.trim();
+  document.body.classList.toggle('cards', on);
+  $('cards').hidden = !on;
+  if (!on) { cardAt = -1; cardNew = false; return; }
+  const ps = paraSpans(text), ss = sentSpans(text), ms = new Set(must()), hard = new Map(hardList().map(h => [h.k, h]));
+  if (cardAt >= ps.length) cardAt = cardNew ? ps.length : -1;
+  $('cNav').replaceChildren();
+  $('cList').replaceChildren(...[...ps.map(([a, b], i) => ({ a, b, i })), ...(cardNew ? [{ a: text.trimEnd().length + 2, b: text.trimEnd().length + 2, i: ps.length }] : [])].map(({ a, b, i }) => {
+    const t = text.slice(a, b), on = i === cardAt, card = mk('article', '', on ? 'pc on' : 'pc');
+    card.id = 'p' + (i + 1); card.dataset.i = i;
+    card.setAttribute('aria-label', `${i + 1}번 문단`);
+    const ph = mk('div', '', 'ph');
+    ph.append(mk('span', `${i + 1} · ${titleOf(t) || '새 문단'}`, 'pn'), mk('span', `예상 ${est(t)}`, 'pe'));
+    card.append(ph);
+    if (on) {
+      const ta = mk('textarea', '', 'pta');
+      ta.value = t; ta.dataset.a = a; ta.setAttribute('aria-label', `${i + 1}번 문단 고치기`); ta.placeholder = '여기에 문단을 쓰세요';
+      cardSpan = { a, b };
+      ta.addEventListener('input', e => { if (!e.isComposing) cardInput(ta); });
+      ta.addEventListener('compositionend', () => cardInput(ta));
+      for (const ev of ['select', 'keyup', 'mouseup', 'focus']) ta.addEventListener(ev, () => cardSel(ta));
+      ta.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); cardAt = -1; cardNew = false; renderCards(); } });
+      card.append(ta, cardTool(ta));
+    } else {
+      const p = mk('p', '', 'pt');
+      p.replaceChildren(...paraNodes(text, a, b, ss[i] || [], ms, hard));  // 꼭 말할 문장은 표시, 막힌 낱말은 점선 밑줄
+      card.append(p);
+      card.tabIndex = 0;
+      card.addEventListener('click', e => { if (!e.target.closest('.hard, .hardpop')) cardOpen(i, e); });
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === card) cardOpen(i); });
+    }
+    const n = mk('a'), th = mk('i', t.slice(0, 40));
+    n.href = '#p' + (i + 1); n.append(th, mk('span', `${i + 1} ${titleOf(t)}`));
+    if (on) n.setAttribute('aria-current', 'true');
+    n.onclick = e => { e.preventDefault(); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); cardOpen(i); };
+    $('cNav').append(n);
+    return card;
+  }));
+  $('cAdd').hidden = cardNew;
+  const ta = $('cList').querySelector('.pta');
+  if (ta) { autosize(ta); if (renderCards.focus) { ta.focus(); ta.setSelectionRange(...renderCards.focus); } }
+  renderCards.focus = null;
+}
+// 문단 글을 노드로: 문장 사이 글은 그대로, 꼭 말할 문장은 <mark>, 막힌 낱말은 점선 밑줄 단추
+function paraNodes(text, a, b, sents, ms, hard) {
+  const out = [];
+  let o = a;
+  const words = (from, to, host) => {
+    for (const m of text.slice(from, to).matchAll(/\S+|\s+/g)) {
+      const t = m[0], k = wordKey(t), h = k && hard.get(k);
+      if (!h) { host.push(t); continue; }
+      const w = mk('span', t.replace(/[^0-9A-Za-z가-힣]+$/, ''), 'hard'), end = from + m.index + w.textContent.length;
+      w.tabIndex = 0; w.setAttribute('role', 'button'); w.dataset.a = from + m.index; w.dataset.b = end; w.dataset.k = k;
+      w.onclick = e => { e.stopPropagation(); hardPop(w, h); };
+      w.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hardPop(w, h); } };
+      host.push(w, t.slice(w.textContent.length));
+    }
+  };
+  for (const [sa, sb] of sents) {
+    words(o, sa, out);
+    if (ms.has(text.slice(sa, sb))) { const mk2 = mk('mark', '', 'must'), inner = []; words(sa, sb, inner); mk2.append(...inner); out.push(mk2); }
+    else words(sa, sb, out);
+    o = sb;
+  }
+  words(o, b, out);
+  return out;
+}
+// 카드를 글칸으로. e가 있으면 누른 자리에 커서를 둔다
+function cardOpen(i, e) {
+  if (cardAt === i) return;
+  cardAt = i; cardNew = false;
+  let at = null;
+  const card = e?.currentTarget;
+  if (e && card && document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(e.clientX, e.clientY), pt = card.querySelector('.pt');
+    if (r && pt?.contains(r.startContainer)) {
+      const w = document.createTreeWalker(pt, NodeFilter.SHOW_TEXT);
+      let n = 0, x;
+      while ((x = w.nextNode())) { if (x === r.startContainer) { n += r.startOffset; break; } n += x.length; }
+      at = [n, n];
+    }
+  }
+  renderCards.focus = at || [1e9, 1e9];
+  renderCards();
+}
+// 카드에서 글을 치면 그 문단 자리만 #text에 넣는다
+function cardInput(ta) {
+  const text = $('text').value, nf = ta.value.normalize('NFC');
+  if (nf !== ta.value) { const a = ta.selectionStart, b = ta.selectionEnd; ta.value = nf; ta.setSelectionRange(a, b); }
+  let { a, b } = cardSpan;
+  if (cardNew) {  // 끝에 더한 빈 카드: 처음 글자를 칠 때 문단 구분(빈 줄)과 함께 붙인다
+    const base = text.trimEnd();
+    a = b = base.length + (base ? 2 : 0);
+    if (!ta.value.trim()) return;
+    $('text').value = base + (base ? '\n\n' : '') + ta.value;
+    cardNew = false; cardSpan = { a, b: a + ta.value.length };
+  } else {
+    $('text').value = text.slice(0, a) + ta.value + text.slice(b);
+    cardSpan = { a, b: a + ta.value.length };
+  }
+  cardEditing = true;
+  textChanged('직접 고침'); undo = null; updAlt();
+  cardEditing = false;
+  autosize(ta);
+  ta.dataset.a = cardSpan.a;
+  const card = ta.closest('.pc');
+  card.querySelector('.pe').textContent = `예상 ${est(ta.value)}`;
+  card.querySelector('.pn').textContent = `${+card.dataset.i + 1} · ${titleOf(ta.value) || '새 문단'}`;
+  updMust(ta);
+}
+// 카드 글칸의 선택을 숨은 #text에 옮겨서 '다른 말'과 AI 문단 고치기가 그대로 읽는다
+function cardSel(ta) {
+  if (!cardSpan) return;
+  $('text').setSelectionRange(cardSpan.a + ta.selectionStart, cardSpan.a + ta.selectionEnd);
+  updAlt(); updMust(ta);
+}
+const cardPos = ta => cardSpan.a + ta.selectionStart;
+// 커서가 든 문장(#text 위치) [시작, 끝]
+function sentAtCaret(ta) {
+  const text = $('text').value, i = paraSpans(text).findIndex(([a]) => a === cardSpan.a), ss = sentSpans(text)[i] || [], c = cardPos(ta);
+  return ss.find(([a, b]) => c >= a && c <= b + 1) ?? ss.findLast(([a]) => a <= c) ?? null;
+}
+function updMust(ta) {
+  const card = ta.closest('.pc'), btn = card?.querySelector('.mustb');
+  if (!btn) return;
+  const text = $('text').value, s = sentAtCaret(ta), ms = must(), i = paraSpans(text).findIndex(([a]) => a === cardSpan.a);
+  const n = (sentSpans(text)[i] || []).filter(([a, b]) => ms.includes(text.slice(a, b))).length;
+  btn.setAttribute('aria-pressed', !!s && ms.includes(text.slice(...s)));
+  btn.lastChild.textContent = n ? ` ${n}개` : '';
+}
+function cardTool(ta) {
+  const d = mk('div', '', 'ptool'), m = mk('button', '', 'mustb'), sp = mk('span', '', 'grow'), lb = mk('span', '이 문단 다시 만들기', 'small');
+  m.type = 'button'; m.setAttribute('aria-pressed', 'false');
+  m.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path fill="currentColor" d="M5 1h4l-.5 4L11 7.5H7.6L7 13l-.6-5.5H3L5.5 5z"/></svg>꼭 말할 문장<span></span>';  // 마지막 span은 개수 자리
+  m.onclick = () => {
+    const s = sentAtCaret(ta);
+    if (!s) return tell('표시할 문장에 커서를 두세요.');
+    const t = $('text').value.slice(...s), ms = must();
+    saveMust(ms.includes(t) ? ms.filter(x => x !== t) : [...ms, t]);
+    updMust(ta);
+    if (document.body.classList.contains('editing')) shrinkUnits();  // 늘 남기는 문장이 바뀌었다
+  };
+  const mkBtn = (label, ins) => { const b = mk('button', label); b.type = 'button'; b.onclick = () => remake(ta, ins); return b; };
+  d.append(m, sp, lb, mkBtn('더 짧게', '이 문단을 같은 뜻으로 더 짧게 줄여 줘'), mkBtn('더 쉽게', '이 문단을 더 쉬운 말로 바꿔 줘'));
+  queueMicrotask(() => updMust(ta));
+  return d;
+}
+// 이 문단 다시 만들기: AI 도구의 '지시로 고치기'를 이 문단만으로 열고, 키가 있으면 바로 시작한다
+function remake(ta, instr) {
+  $('text').setSelectionRange(cardSpan.a, cardSpan.a + ta.value.length);
+  openAi('edit');
+  $('instr').value = instr;
+  $('onlySel').checked = true;
+  if (keyStore.get()) $('aiGo').click();
+}
+// 막힌 낱말을 누르면 연습 때 바꿔 말한 말이 추천으로 나온다. 누르면 그 자리만 바뀐다
+function hardPop(w, h) {
+  $('cList').querySelectorAll('.hardpop').forEach(x => x.remove());
+  const pop = mk('div', '', 'hardpop'), row = mk('div', '', 'row');
+  pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', '대체 단어 추천');
+  pop.append(mk('div', `'${h.w}' — 연습 때 ${h.runs}번 막혔어요`, 'small'));
+  const a = +w.dataset.a, b = +w.dataset.b, orig = w.textContent;
+  for (const alt of h.alts) {
+    const x = mk('button', alt);
+    x.onclick = () => {
+      const ta = $('text');
+      if (ta.value.slice(a, b) !== orig) return tell('그사이 대본이 바뀌어서 바꾸지 못했어요.');
+      if (!snapshot('막힌 낱말 바꾸기 전', true)) return tell(NOKEEP);
+      ta.setRangeText(alt, a, b, 'preserve');
+      ta.dispatchEvent(new Event('input'));
+      setSrc('막힌 낱말 바꿈');
+      tell(`'${orig}'을(를) '${alt}'(으)로 바꿨어요.`);
+    };
+    row.append(x);
+  }
+  const no = mk('button', '추천 안 함', 'no');
+  no.onclick = () => { store.set(sk('hardIgnore'), JSON.stringify([...hardIgnore(), h.k])); renderCards(); };
+  row.append(no);
+  pop.append(row);
+  const card = w.closest('.pc'), cr = card.getBoundingClientRect(), wr = w.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(wr.left - cr.left, cr.width - 348)) + 'px';
+  pop.style.top = wr.bottom - cr.top + 6 + 'px';
+  card.append(pop);
+  row.firstChild.focus();
+}
+document.addEventListener('click', e => { if (!e.target.closest('.hardpop, .hard')) document.querySelectorAll('.hardpop').forEach(x => x.remove()); });
+// 글칸 밖을 누르면 글칸을 닫고 카드로 되돌린다(고친 글은 이미 반영됐다)
+document.addEventListener('pointerdown', e => {
+  if (cardAt < 0 || !editing() || e.target.closest('.pc.on, dialog, #cNav, header, footer, aside')) return;
+  cardAt = -1; cardNew = false; renderCards();
+});
+$('cAdd').onclick = () => { cardNew = true; cardAt = paraSpans($('text').value).length; renderCards.focus = [0, 0]; renderCards(); };
 
 async function importScript(raw, fname, demo = false) {
   let r;
@@ -2028,6 +2545,7 @@ function saveVers(vs) {
     vs.pop(); gone++;
   }
   if (gone) setTimeout(() => tell(`저장 공간이 모자라 오래된 버전 ${gone}개를 지웠어요.`));
+  renderVerSide();
   return true;
 }
 // 지금 대본을 버전으로 남긴다. 지금 대본이 버전에 있으면 true(새로 남겼거나, 바로 앞 버전과 같거나, 빈 대본), 저장 공간이 모자라 못 남기면 false.
@@ -2083,17 +2601,34 @@ function renderVers() {
   $('verDiff').scrollIntoView({ block: 'nearest' });
 }
 
-// 되돌리기: 지금 대본을 버전으로 남긴 뒤 바꾼다
+// 되돌리기: 지금 대본을 버전으로 남긴 뒤 바꾼다. 안내할 글을 돌려준다.
+function restoreVer(v) {
+  if (v.text === $('text').value) return '지금 대본과 같아요.';
+  if (!snapshot('되돌리기 전')) return NOKEEP;
+  const kept = keptIn();
+  setText(v.text, `되돌림(${when(v.t)})`);
+  return '되돌렸어요.' + (kept && ` 되돌리기 전 대본은 ${kept}에 있어요.`);
+}
 $('verRestore').onclick = () => {
   if (!picked) return;
-  if (picked.text === $('text').value) return histMsg('지금 대본과 같아요.');
-  if (!snapshot('되돌리기 전')) return histMsg(NOKEEP);
-  const kept = keptIn();
-  setText(picked.text, `되돌림(${when(picked.t)})`);
+  histMsg(restoreVer(picked));
   picked = null;
   renderVers();
-  histMsg('되돌렸어요.' + (kept && ` 되돌리기 전 대본은 ${kept}에 있어요.`));
 };
+
+// 편집 화면 오른쪽 '버전 기록'(시안): 최근 3개. 지금 대본과 같은 버전은 '지금', 나머지는 되돌리기
+function renderVerSide() {
+  const vs = vers().slice(0, 3), now = $('text').value;
+  $('verSide').replaceChildren(...(vs.length ? vs.map(v => {
+    const li = mk('li'), d = mk('div'), sub = mk('small', `${when(v.t)} · 예상 ${est(v.text)}`);
+    d.append(mk('b', v.label), sub);
+    if (v.text === now) li.append(d, mk('span', '지금', 'now'));
+    else { const b = mk('button', '되돌리기'); b.onclick = () => { tell(restoreVer(v)); renderVerSide(); }; li.append(d, b); }
+    return li;
+  }) : [mk('li', '아직 저장된 버전이 없어요.', 'now')]));
+}
+$('verSideSave').onclick = () => { tell(saveVersion()); renderVerSide(); };
+$('verSideAll').onclick = openHist;
 
 // 어절 단위 비교를 그린다. 길게 같은 부분은 앞뒤만 보이고 눌러야 펼친다(30분 대본도 휴대폰에서 읽을 수 있게).
 // d: 이미 나눈 결과가 있으면 그것을 그린다(미리 줄이기 창)
@@ -2146,6 +2681,52 @@ function setTab(t) {
     if (aiSel) $('selInfo').textContent = `고른 문단만 고치기 (${spoken($('text').value.slice(...aiSel))}자)`;
   }
 }
+
+// ---- 'AI 도구 › 새로 쓰기' 보조 (시안의 대본 만들기): 발표자료 올리기, 듣는 사람·발표 시간 칩, 말투 세그먼트 ----
+const gInfo = k => $('ai').querySelector(`[data-info="${k}"]`);
+const setInfo = (k, v) => { const el = gInfo(k); el.value = v; el.dispatchEvent(new Event('change')); };  // 저장은 change에서
+function syncChips() {
+  const aud = $('aud').value.trim(), min = $('gMin').value.trim(), tone = $('toneSel').value;
+  for (const b of $('audChips').children) b.setAttribute('aria-pressed', b.textContent === aud);
+  for (const b of $('minChips').querySelectorAll('[data-m]')) b.setAttribute('aria-pressed', +b.dataset.m === +min && min !== '');
+  for (const b of $('toneSeg').children) b.setAttribute('aria-pressed', b.dataset.t === tone);
+}
+$('audChips').onclick = e => { const b = e.target.closest('button'); if (b) { setInfo('audience', b.textContent); syncChips(); } };
+$('minChips').onclick = e => { const b = e.target.closest('[data-m]'); if (b) { setTarget(b.dataset.m); syncChips(); } };
+$('toneSeg').onclick = e => { const b = e.target.closest('button'); if (b) { setInfo('tone', b.dataset.t); syncChips(); } };
+$('aud').addEventListener('input', syncChips); $('gMin').addEventListener('input', syncChips);
+
+// 올린 자료의 슬라이드. 파일 줄과 슬라이드 조각(처음 셋과 '+N장')을 그리고, 개요 칸에 슬라이드마다 한 줄을 넣는다.
+let upSlides = null;
+function showUp() {
+  $('upRow').hidden = $('upThumbs').hidden = !upSlides;
+  if (!upSlides) return;
+  const sl = upSlides.slides;
+  $('upExt').textContent = upSlides.kind === 'pdf' ? 'PDF' : 'PPT';
+  $('upName').textContent = upSlides.name;
+  $('upInfo').textContent = `슬라이드 ${sl.length}장 · 내용 읽기 완료`;
+  $('upThumbs').replaceChildren(...sl.slice(0, 3).map(s => mk('div', `${s.n} ${s.title}`)), ...(sl.length > 3 ? [mk('div', `+${sl.length - 3}장`, 'more')] : []));
+}
+async function takeSlides(file) {
+  if (!file) return;
+  aiMsg('자료를 읽는 중이에요…');
+  try {
+    const { kind, slides } = await slidesFrom(file);
+    if (!slides.some(s => s.body || !/^슬라이드 \d+$/.test(s.title))) throw new Error('읽을 수 있는 글이 없어요. 그림만 있는 자료는 개요를 직접 적어 주세요.');
+    upSlides = { name: file.name, kind, slides };
+    setInfo('outline', outlineLines(slides));
+    if (!gInfo('topic').value.trim()) setInfo('topic', topicOf(slides, file.name));
+    showUp();
+    aiMsg(`슬라이드 ${slides.length}장을 읽어 개요 칸에 넣었어요. 고칠 곳이 있으면 고쳐 주세요.`);
+  } catch (e) { aiMsg('자료를 읽지 못했어요. ' + e.message); }
+}
+$('slideFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; takeSlides(f); };
+$('upClear').onclick = () => {
+  if (upSlides && gInfo('outline').value === outlineLines(upSlides.slides)) setInfo('outline', '');  // 직접 고친 개요는 남긴다
+  upSlides = null; showUp(); aiMsg('');
+};
+for (const ev of ['dragenter', 'dragover']) $('upDrop').addEventListener(ev, e => { e.preventDefault(); $('upDrop').classList.add('over'); });
+for (const ev of ['dragleave', 'drop']) $('upDrop').addEventListener(ev, e => { e.preventDefault(); $('upDrop').classList.remove('over'); if (ev === 'drop') takeSlides(e.dataTransfer.files[0]); });
 
 $('instrChips').onclick = e => {
   const b = e.target.closest('button');
@@ -2218,7 +2799,7 @@ function updPrepState() {
   // 늦어지면 뺄 수 있는 문장을 모두 그어 보인다 (단위마다 가장 높은 단계)
   $('prepCap').hidden = $('prepDiff').hidden = !fits;
   if (!fits) return;
-  const u = units(text, p.paras, spoken);
+  const u = units(text, p.paras, spoken, must());
   showDiff($('prepDiff'), '', '', strikes(text, u, u.map(x => x.max)));
 }
 
@@ -2331,10 +2912,10 @@ $('aiApply').onclick = () => {
 // ---- 다른 말: 편집창에서 고른 말을 Claude Haiku가 바꿔 준다 (키가 있을 때만) ----
 let sel = null, undo = null, altCtl = null;  // sel: 고른 말 { a, b, t }, undo: 마지막으로 바꾼 것 { a, alt, orig }
 function updAlt() {
-  const ta = $('text');
-  // 버튼을 누르느라 편집창 밖으로 나가도 고른 말을 기억한다
-  if (document.activeElement === ta) {
-    let a = ta.selectionStart, b = ta.selectionEnd;
+  const ta = $('text'), card = document.activeElement?.classList.contains('pta') ? document.activeElement : null;
+  // 버튼을 누르느라 편집창 밖으로 나가도 고른 말을 기억한다. 카드 글칸의 선택은 문단 시작 자리를 더해 #text 위치로 본다
+  if (document.activeElement === ta || (card && cardSpan)) {
+    let a = card ? cardSpan.a + card.selectionStart : ta.selectionStart, b = card ? cardSpan.a + card.selectionEnd : ta.selectionEnd;
     const raw = ta.value.slice(a, b);
     a += raw.length - raw.trimStart().length; b -= raw.length - raw.trimEnd().length;  // 앞뒤 공백은 빼고 바꾼다
     const t = ta.value.slice(a, b);

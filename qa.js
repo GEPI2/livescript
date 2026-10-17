@@ -35,6 +35,12 @@ export function overlap(heard, sent) {
   return sent.size ? n / sent.size : 0;
 }
 
+// '해당 없음 · 관련 대본 구간 보기'(시안): 들은 질문의 음절 조각이 가장 많이 든 대본 문장 n개 [{ i, t, score }]. score(0~1)가 min보다 낮으면 뺀다.
+export function scriptHits(sentences, text, n = 3, min = 0.2) {
+  const qg = grams(text);
+  return sentences.map((t, i) => ({ i, t, score: overlap(grams(t), qg) })).filter(h => h.score >= min).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, n);
+}
+
 // 팩의 모든 문장(질문 원문 + 바꿔 묻는 말). 벡터도 이 순서로 저장한다.
 export function prepare(pack) {
   const out = [];
@@ -92,7 +98,7 @@ export function fromB64(b64) {
 }
 
 // ---- 질문 팩 검사 (AI 결과, 붙여넣은 JSON, 가져온 파일은 모두 믿지 않는다) ----
-export const LIMIT = { questions: 60, alts: 12, answer: 6, text: 200, line: 300 };
+export const LIMIT = { questions: 60, alts: 12, answer: 6, text: 200, line: 300, keys: 4, key: 30 };
 const str = (v, max) => typeof v === 'string' ? v.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, max) : '';
 const lines = (v, max, n) => [...new Set((Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : [])
   .map(x => str(x, max)).filter(Boolean))].slice(0, n);
@@ -113,6 +119,7 @@ export function cleanPack(obj) {
       id, q,
       alts: lines(it.alts, LIMIT.text, LIMIT.alts).filter(a => a !== q),
       answer: lines(it.answer, LIMIT.line, LIMIT.answer),
+      keys: lines(typeof it.keys === 'string' ? it.keys.split(/[,，\n]/) : it.keys, LIMIT.key, LIMIT.keys),  // 답 카드 맨 위 핵심 키워드(시안). 없어도 된다
       source: str(it.source, LIMIT.line),
       check: it.check === true,
     });
@@ -238,8 +245,14 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   ] });
   assert.equal(c.version, 1);
   assert.deepEqual(c.questions.map(q => q.id), ['q01', 'q02', 'q03', 'q05'], 'id 중복과 이상한 id 고치기');
-  assert.deepEqual(c.questions[0], { id: 'q01', q: '첫 질문', alts: ['가'], answer: ['줄1', '줄2'], source: '', check: false }, '다듬기, 중복 제거, 문자열 아닌 값 버리기');
+  assert.deepEqual(c.questions[0], { id: 'q01', q: '첫 질문', alts: ['가'], answer: ['줄1', '줄2'], keys: [], source: '', check: false }, '다듬기, 중복 제거, 문자열 아닌 값 버리기');
+  assert.deepEqual(cleanPack([{ q: '질문', keys: ['가', ' 가 ', '나', '', 3, '다', '라', '마'] }]).questions[0].keys, ['가', '나', '다', '라'], '핵심 키워드는 4개까지, 중복·빈 값 버림');
+  assert.deepEqual(cleanPack([{ q: '질문', keys: '가, 나，다\n라' }]).questions[0].keys, ['가', '나', '다', '라'], '쉼표로 적어도 된다');
   assert.deepEqual(c.questions[1].alts, ['x']);
+  const SS = ['앱은 설치 없이 브라우저에서 무료로 씁니다.', '질문 판정은 기기 안에서 합니다.', '발표가 늦어지면 뒷부분을 줄여 줍니다.', '무료 오픈소스 모델을 씁니다.'];
+  assert.deepEqual(scriptHits(SS, '무료로 쓸 수 있나요').map(h => h.i), [0, 3], '질문의 음절 조각이 많이 든 문장부터');
+  assert.deepEqual(scriptHits(SS, '전혀 상관없는 이야기').map(h => h.i), [], '비슷한 문장이 없으면 빈 목록');
+  assert.equal(scriptHits(SS, '무료로 쓸 수 있나요', 1).length, 1);
   assert.equal(c.questions[3].q.length, LIMIT.text);
   assert.equal(c.questions[3].alts.length, LIMIT.alts);
   assert.equal(c.questions[3].answer.length, LIMIT.answer);

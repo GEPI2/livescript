@@ -20,3 +20,9 @@ onnxruntime-web 1.31.0-dev.20260914-8d85527a0 (MIT; transformers 4.3.1 package.j
     model_q4f16.onnx_data 335357952 bytes sha256 777335dbc052e2e02ec7591f6eefcfb29e2c28caf52075e492d226fc27e0824b (Hugging Face LFS oid)
 
 다시 받을 때: npm pack @huggingface/transformers@4.3.1 onnxruntime-web@1.31.0-dev.20260914-8d85527a0 후 위 sha256과 비교
+
+pdfjs-dist 4.10.38 (Apache-2.0, pdfjs/LICENSE.txt) — 2026-10-17, npm pack으로 받아 공식 패키지와 같은 파일임을 확인(jsdelivr 복사본과 sha256 일치)
+  tarball sha256 1011b38553532d7078c59f26b15a471f8dae00f101b60e2add9b8511737a1ce0
+  build/pdf.min.mjs         352645 bytes  sha256 27fc2a057a00f92a4334ad06e17dbd7259912954e9fb7f76400bcca5fd190a9c
+  build/pdf.worker.min.mjs 1375838 bytes  sha256 1baa1844c89c80a5b2797c916e75ab29254be46d8e9cb53cb6364d7aad84be36
+  (PDF 발표자료를 올릴 때만 불러온다. 글만 뽑고 그림은 그리지 않는다. 대본과 자료는 이 기기 밖으로 나가지 않는다.)

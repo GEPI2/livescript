@@ -1,0 +1,8 @@
+IBM Plex Sans KR
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
+Copyright © 2020 Google LLC (IBM Plex Sans KR is a Google Fonts-hosted build)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+https://openfontlicense.org/open-font-license-official-text/
+Source: https://fonts.google.com/specimen/IBM+Plex+Sans+KR , https://github.com/IBM/plex
+Files here are the unmodified woff2 slices served by fonts.googleapis.com/css2 (weights 400, 600, 700).

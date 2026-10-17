@@ -1,13 +1,13 @@
-// 라이브스크립트 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=11';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=11';
-import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=11';
-import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=11';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=11';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=11';
+// 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
+import { cleanPack, prepare, rank, confidence, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=12';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=12';
+import { diff, paras, paraRange, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=12';
+import { units, shrunk, plan, remap, unitAt, strikes, LABEL } from './shrink.js?v=12';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=12';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=12';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, mRow, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, secRows, tips, toneLines, NAME } from './check.js?v=11';
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, secRows, tips, toneLines, NAME } from './check.js?v=12';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -94,7 +94,7 @@ function curWord() {
   return c < 0 ? words.length : c;
 }
 
-// 읽은 어절은 흐리게, 지금 어절은 밑줄, 지금 문장은 배경. instant: 새로고침·회전·화면 전환 뒤에는 미끄러지지 않고 바로 옮긴다
+// 읽은 어절은 흐리게, 지금 어절은 굵게+밑줄, 지금 문장(.cur)에는 색이 없고 읽는 줄 막대가 줄을 알린다. instant: 새로고침·회전·화면 전환 뒤에는 미끄러지지 않고 바로 옮긴다
 function render(instant = false) {
   const c = curWord(), s = words[c]?.s;
   words.forEach((w, i) => {
@@ -350,6 +350,7 @@ document.addEventListener('visibilitychange', () => {
 function setMode(editing) {
   if (editing && qaMode) setQa(false);
   document.body.classList.toggle('editing', editing);
+  document.querySelector('meta[name=theme-color]').content = editing ? '#FFFFFF' : '#0F1115';  // 주소창·제목줄 색을 화면(밝은 편집, 어두운 발표)에 맞춘다
   $('mode').textContent = editing ? '발표' : '편집';
   $('mode').classList.toggle('cta', editing);
   closeUndo(); sayNone();
@@ -862,7 +863,7 @@ function renderCheck() {
   $('cTips').replaceChildren(...(ai ? ai.tips.map(x => mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`)) : rule));
   $('cRule').hidden = !ai || !rule.length;
   $('cRuleList').replaceChildren(...(ai ? rule : []));
-  // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(회색 띠 기대 시간, 파랑 걸린 시간), 정도 낱말, 숫자 보기
+  // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(연보라 띠 기대 시간, 진한 보라 걸린 시간), 정도 낱말, 숫자 보기
   $('cNoGoal').hidden = !!goal;
   $('cSemi').hidden = !run.secs.some(s => s.st);  // 범례의 '반음은 피아노 건반 한 칸'은 높낮이를 잰 기록에만
   const pc = x => `${Math.max(0, Math.min(100, x * 100))}%`;
@@ -1722,7 +1723,7 @@ function setDraft(p, how) {
   draft = copyQs(p.questions);
   renderDraft();
   const n = p.questions.filter(q => q.check).length;
-  prepMsg(`${how} 질문 ${p.questions.length}개를 불러왔어요.` + (n ? ` 노란색 ${n}개는 자료에 근거가 없으니 직접 확인하세요.` : '') + " 읽어 보고 고친 뒤 '저장'을 누르세요.");
+  prepMsg(`${how} 질문 ${p.questions.length}개를 불러왔어요.` + (n ? ` 주황색 ${n}개는 자료에 근거가 없으니 직접 확인하세요.` : '') + " 읽어 보고 고친 뒤 '저장'을 누르세요.");
   touched();
 }
 
@@ -1983,7 +1984,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=11').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=12').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
@@ -2394,6 +2395,7 @@ showCoach();
 $('text').readOnly = false; $('toast').hidden = true;  // 여기까지 오면 앱이 다 불러와졌다 (index.html은 읽기 전용과 안내로 시작)
 showKey();
 setMode(!$('text').value.trim());
+document.body.classList.add('ready');  // 첫 화면은 모드가 정해질 때까지 가려 둔다(밝은 편집 화면이 어두운 발표 화면 앞에 번쩍이지 않게)
 // 오프라인에서도 열리게 (sw.js). https와 *.localhost에서만 된다. 개발 주소(localhost, 127.0.0.1)는 고친 모듈이 캐시에 가리지 않게 뺀다.
 if ('serviceWorker' in navigator && isSecureContext && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
 // 대본이 있으면 바로 발표 화면으로 열리므로 [확인 필요]는 여기서 알린다

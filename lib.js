@@ -187,7 +187,7 @@ export function readScript(raw, fname = '') {
   raw = String(raw).replace(/^\uFEFF/, '');
   const json = /\.json$/i.test(fname) || /^\s*\{/.test(raw);
   const d = json ? JSON.parse(raw) : { name: fname.replace(/\.[^.]*$/, ''), text: raw };
-  if (json && (d?.app !== 'livescript' || d.kind !== 'script')) throw new Error('라이브스크립트에서 내보낸 대본 파일이 아니에요.');
+  if (json && (d?.app !== 'livescript' || d.kind !== 'script')) throw new Error('말랑에서 내보낸 대본 파일이 아니에요.');
   const text = typeof d.text === 'string' ? d.text.normalize('NFC').replace(/\r\n?/g, '\n') : '';
   if (!text.trim()) throw new Error('대본이 비어 있어요.');
   const p = d.prep;

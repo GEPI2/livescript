@@ -4,209 +4,272 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:">
-<title>라이브스크립트</title>
-<meta name="theme-color" content="#111111">
+<title>말랑</title>
+<meta name="theme-color" content="#0F1115">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="icons/maskable-512.png">
 <style>
-  :root { --fs: 28px; --w: 24em; color-scheme: dark; }
+  /* 말랑 디자인 시스템 (claude.ai/artifact/TrTosabV71TF5KaAkb1XvJ) 값을 그대로 옮겼다.
+     밝은 화면이 기본이고, 발표·Q&A(body.editing이 아닐 때)는 어두운 값으로 바뀐다. 창(dialog)은 늘 밝고, 발표 화면 위에서 여는 보기 창만 어둡다.
+     색은 지금 읽는 곳(accent)과 시간 경고(warning)에만 쓴다. */
+  :root { --font-sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; --fs: 28px; --w: 24em;
+    --space-4: 4px; --space-8: 8px; --space-10: 10px; --space-12: 12px; --space-14: 14px; --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
+    --radius-sm: 8px; --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-2xl: 18px; --radius-pill: 999px;
+    --shadow-raised: 0 1px 2px rgba(21,23,28,.12); --shadow-popover: 0 8px 24px rgba(21,23,28,.10);
+    --space-40: 40px; --space-56: 56px; --control-min: 44px; --control-lg: 52px; --control-xl: 56px; --header-height: 64px; --content-max: 1200px; --prompter-max: 960px;
+    --inverse-bg: #15171C; --inverse-ink: #F5F6F8; }
+  :root, dialog, #card { color-scheme: light;
+    --bg: #F5F6F8; --surface: #FFFFFF; --surface-muted: #F1F2F5; --border: #E3E5EA; --border-strong: #D5D8DF;
+    --ink: #15171C; --ink-muted: #4A4F5A; --ink-read: #7C8190;
+    --accent: #4B3FD6; --accent-strong: #3A2FB8; --accent-tint: #ECEAFD; --accent-border: #C9CCF5; --on-accent: #FFFFFF;
+    --warning: #B23A0B; --warning-tint: #FFF1E8; --success: #0B6B52; --success-tint: #E6F4EF; --diff-added: #E2F0FF;
+    --chart-within: #9C93F2; --chart-over: #E8743B; --chart-past: #D7D3FB;
+    --header-bg: var(--surface); --primary-bg: var(--accent); --primary-fg: var(--on-accent); }
+  body:not(.editing), #viewDlg { color-scheme: dark;
+    --bg: #0F1115; --surface: #1C1F27; --surface-muted: #15181E; --border: #262A33; --border-strong: #333844;
+    --ink: #F2F3F5; --ink-muted: #9EA3AE; --ink-read: #7C8190;
+    --accent: #7B6EF6; --accent-strong: #A9A1FF; --accent-tint: #2A2550; --accent-border: #2A2550; --on-accent: #0F1115;
+    --warning: #FFB48A; --warning-tint: #3A1D0E; --success: #3DD68C; --success-tint: #15181E; --diff-added: #1B2B40;
+    --header-bg: var(--bg); --primary-bg: var(--ink); --primary-fg: var(--bg); }
+  body:not(.editing) { --inverse-bg: #F2F3F5; --inverse-ink: #0F1115; }
+
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  /* 첫 화면은 어두운 값으로 시작하고, 모드가 정해질 때까지(app.js가 body.ready를 붙인다) 안내 글만 보인다. 3초 넘게 안 정해지면 그냥 보인다. */
+  body:not(.ready) > :not(#toast) { visibility: hidden; animation: reveal 0s 3s forwards; }
+  @keyframes reveal { to { visibility: visible; } }
+  html:has(body:not(.editing)) { color-scheme: dark; }  /* 발표 화면의 스크롤바·기본색도 어둡게 */
   html, body { overscroll-behavior-y: none; }  /* 대본 처음에서 아래로 쓸어도 새로고침되어 마이크가 꺼지지 않게 */
-  body { margin: 0; background: #111; color: #eee; font: 16px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-  button { font: inherit; color: inherit; background: #2a2a2a; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 44px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-sans); }
+  a { color: var(--accent-strong); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px var(--space-14); cursor: pointer; min-height: var(--control-min); }
   footer button { min-width: 56px; }
   header button { min-width: 44px; }
-  button:disabled { opacity: .4; }
-  .cta { background: #41639a; color: #fff; }
-  header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 8px 16px; background: #111; }
-  header { top: 0; padding-top: max(8px, env(safe-area-inset-top)); box-shadow: 0 1px 0 #2a2a2a; }
-  footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 #2a2a2a; }
+  button:disabled { opacity: .4; cursor: default; }
+  .cta, .bottom .primary, #keySave { background: var(--primary-bg); border-color: transparent; color: var(--primary-fg); }
+  .primary { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 한 창에 주요 단추는 하나(끝맺는 단추). 나머지 강조는 연보라 */
+  .bottom .primary, #keySave { border-color: transparent; }
+  body:has(#empty:not([hidden])) #mode.cta { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 빈 화면에서는 안내 카드의 단추가 주요 */
+  /* 선택된 칩·탭·세그먼트 */
+  [aria-pressed=true], .tabs button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
+  header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: var(--space-8); align-items: center; padding: 8px var(--space-24); background: var(--header-bg); }
+  header { top: 0; min-height: var(--header-height); padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: 10px; box-shadow: 0 1px 0 var(--border); }
+  footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 var(--border); }
+  body:not(.editing) header button, body:not(.editing) footer button { border-color: transparent; }  /* 발표 화면 단추는 바탕색 차이로만 나눈다 */
   .grow { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .brand { display: flex; align-items: center; gap: var(--space-10); flex: none; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand svg { flex: none; }
   /* 상태줄: 위 큰 칸은 목표 대비(목표가 없으면 경과), 아래 작은 칸은 경과. 숫자 폭이 같아서 매초 줄이 흔들리지 않는다. */
   #status { display: flex; flex-direction: column; line-height: 1.15; font-variant-numeric: tabular-nums; }
   #status > span { overflow: hidden; text-overflow: ellipsis; }
-  #status .main { font-size: 20px; font-weight: bold; color: #eee; }
-  #status .main.pre { font-weight: normal; color: #ccc; }  /* 시작 전 예상: 아직 늦은 것이 아니라 주황을 쓰지 않는다 */
-  #status .main.late { color: #fb4; }
-  #status .sub { font-size: 14px; color: #aaa; }
+  #status .main { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+  #status .main.pre { font-weight: 400; color: var(--ink-muted); }  /* 시작 전 예상: 아직 늦은 것이 아니라 주황을 쓰지 않는다 */
+  #status .main.late { align-self: flex-start; max-width: 100%; padding: 2px var(--space-12); border-radius: var(--radius-pill); background: var(--warning-tint); color: var(--warning); font-size: 20px; }
+  #status .sub { font-size: 13px; color: var(--ink-muted); }
+  body.qa #status .main { font-size: 20px; }  /* '질의응답 0:45'가 375px에서도 다 보이게 */
   @media (max-width: 520px) { #status .pct { display: none; } }  /* 좁으면 진행률은 위 막대로만 */
-  /* 발표 점검 실시간 힌트: 작은 칸 끝에 낱말 하나. 움직임·색 뜻 없음(주황·하늘색은 쓰지 않는다), 화면 읽기로 읽지 않는다(소리가 마이크로 들어감) */
-  #cue { margin-left: 8px; font-size: 14px; font-weight: normal; color: #ddd; white-space: nowrap; }
-  #cue.dim { color: #888; }
+  /* 발표 점검 실시간 힌트: 작은 칸 끝에 낱말 하나. 움직임·색 뜻 없음(주황은 쓰지 않는다), 화면 읽기로 읽지 않는다(소리가 마이크로 들어감) */
+  #cue { margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--ink); white-space: nowrap; }
+  #cue.dim { color: var(--ink-read); }
   #cue:empty, body.off #cue, body.qa #cue, body.editing #cue { display: none; }
   /* 진행 막대: 채운 곳은 읽은 만큼, 흰 눈금은 목표 시간에 맞추려면 지금 있어야 할 곳(경과 ÷ 목표) */
-  #bar { --p: 0%; --t: 0%; position: absolute; left: 0; right: 0; bottom: -4px; height: 4px; background: #2a2a2a; }  /* 첫 500ms 타이머 전에 꽉 찬 막대가 보이지 않게 */
-  #bar i { display: block; height: 100%; width: var(--p); background: #8af; }
-  #bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; left: min(var(--t), calc(100% - 2px)); background: #fff; }
-  #bar.late i { background: #fb4; }
-  /* 마이크: 듣는 중이면 '정지' 앞에 원. 들리면 채우고, 조용하면 테두리만, 다시 연결하는 동안은 원 대신 점선 테두리와 '연결 중' */
-  #mic.on { background: #b33; }
-  #mic.on::before { content: ''; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; margin-right: 6px; border: 2px solid #fff; border-radius: 50%; }
-  #mic.on.hear::before { background: #fff; }
+  #bar { --p: 0%; --t: 0%; position: absolute; left: 0; right: 0; bottom: -6px; height: 6px; background: var(--border); }  /* 첫 500ms 타이머 전에 꽉 찬 막대가 보이지 않게 */
+  #bar i { display: block; height: 100%; width: var(--p); background: var(--accent); }
+  #bar b { position: absolute; top: -4px; bottom: -4px; width: 2px; left: min(var(--t), calc(100% - 2px)); background: var(--ink); }
+  #bar.late i { background: var(--warning); }
+  /* 마이크: 발표 화면의 주요 단추(바탕색이 ink). 듣는 중이면 '정지' 앞에 원. 들리면 채우고, 조용하면 테두리만, 다시 연결하는 동안은 원 대신 점선 테두리와 '연결 중' */
+  #mic { background: var(--primary-bg); color: var(--primary-fg); }
+  #mic.on::before { content: ''; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; margin-right: 6px; border: 2px solid currentColor; border-radius: 50%; }
+  #mic.on.hear::before { background: currentColor; }
   #mic.on::after { content: '연결 중'; display: block; height: 0; overflow: hidden; visibility: hidden; }  /* 글자가 바뀌어도 버튼 폭이 같아서 상태줄이 좁아지지 않게 (드문 '다시 듣기'일 때만 넓어진다) */
   #mic.on.gap::before { display: none; }
-  #mic.on.gap { outline: 2px dashed #fff; outline-offset: -3px; }
-  #heard { font-size: 13px; color: #888; text-align: center; }
-  #offMsg { display: block; overflow: hidden; text-overflow: ellipsis; color: #56B4E9; font-weight: bold; }  /* 대본 밖이면 들은 말 위에 한 줄 (들은 말의 끝이 가려지지 않게) */
+  #mic.on.gap { outline: 2px dashed currentColor; outline-offset: -3px; }
+  #mic.on.gap:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #prev, #next { width: var(--control-xl); height: var(--control-xl); padding: 0; border-radius: 14px; }
+  #heard { display: flex; flex-direction: column; justify-content: center; min-height: var(--control-xl); font-size: 13px; color: var(--ink-muted); text-align: center; }  /* 대본 밖 칩이 나와도 푸터 높이가 같다 */
+  #offMsg { display: block; width: fit-content; max-width: 100%; margin: 0 auto 4px; padding: 8px 14px; overflow: hidden; text-overflow: ellipsis; border-radius: var(--radius-lg); background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 500; }  /* 대본 밖이면 들은 말 위에 한 줄 (들은 말의 끝이 가려지지 않게) */
   body:not(.off) #offMsg { display: none; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
+  @media (max-width: 600px) { header, footer { padding-left: var(--space-16); padding-right: var(--space-16); } .brand span { display: none; } }
+  @media (max-width: 480px) { .brand { display: none; } }
   @media (max-width: 420px) { header { padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
-  @media (max-width: 360px) { header { gap: 6px; padding-left: 8px; padding-right: 8px; } header button { padding: 8px 4px; } #status .main { font-size: 18px; } body.qa #status .main { font-size: 15px; } #cue { font-size: 13px; } }  /* 320px에서도 '질의응답 0:45'가 다 보이게 */
+  @media (max-width: 360px) { header { gap: 6px; padding-left: 8px; padding-right: 8px; } header button { padding: 8px 4px; } #status .main { font-size: 18px; } #status .main.late { font-size: 16px; } body.qa #status .main { font-size: 15px; } #cue { font-size: 13px; } #offMsg { padding: 6px 10px; font-size: 14px; white-space: normal; } }  /* 320px에서도 '질의응답 0:45'가 다 보이게 */
 
-  #text { display: block; width: 100%; height: 100dvh; padding: 72px 16px 72px; border: 0; background: #181818; color: #eee; font-family: inherit; font-size: 18px; line-height: 1.6; word-break: keep-all; resize: none; }
-  #target { width: 4em; min-height: 44px; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 6px 8px; }
-  #lib { max-width: 320px; min-height: 44px; font: inherit; color: inherit; background: #222; border: 1px solid #777; border-radius: 8px; padding: 7px 4px; }
-  #est { color: #999; }
-  #est.over { color: #fb4; }
-  #altBtn { white-space: nowrap; background: #24304a; }
-  #toast, #undoBar { position: fixed; left: 16px; right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 2; display: flex; align-items: center; gap: 8px; max-width: 600px; margin: 0 auto; padding: 10px 14px; border-radius: 10px; background: #333; color: #eee; font-size: 14px; }
+  /* 편집 화면: 회색 바탕 위에 흰 종이 한 장 */
+  #text { display: block; width: min(100%, 880px); height: 100dvh; margin: 0 auto; padding: 88px 28px 88px; border: 0; border-inline: 1px solid var(--border); background: var(--surface); color: var(--ink); font-family: inherit; font-size: 17px; line-height: 1.75; word-break: keep-all; resize: none; }
+  #text::placeholder { color: var(--ink-muted); }
+  #text:focus-visible { outline-offset: -3px; }
+  @media (max-width: 600px) { #text { padding-inline: var(--space-16); border-inline: 0; } }
+  #target, #lib { min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 6px 8px; }
+  #target { width: 4.5em; }
+  #lib { max-width: 320px; font-weight: 600; padding: 7px 4px; }
+  #est { color: var(--ink-muted); }
+  #est.over { color: var(--warning); font-weight: 600; }
+  #altBtn { white-space: nowrap; border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }
+  #toast, #undoBar { position: fixed; left: 16px; right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 2; display: flex; align-items: center; gap: 8px; max-width: 600px; margin: 0 auto; padding: 10px 14px; border-radius: var(--radius-lg); background: var(--inverse-bg); color: var(--inverse-ink); font-size: 14px; box-shadow: var(--shadow-popover); }
+  #toast button, #undoBar button { background: transparent; color: inherit; border-color: currentColor; }
+  #toast button:focus-visible, #undoBar button:focus-visible { outline-color: var(--inverse-ink); }
   #toast { padding-right: 8px; }
   #undoBar { z-index: 3; justify-content: space-between; padding: 6px 8px 6px 14px; }
   #toastT { flex: 1; }
   /* 빈 편집 화면: 안내 글 아래 카드. 카드를 눌러도 편집창으로 가고, 버튼만 눌린다. */
-  #empty { position: absolute; top: 144px; left: 16px; right: 16px; max-width: 560px; margin: 0 auto; padding: 16px; border-radius: 12px; background: #222; pointer-events: none; }
-  #empty h1 { margin: 0 0 8px; font-size: 22px; }
+  #empty { position: absolute; top: 160px; left: 16px; right: 16px; max-width: 560px; margin: 0 auto; padding: var(--space-24); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); pointer-events: none; }
+  #empty h1 { display: flex; align-items: center; gap: var(--space-12); margin: 0 0 var(--space-8); font-size: 30px; line-height: 1.3; letter-spacing: -0.02em; }
   #empty p { margin: 8px 0; }
-  #empty ol { margin: 8px 0; padding: 0; list-style: none; color: #ccc; }
+  #empty ol { margin: 12px 0 16px; padding: 0; list-style: none; color: var(--ink-muted); }
   #empty button, #empty a { pointer-events: auto; }
-  a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; background: #2a2a2a; color: inherit; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
+  a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px var(--space-14); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font-weight: 600; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
   #empty::after { content: ''; position: absolute; top: 100%; width: 1px; height: 76px; }  /* 낮은 가로 화면에서도 카드 끝을 아래 막대 위로 올릴 만큼 내릴 수 있게 */
-  #prompt { max-width: var(--w); margin: 0 auto; padding: calc(100dvh / 3) 16px 70vh; font-size: var(--fs); line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
-  #prompt .s.cur { background: #41639a; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-  #prompt .r { color: #888; }
-  #prompt .s.cur .r { color: #c8d3e8; }
-  #prompt .c { text-decoration: underline 4px #fff; text-underline-offset: 6px; }
+
+  /* 발표 화면 대본: 읽은 곳은 흐리게(ink-read), 지금 읽는 줄 왼쪽에 accent 막대, 지금 단어는 굵게+밑줄 */
+  #prompt { max-width: var(--w); margin: 0 auto; padding: calc(100dvh / 3) 16px 70vh; font-size: var(--fs); line-height: 1.6; letter-spacing: -0.01em; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  @media (min-width: 600px) { #prompt { padding-inline: var(--space-24); } }
+  #prompt .r { color: var(--ink-read); }
+  /* 굵기는 글자 둘레선으로만 더해서 낱말이 바뀔 때 줄바꿈이 흔들리지 않게 한다 */
+  #prompt .c { -webkit-text-stroke: .035em currentColor; text-decoration: underline 3px var(--ink); text-underline-offset: min(8px, .25em); }
   /* 키워드로 어림한 위치: 어절 밑줄 대신 문장 전체에 점선 */
-  #prompt .s.approx { text-decoration: underline dotted 3px #fff; text-underline-offset: 6px; }
+  #prompt .s.approx { text-decoration: underline dotted 3px var(--ink); text-underline-offset: min(8px, .25em); }
   #prompt .s.approx .c { text-decoration: none; }
   /* 읽는 줄 표시: 지금 어절이 있는 줄(화면 위 1/3) 왼쪽 */
-  #readline { position: fixed; width: 4px; border-radius: 2px; background: #8af; box-shadow: 0 0 0 2px #111; pointer-events: none; }  /* 테두리: 줄인 문단의 왼쪽 줄 위에서도 따로 보이게 */
+  #readline { position: fixed; width: 5px; border-radius: 3px; background: var(--accent); pointer-events: none; }
   body.qa #readline { display: none; }
-  /* 대본 밖(기다리는 중): 지금 문장 배경을 빼고 하늘색 점선. 주황은 '초과'에만 쓴다. */
-  body.off #prompt .s.cur { background: transparent; }
-  body.off #prompt .c { text-decoration: underline dashed 4px #56B4E9; text-underline-offset: 6px; }
-  body.off #readline { background: #56B4E9; }
-  /* 자동 줄이기로 문장을 숨긴 문단: 왼쪽 줄과 작은 표시 */
-  #prompt .cut { border-left: 3px solid #6178a8; padding-left: 10px; margin-left: -13px; }
-  #prompt .cut::before { content: attr(data-l); margin-right: 6px; font-size: .5em; color: #8a9bbd; vertical-align: 0.3em; }
+  /* 대본 밖(기다리는 중): 막대와 밑줄을 accent 대신 흐린 회색 점선으로. 주황은 '초과'에만 쓴다. */
+  body.off #prompt .c { text-decoration: underline dashed 3px var(--ink-muted); text-underline-offset: min(8px, .25em); }
+  body.off #readline { background: var(--ink-muted); }
+  /* 자동 줄이기로 문장을 숨긴 문단: 연보라 바탕과 작은 표시 */
+  #prompt .cut { margin: 0 -6px; padding: 0 6px; border-radius: 6px; background: var(--accent-tint); }
+  #prompt .cut .r { color: var(--ink-muted); }  /* 연보라 바탕 위에서도 4.5:1 */
+  #prompt .cut::before { content: attr(data-l); margin-right: 8px; font-size: max(12px, .5em); font-weight: 600; color: var(--accent-strong); vertical-align: 0.3em; }
   .sw { display: flex; align-items: center; gap: 6px; min-height: 44px; white-space: nowrap; font-size: 14px; }
-  .sw input { width: 22px; height: 22px; margin: 0; }
+  .sw input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
   @media (max-width: 420px) {
     #est .wide { display: none; }  /* 목표는 바로 옆 입력칸에 보인다 */
     #est { white-space: normal; word-break: keep-all; line-height: 1.2; }  /* 320px에서도 넘친 시간 (+0:26)이 잘리지 않게 두 줄로 */
     footer:has(#altBtn:not([hidden])) .sw { display: none; }  /* 고른 말이 있는 동안만 보이는 '다른 말'에 자리를 준다 */
   }
 
-  /* 질의응답 */
+  /* 질의응답: 넓으면 왼쪽에 질문 듣기, 오른쪽에 준비한 답 */
   body.qa #prompt, body.qa footer, body:not(.qa) #qa { display: none; }
-  #qaBtn.hot { background: #8af; color: #111; }
-  #qa { max-width: 900px; margin: 0 auto; padding: 72px 16px 40vh; word-break: keep-all; overflow-wrap: anywhere; }
-  .small { font-size: 13px; color: #999; margin: 6px 0; }
-  #ask { display: block; width: 100%; margin: 8px 0; padding: 20px; font-size: 24px; background: #24304a; }
-  #ask.on { background: #b33; }
-  .chip { display: block; width: 100%; margin: 6px 0; padding: 12px; text-align: left; font-size: 18px; }
-  .chip.none { color: #999; }
-  #qaLow { color: #fb4; }
+  #qaBtn.hot { background: var(--accent); color: var(--on-accent); }
+  #qa { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-24); max-width: var(--content-max); margin: 0 auto; padding: 88px var(--space-24) 40vh; word-break: keep-all; overflow-wrap: anywhere; }
+  #qaL { flex: 1 1 320px; min-width: 0; }
+  #qaR { flex: 2 1 520px; min-width: 0; }
+  @media (max-width: 600px) { #qa { padding-inline: var(--space-16); } }
+  .small { font-size: 13px; color: var(--ink-muted); margin: 6px 0; }
+  #ask { display: block; width: 100%; min-height: var(--control-xl); margin: 8px 0; padding: 0 var(--space-16); border: 2px solid var(--accent); border-radius: 14px; background: transparent; font-size: 16px; }
+  #ask.on { background: var(--accent); color: var(--on-accent); }
+  #live:not(:empty) { margin: 8px 0; padding: var(--space-12) var(--space-16); border-radius: var(--radius-xl); background: var(--surface); color: var(--ink); font-size: 17px; }
+  .chip { display: flex; align-items: center; gap: var(--space-12); width: 100%; min-height: var(--control-lg); margin: 6px 0; padding: 8px var(--space-16); border-radius: var(--radius-lg); background: var(--surface-muted); font-size: 16px; font-weight: 400; text-align: left; }
+  .chip.none { border-color: transparent; background: transparent; color: var(--accent-strong); font-weight: 600; }
+  .chip small { margin-left: auto; font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
+  #qaLow { color: var(--warning); font-weight: 600; }
   #qaState { flex: 1 1 12em; white-space: normal; }  /* 좁으면 '판정 모델 받기' 버튼을 다음 줄로 보내고 상태 글은 다 보이게 */
-  #card { margin: 12px 0; padding: 12px 16px; border-radius: 12px; background: #1b2233; }
-  #cardQ { margin: 4px 0 8px; font-size: 20px; }
-  #cardA { margin: 0; padding-left: 1.2em; font-size: var(--fs); line-height: 1.5; }
-  .warn { display: inline-block; padding: 0 8px; border-radius: 6px; background: #fb4; color: #111; font-size: 13px; }
-  #qa input { margin: 8px 0; }
-  #all, #card { scroll-margin-top: 64px; }
-  #all summary, #menu summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+  /* 답 카드: 어두운 화면에서 밝게 떠 있는 카드(ink 바탕). 안쪽 글씨는 밝은 값을 쓴다. */
+  #card { margin: 0 0 var(--space-16); padding: 26px 28px; border-radius: var(--radius-2xl); background: var(--inverse-bg); color: var(--inverse-ink); }
+  #card .small { font-size: 14px; }
+  #card .chip { background: var(--surface); }
+  #cardHeard { margin-top: 0; }
+  #cardQ { margin: 4px 0 var(--space-12); font-size: 20px; line-height: 1.45; }
+  #cardA { margin: 0; padding-left: 1.2em; font-size: max(20px, calc(var(--fs) * .8)); line-height: 1.65; }
+  #cardA li + li { margin-top: var(--space-8); }
+  .warn { display: inline-block; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--warning-tint); color: var(--warning); font-size: 13px; font-weight: 600; }
+  #all, #card { scroll-margin-top: 80px; }
+  #all summary, #menu summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
   /* 답 카드를 연 동안: '질문'은 작게, 상태 글은 숨겨서 카드를 위로 */
-  body.carded #ask { padding: 10px; font-size: 18px; }
+  body.carded #ask { min-height: 48px; }
   body.carded #qaState { display: none; }
-  #chips.final .chip.top { border: 2px solid #8af; }
-  .chip .n { display: inline-block; min-width: 1.4em; font-size: 13px; color: #8af; }
+  #chips.final .chip.top { border: 2px solid var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
+  .chip .n { display: inline-block; min-width: 1.4em; font-weight: 600; color: var(--ink-muted); }
+  #chips.final .chip.top .n { color: inherit; }
   #qaGet { margin-top: 24px; }
 
   /* 창 */
-  dialog { width: min(720px, calc(100% - 16px)); max-width: none; max-height: calc(100dvh - 16px); padding: 16px; border: 0; border-radius: 12px; background: #1b1b1b; color: #eee; }
-  dialog::backdrop { background: #000b; }
-  dialog h2 { margin: 0 0 8px; font-size: 20px; }
-  dialog h3 { margin: 20px 0 4px; font-size: 16px; }
-  dialog label { display: block; margin: 8px 0; }
-  dialog input, dialog textarea, #qa input { display: block; width: 100%; min-height: 44px; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
-  dialog input[type=checkbox] { display: inline; flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; }
+  dialog { width: min(720px, calc(100% - 16px)); max-width: none; max-height: calc(100dvh - 16px); padding: var(--space-20); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-popover); }
+  dialog::backdrop { background: rgba(21,23,28,.5); }
+  dialog { scroll-padding-bottom: 88px; }  /* scrollIntoView가 아래 고정 단추 줄에 가려지지 않게 */
+  dialog h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; line-height: 1.45; }
+  dialog h3 { margin: 20px 0 4px; font-size: 15px; font-weight: 600; }
+  dialog label { display: block; margin: 8px 0; font-weight: 500; }
+  dialog input, dialog textarea, dialog select, #qa input { display: block; width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px 12px; }
+  dialog input::placeholder, dialog textarea::placeholder, #qa input::placeholder { color: var(--ink-muted); }
+  dialog input:focus-visible, dialog textarea:focus-visible, dialog select:focus-visible, #qa input:focus-visible { outline-offset: 0; border-color: var(--accent); }
+  dialog input[type=checkbox] { display: inline; flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--accent); }
   dialog label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; min-height: 44px; }  /* 글자까지 눌리는 칸이 44px */
   dialog textarea { resize: vertical; field-sizing: content; max-height: 50vh; }
+  #qa input { margin: 8px 0; min-height: 48px; border-radius: var(--radius-lg); background: var(--surface-muted); }  /* 위 dialog input 규칙보다 뒤에 둬야 먹는다 */
   .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
-  .primary { background: #24304a; }
-  #prepMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
-  .qitem { margin: 10px 0; padding: 10px; border: 1px solid #333; border-radius: 10px; }
-  .qitem.check { border-color: #fb4; }
+  #prepMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
+  .qitem { margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .qitem.check { border-color: var(--warning); }
   .qitem label { margin: 6px 0; }
-  .qitem input, .qitem textarea { font-size: 16px; }  /* 라벨은 작아도 고치는 글은 읽기 쉽게 (iPhone은 16px보다 작으면 확대) */
-  .qitem .chk { padding: 2px 8px; border-radius: 6px; font-size: 13px; }
-  .qitem.check .chk { background: #fb4; color: #111; }
-  .bottom { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: #1b1b1b; }
+  .qitem .chk { padding: 2px 10px; border-radius: var(--radius-pill); font-size: 13px; }
+  .qitem.check .chk { background: var(--warning-tint); color: var(--warning); font-weight: 600; }
+  .bottom { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 10px 20px 20px; background: var(--surface); box-shadow: 0 -1px 0 var(--border); }
 
   /* AI 도구, 버전, 메뉴 */
-  dialog select { display: block; width: 100%; min-height: 44px; font: inherit; color: inherit; background: #111; border: 1px solid #777; border-radius: 8px; padding: 8px; }
-  .tabs button.on { background: #24304a; outline: 1px solid #8af; }
-  .tabs button.on:focus-visible, .ver.on:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .half { flex: 1; min-width: 8em; margin: 0; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
   .grid button { padding: 12px 8px; }
-  #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty), #adMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
-  #aiOut { min-height: 8em; color: #bbb; }
-  .diff { margin: 8px 0; padding: 10px; border-radius: 8px; background: #111; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
-  dialog del { background: #4a1f1f; color: #f99; }
-  dialog ins { background: #1f3a24; color: #9e9; }
-  .drop del { background: none; color: #999; text-decoration: line-through 1px; }  /* 늦으면 뺄 문장: AI 비교의 '지울 말'과 다르게 흐리게 */
+  #aiMsg:not(:empty), #histMsg:not(:empty), #altMsg:not(:empty), #adMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
+  #aiOut { min-height: 8em; color: var(--ink-muted); }
+  .diff { margin: 8px 0; padding: 12px; border-radius: var(--radius-md); background: var(--surface-muted); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.8; }
+  dialog del { background: none; color: var(--ink-muted); text-decoration: line-through var(--warning); }
+  dialog ins { padding: 0 4px; border-radius: 3px; background: var(--diff-added); color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: 3px; }  /* 색만으로 나누지 않게 밑줄도 */
+  .drop del { text-decoration: line-through 1px; text-decoration-color: currentColor; }  /* 늦으면 뺄 문장: AI 비교의 '지울 말'과 다르게 흐리게 */
   #menu .grid { margin: 6px 0; }
   #menu .grid button { padding: 10px 8px; }  /* 버튼 줄을 낮춰 '더 보기'를 펼쳐도 창이 길어지지 않게 (44px는 그대로) */
-  #mDel { display: block; width: 100%; margin-top: 16px; background: none; color: #f88; border: 1px solid #633; }
-  .diff button { padding: 0 8px; font-size: 13px; color: #999; }
+  #mDel, #cDel { color: var(--warning); }
+  #mDel { display: block; width: 100%; margin-top: 16px; }
+  .diff button { padding: 0 8px; font-size: 13px; font-weight: 400; color: var(--ink-muted); }
   #prepDiff { max-height: 40vh; overflow: auto; }  /* 대본 전체라 길다. 아래 버튼이 화면 밖으로 밀리지 않게 */
   .ver { display: block; width: 100%; margin: 6px 0; text-align: left; }
-  .ver.on { outline: 1px solid #8af; background: #24304a; }
-  .ver small { display: block; color: #999; }
+  .ver small { display: block; font-weight: 400; color: var(--ink-muted); }
+  .ver.on small { color: var(--accent-strong); }
 
   /* 애드리브: 발표 중에는 버튼·오른쪽 칸을 숨긴다(단순화). 모은 말은 ⋯ › 더 보기 › '애드리브 정리' 창에서 본다. */
-  .ad { margin: 8px 0; padding: 8px 12px; border-radius: 10px; background: #1b2233; word-break: keep-all; overflow-wrap: anywhere; }
+  .ad { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius-lg); background: var(--accent-tint); word-break: keep-all; overflow-wrap: anywhere; }
   .ad p, .ad ul { margin: 4px 0; }
   .ad ul { padding-left: 1.2em; }
-  .ad .t { font-weight: bold; }
-  .ad .ok { color: #9e9; }
+  .ad .t { font-weight: 700; }
+  .ad .ok { color: var(--success); font-weight: 600; }
   #adBtn, #adSide { display: none; }
   @media (max-width: 360px) { footer { gap: 4px; padding-left: 8px; padding-right: 8px; } }
-  #adDlg { margin: 0 0 0 auto; width: min(520px, calc(100% - 24px)); height: 100dvh; max-height: 100dvh; border-radius: 12px 0 0 12px; }  /* 오른쪽에서 나오는 창 */
+  #adDlg { margin: 0 0 0 auto; width: min(520px, calc(100% - 24px)); height: 100dvh; max-height: 100dvh; border-radius: var(--radius-xl) 0 0 var(--radius-xl); }  /* 오른쪽에서 나오는 창 */
   /* 보기 시트: 아래에서 올라오고 뒤는 가리지 않아서 바꾼 글자 크기와 폭이 바로 보인다 */
-  #viewDlg { margin: auto auto 0; width: min(520px, 100%); border-radius: 12px 12px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  #viewDlg { margin: auto auto 0; width: min(520px, 100%); border-radius: var(--radius-xl) var(--radius-xl) 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
   #viewDlg::backdrop { background: transparent; }
-  #viewDlg button[aria-pressed=true] { background: #41639a; color: #fff; }
   #fsNow { min-width: 2em; text-align: center; font-variant-numeric: tabular-nums; }
-  .seg button { flex: 1; }  /* 리딩·연습·실전 세 단추가 한 줄을 나눠 쓴다 */
+  /* 리딩·연습·실전: 세 칸이 한 줄을 나눠 쓰는 세그먼트 컨트롤 */
+  .seg { gap: var(--space-4); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-muted); }
+  .seg button { flex: 1; min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-muted); font-weight: 400; }
+  .seg [aria-pressed=true] { box-shadow: var(--shadow-raised); font-weight: 600; }
   /* 768px 넘으면 보기와 발표 점검을 두 단으로: 시트가 낮아져 글자 크기를 바꾸며 읽는 줄(화면 위 1/3)이 보인다 */
   @media (min-width: 768px) { #viewDlg { width: min(880px, 100%); } #viewDlg .cols { display: flex; gap: 24px; } #viewDlg .cols > div { flex: 1; min-width: 0; } #viewDlg .cols h3:first-child { margin-top: 8px; } }
 
   /* 발표 점검 결과 창: 표 대신 구간마다 세 줄 블록이라 320px부터 같은 모양 */
   #checkDlg { word-break: keep-all; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-  #checkDlg summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+  #checkDlg summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
   #checkDlg p { margin: 6px 0; }
   #checkDlg ol, #checkDlg ul { margin: 6px 0; padding-left: 1.4em; }
   #checkDlg li { margin: 4px 0; }
   #cTarget { width: 6em; }
-  #cDel { background: none; color: #f88; border: 1px solid #633; }  /* 기록을 모두 지운다 (#mDel과 같은 모양) */
-  #cSum p:first-child { font-size: 18px; font-weight: bold; }
-  #checkMsg:not(:empty), #coachMsg:not(:empty) { padding: 8px; border-radius: 8px; background: #222; color: #ddd; }
+  #cSum p:first-child { font-size: 20px; font-weight: 700; line-height: 1.3; }  /* 걸린 시간 한 줄 */
+  #checkMsg:not(:empty), #coachMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
   .sec { margin: 14px 0; }
   .sec .sh { display: flex; flex-wrap: wrap; gap: 0 8px; margin: 0; }
   .sec .sh span { flex: 1 1 8em; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .sec .sh b { flex: none; font-weight: normal; color: #ccc; }
-  .cbar { position: relative; height: 8px; margin: 6px 0 4px; border-radius: 4px; background: #222; overflow: hidden; }
-  .cbar i { position: absolute; top: 0; bottom: 0; background: #555; }  /* 회색 띠: 기대 시간 */
-  .cbar b { position: absolute; left: 0; top: 2px; bottom: 2px; background: #8af; }  /* 파랑: 걸린 시간 */
-  .sec details { font-size: 14px; color: #bbb; }
+  .sec .sh b { flex: none; font-weight: 400; color: var(--ink-muted); }
+  .cbar { position: relative; height: 12px; margin: 6px 0 4px; border-radius: 4px; background: var(--surface-muted); overflow: hidden; }
+  .cbar i { position: absolute; top: 0; bottom: 0; background: var(--chart-within); }  /* 연보라 띠: 기대 시간 */
+  .cbar b { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 3px; background: var(--accent); }  /* 진한 보라: 걸린 시간 */
+  .sec details { font-size: 14px; color: var(--ink-muted); }
 </style>
 </head>
-<body class="editing">
+<body>
 <header>
+  <span class="brand e-only"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></span>
   <button id="mode" class="cta">발표</button>
   <select class="e-only grow" id="lib" aria-label="대본 고르기"></select>
   <button class="e-only" id="aiBtn">AI 도구</button>
@@ -220,8 +283,8 @@
 
 <textarea class="e-only" id="text" readonly placeholder="여기에 대본을 붙여넣으세요. 자동으로 저장됩니다."></textarea>
 <div class="e-only" id="empty" hidden>
-  <h1>라이브스크립트</h1>
-  <p>대본을 소리 내어 읽으면 지금 읽는 곳을 표시하고 화면을 내려 주는 발표 프롬프터예요. 계정 없이 이 브라우저에서 바로 씁니다.</p>
+  <h1><svg width="36" height="36" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg>말랑</h1>
+  <p>대본을 소리 내어 읽으면 지금 읽는 곳을 표시하고 화면을 내려 주는 발표 프롬프터예요. 계정 없이 이 브라우저에서 바로 써요.</p>
   <ol>
     <li>① 대본 붙여넣기 또는 AI 도구로 쓰기</li>
     <li>② 위 '발표'</li>
@@ -233,31 +296,35 @@
 <div class="p-only" id="readline" aria-hidden="true"></div>
 
 <section class="p-only" id="qa">
-  <div class="row"><span class="small grow" id="qaState"></span></div>
-  <button id="ask">질문</button>
-  <p class="small" id="live"></p>
-  <div id="qaRes" aria-live="polite">  <!-- 판정 결과만 읽어 준다. 말하는 동안 바뀌는 칩은 aria-busy로 막는다(app.js chips) -->
-    <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
-    <div id="chips"></div>
-    <p class="small" id="qaTime"></p>
+  <div id="qaL">
+    <div class="row"><span class="small grow" id="qaState"></span></div>
+    <button id="ask">질문</button>
+    <p class="small" id="live"></p>
+    <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="채팅 질문을 붙여넣고 Enter">
   </div>
-  <div id="card" hidden>
-    <p class="small" id="cardHeard"></p>
-    <h2 id="cardQ"></h2>
-    <span class="warn" id="cardCheck" hidden>직접 확인</span>
-    <ul id="cardA"></ul>
-    <p class="small" id="cardSrc" hidden></p>
-    <div id="cardMore"></div>
-  </div>
-  <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="채팅 질문을 붙여넣고 Enter">
-  <details id="all">
-    <summary>전체 질문 목록</summary>
-    <input id="allQ" type="text" enterkeyhint="search" autocomplete="off" placeholder="검색">
-    <div id="allList"></div>
-  </details>
-  <div id="qaGet" hidden>
-    <p class="small" id="qaGetMsg">AI 판정 모델이 없으면 글자 비교로 고릅니다.</p>
-    <button id="qaRetry">판정 모델 받기</button>
+  <div id="qaR">
+    <div id="qaRes" aria-live="polite">  <!-- 판정 결과만 읽어 준다. 말하는 동안 바뀌는 칩은 aria-busy로 막는다(app.js chips) -->
+      <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
+      <div id="chips"></div>
+      <p class="small" id="qaTime"></p>
+    </div>
+    <div id="card" hidden>
+      <p class="small" id="cardHeard"></p>
+      <h2 id="cardQ"></h2>
+      <span class="warn" id="cardCheck" hidden>직접 확인</span>
+      <ul id="cardA"></ul>
+      <p class="small" id="cardSrc" hidden></p>
+      <div id="cardMore"></div>
+    </div>
+    <details id="all">
+      <summary>전체 질문 목록</summary>
+      <input id="allQ" type="text" enterkeyhint="search" autocomplete="off" placeholder="검색">
+      <div id="allList"></div>
+    </details>
+    <div id="qaGet" hidden>
+      <p class="small" id="qaGetMsg">AI 판정 모델이 없으면 글자 비교로 고릅니다.</p>
+      <button id="qaRetry">판정 모델 받기</button>
+    </div>
   </div>
 </section>
 
@@ -272,10 +339,10 @@
 <div class="p-only" id="undoBar" role="status" hidden><span>여기로 옮겼어요</span><button id="undoBtn">되돌리기</button></div>
 
 <footer class="p-only">
-  <button id="prev" aria-label="이전 문장">◀</button>
+  <button id="prev" aria-label="이전 문장"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l-6 6 6 6"/></svg></button>
   <span class="grow" id="heard"><b id="offMsg">대본 밖 · 돌아오면 이어 가요</b> <span id="heardT"></span></span>
   <button id="adBtn" hidden aria-haspopup="dialog" aria-live="polite"></button>
-  <button id="next" aria-label="다음 문장">▶</button>
+  <button id="next" aria-label="다음 문장"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5l6 6-6 6"/></svg></button>
 </footer>
 
 <aside id="adSide" aria-labelledby="adSideN">
@@ -532,7 +599,7 @@
         <div class="row"><button id="coachPasteApply">적용</button></div>
       </div>
       <h3>구간</h3>
-      <p class="small">구간은 문단이고, 짧은 문단은 다음과 묶어요. 회색 띠: 기대 시간 · 파랑: 걸린 시간<span id="cSemi"> · 반음은 피아노 건반 한 칸</span></p>
+      <p class="small">구간은 문단이고, 짧은 문단은 다음과 묶어요. 연보라 띠: 기대 시간 · 진한 보라: 걸린 시간<span id="cSemi"> · 반음은 피아노 건반 한 칸</span></p>
       <p class="small" id="cNoGoal">목표 시간을 넣으면 목표에 맞춘 기대 시간으로 바뀌어요.</p>
       <div id="cSecs"></div>
     </div>
@@ -559,7 +626,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=11"></script>
-<script type="module" src="app.js?v=11"></script>
+<script src="match.js?v=12"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>

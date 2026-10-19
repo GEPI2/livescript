@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:">
 <title>말랑</title>
-<meta name="theme-color" content="#0F1115">
+<meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="icons/maskable-512.png">
@@ -37,7 +37,7 @@
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  /* 첫 화면은 어두운 값으로 시작하고, 모드가 정해질 때까지(app.js가 body.ready를 붙인다) 안내 글만 보인다. 3초 넘게 안 정해지면 그냥 보인다. */
+  /* 첫 화면은 밝은 홈이다. 홈이 열릴 때까지(app.js가 body.ready를 붙인다) 안내 글만 보인다. 3초 넘게 안 열리면 그냥 보인다. */
   body:not(.ready) > :not(#toast) { visibility: hidden; animation: reveal 0s 3s forwards; }
   @keyframes reveal { to { visibility: visible; } }
   html:has(body:not(.editing)) { color-scheme: dark; }  /* 발표 화면의 스크롤바·기본색도 어둡게 */
@@ -140,7 +140,6 @@
     footer.e-only #target { width: 100%; }
     footer.e-only #est, footer.e-only .sw, footer.e-only #altBtn { grid-column: 1 / -1; }
     footer.e-only #est { white-space: normal; font-size: 13px; }
-    footer.e-only .sw { justify-content: space-between; flex-direction: row-reverse; font-size: 15px; font-weight: 500; }
     .side { display: block; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
     .side h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
     .side .small { margin: 0 0 12px; }
@@ -148,7 +147,7 @@
     .side .seg button { min-height: 40px; padding: 0 4px; font-size: 13px; }
     .side .seg button:disabled { opacity: .5; }
     #modeInfo { margin: 8px 0 0; }
-    .side .sw { margin-top: 6px; }
+    .side .sw { margin-top: 6px; justify-content: space-between; flex-direction: row-reverse; font-size: 15px; }  /* 넓으면 자동 줄이기는 늘 이 카드에 있다(placeSw): 시안처럼 글 왼쪽·체크 오른쪽 */
     #verSide { list-style: none; margin: 0 0 10px; padding: 0; }
     #verSide li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
     #verSide li:last-child { border-bottom: 0; }
@@ -292,7 +291,7 @@
 
   /* 질의응답: 넓으면 왼쪽에 질문 듣기, 오른쪽에 준비한 답 */
   body.qa #prompt, body.qa footer, body:not(.qa) #qa { display: none; }
-  #qaBtn.hot { background: var(--accent); color: var(--on-accent); }
+  #qaBtn.hot { border-color: var(--accent); color: var(--accent-strong); }  /* 채운 단추는 마이크(정지) 하나만: 테두리로 강조 */
   #qa { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-24); max-width: var(--content-max); margin: 0 auto; padding: 88px var(--space-24) 40vh; word-break: keep-all; overflow-wrap: anywhere; }
   #qaL { flex: 1 1 320px; min-width: 0; }
   #qaR { flex: 2 1 520px; min-width: 0; }
@@ -308,7 +307,7 @@
   #ask { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: var(--control-xl); margin: 0; padding: 0 var(--space-16); border: 2px solid var(--accent); border-radius: 14px; background: transparent; font-size: 16px; }
   #ask::before, body.qa #qaBtn::before { content: ''; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }  /* 선 아이콘(굵기 1.8, 끝 둥글게) */
   #ask::before { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='5.5' y='1.5' width='5' height='8' rx='2.5'/%3E%3Cpath d='M3 8a5 5 0 0 0 10 0M8 13v2'/%3E%3C/svg%3E"); }
-  #ask.on { background: var(--accent); color: var(--on-accent); }
+  #ask.on { background: var(--accent-tint); color: var(--accent-strong); }  /* 채운 단추는 '대본으로' 하나만 */
   #ask.on::before { display: none; }
   #qaR:not(:has(#chips > *, #card:not([hidden]), #hits:not([hidden]))) #qaH { display: none; }
   #hits { margin: 0 0 var(--space-16); }
@@ -353,7 +352,7 @@
   dialog { scroll-padding-bottom: 88px; }  /* scrollIntoView가 아래 고정 단추 줄에 가려지지 않게 */
   dialog h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; line-height: 1.45; }
   dialog h3 { margin: 20px 0 4px; font-size: 15px; font-weight: 600; }
-  dialog label { display: block; margin: 8px 0; font-weight: 500; }
+  dialog label { display: block; margin: 8px 0; }
   dialog input, dialog textarea, dialog select, #qa input { display: block; width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px 12px; }
   dialog input::placeholder, dialog textarea::placeholder, #qa input::placeholder { color: var(--ink-muted); }
   dialog input:focus-visible, dialog textarea:focus-visible, dialog select:focus-visible, #qa input:focus-visible { outline-offset: 0; border-color: var(--accent); }
@@ -395,7 +394,7 @@
   .chips [aria-pressed=true] { font-weight: 600; border-width: 2px; box-shadow: none; }
   .chips .direct { display: flex; align-items: center; gap: var(--space-8); min-height: var(--control-min); margin: 0; padding: 0 var(--space-12); border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--ink-muted); font-weight: 400; }
   .chips .direct input { width: 4em; min-height: 0; padding: 0; border: 0; background: transparent; }
-  .lbl2 { margin: var(--space-16) 0 var(--space-8); font-weight: 500; }
+  .lbl2 { margin: var(--space-16) 0 var(--space-8); font-weight: 600; }
   #ai .seg { display: inline-flex; margin: 0 0 var(--space-8); }
   #ai .seg button { flex: none; padding: 0 var(--space-16); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
@@ -432,7 +431,7 @@
   /* 리딩·연습·실전: 세 칸이 한 줄을 나눠 쓰는 세그먼트 컨트롤 */
   .seg { gap: var(--space-4); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-muted); }
   .seg button { flex: 1; min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-muted); font-weight: 400; }
-  .seg [aria-pressed=true] { box-shadow: var(--shadow-raised); font-weight: 600; }
+  .seg [aria-pressed=true] { background: var(--surface); box-shadow: var(--shadow-raised); color: var(--ink); font-weight: 600; }  /* 전역 [aria-pressed]는 .seg button보다 약해서 흰 칸을 여기서 준다 */
   /* 768px 넘으면 보기와 발표 점검을 두 단으로: 시트가 낮아져 글자 크기를 바꾸며 읽는 줄(화면 위 1/3)이 보인다 */
   @media (min-width: 768px) { #viewDlg { width: min(880px, 100%); } #viewDlg .cols { display: flex; gap: 24px; } #viewDlg .cols > div { flex: 1; min-width: 0; } #viewDlg .cols h3:first-child { margin-top: 8px; } }
 
@@ -449,7 +448,7 @@
   .stat .k, .stat .note { font-size: 13px; color: var(--ink-muted); }
   .stat .v { font-size: 28px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
   .stat .note.over { color: var(--warning); font-weight: 600; }
-  .stat .v small { margin-left: 2px; font-size: 15px; font-weight: 500; color: var(--ink-muted); }
+  .stat .v small { margin-left: 2px; font-size: 15px; font-weight: 400; color: var(--ink-muted); }
   /* 대본 수정 제안(시안): 연보라 카드에 바꾸기 / 그대로 두기 */
   #cSug .sug { margin: var(--space-12) 0; padding: var(--space-20); border-radius: var(--radius-xl); background: var(--accent-tint); }
   #cSug h3 { margin: 0 0 8px; color: var(--accent-strong); font-size: 16px; }
@@ -495,7 +494,7 @@
   .sec details { font-size: 14px; color: var(--ink-muted); }
 </style>
 </head>
-<body>
+<body class="editing">
 <header>
   <button class="brand e-only" id="homeBtn" aria-label="말랑, 내 발표 보기" aria-expanded="false" aria-controls="home"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></button>
   <select class="e-only grow" id="lib" aria-label="대본 고르기"></select>
@@ -952,7 +951,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=14"></script>
-<script type="module" src="app.js?v=14"></script>
+<script src="match.js?v=15"></script>
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>

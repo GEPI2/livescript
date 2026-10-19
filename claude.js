@@ -1,7 +1,7 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=14';
-import { cleanAi } from './adlib.js?v=14';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=14';
+import { cleanPack } from './qa.js?v=15';
+import { cleanAi } from './adlib.js?v=15';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=15';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -691,9 +691,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=14');
-  const { readScript: readEx } = await import('./lib.js?v=14');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=14');
+  const { units } = await import('./shrink.js?v=15');
+  const { readScript: readEx } = await import('./lib.js?v=15');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=15');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));

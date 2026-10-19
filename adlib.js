@@ -1,7 +1,7 @@
 // 애드리브 모으기. 발표자가 대본을 따라 읽다가 대본에 없는 말을 이어 가면 그 말을 따로 모은다. node adlib.js 로 확인한다.
 // app.js가 인식 결과를 넣고(heard, end), 커서가 움직일 때마다 모으던 구간을 닫거나 나눌 자리를 적고 새로 연다(voice, anchor, close 다음에 open).
 // 구간은 '대본이 마지막으로 맞은 뒤 들은 말'이다. 그래서 '대본 밖' 표시(3초)가 뜨기 전 첫마디도 들어간다.
-import { sentSpans } from './lib.js?v=14';
+import { sentSpans } from './lib.js?v=15';
 
 export const MIN = 10;  // ponytail: 정규화 10음절(약 2초)보다 짧으면 버린다. 군말이나 대본을 맞추다 남은 조각이 대부분이다. 실제 기록으로 다시 맞춘다.
 export const MAX = 50, RAW = 2000;  // 발표 하나에 최근 50개, 하나에 2000자까지 저장한다

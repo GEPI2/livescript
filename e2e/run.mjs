@@ -454,6 +454,17 @@ t('카드: 연습에서 두 번 바꿔 말한 낱말에 점선 밑줄이 생기�
 });
 
 // ---- 내 발표(홈) ----
+t('홈: 첫 화면은 내 발표 카드다. 대본이 있어도 새로고침하면 홈에서 시작한다', async () => {
+  const p = await page(browser); await open(p, '', { home: true });
+  assert.equal(await p.locator('#home').isVisible(), true);
+  assert.equal(await p.evaluate(() => document.body.classList.contains('editing')), true);
+  assert.equal(await p.evaluate(() => document.activeElement.id), 'homeH');
+  await p.click('#homeBtn'); await sample(p);
+  await p.reload(); await p.waitForFunction(() => document.body.classList.contains('ready')); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#home').isVisible(), true, '대본이 있어도 발표 화면이 아니라 홈');
+  assert.equal(await p.locator('#hGrid .pcard.on .nm').textContent(), '예시: 말랑 소개');
+  assert.deepEqual(p.errors, []);
+});
 t('홈: 말랑을 누르면 발표 카드가 나오고, 카드를 누르면 그 대본으로 간다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.click('#homeBtn');

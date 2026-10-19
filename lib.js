@@ -190,6 +190,7 @@ export function readScript(raw, fname = '') {
   if (json && (d?.app !== 'livescript' || d.kind !== 'script')) throw new Error('말랑에서 내보낸 대본 파일이 아니에요.');
   const text = typeof d.text === 'string' ? d.text.normalize('NFC').replace(/\r\n?/g, '\n') : '';
   if (!text.trim()) throw new Error('대본이 비어 있어요.');
+  if (text.length > 100000) throw new Error('대본이 너무 길어요. 10만 자까지 가져올 수 있어요.');  // 따라가기 준비가 글 길이의 제곱으로 느려져서 한도를 둔다
   const p = d.prep;
   return {
     name: typeof d.name === 'string' ? d.name : '', text,
@@ -198,6 +199,7 @@ export function readScript(raw, fname = '') {
     pack: d.pack ?? null,
     prep: p && typeof p === 'object' && Array.isArray(p.paras) ? { h: String(p.h ?? ''), t: +p.t || 0, paras: p.paras, kw: p.kw && typeof p.kw === 'object' ? p.kw : {},
       n: Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null } : null,
+    must: Array.isArray(d.must) ? d.must.filter(x => typeof x === 'string').slice(0, 200) : [],  // 꼭 말할 문장(대본 글 그대로)
   };
 }
 
@@ -306,13 +308,16 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   // 대본 파일
   const file = { app: 'livescript', kind: 'script', name: '발표', text: '가'.normalize('NFD') + '나.', target: '7', info: { topic: '주제', bad: '1', n: 5 }, pack: { questions: [] }, prep: { h: 1, paras: [{ imp: 1 }], kw: 3 } };
-  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {}, n: null } });
-  assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null }, '글 파일');
+  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {}, n: null }, must: [] });
+  assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null, must: [] }, '글 파일');
   assert.throws(() => readScript('{"version":1,"questions":[]}', 'qa-pack.json'), /대본 파일이 아니/, '질문 팩 파일');
   assert.throws(() => readScript('{"app":"livescript"', 'a.json'), SyntaxError);
   assert.throws(() => readScript(' \n', 'a.txt'), /비어/);
+  assert.throws(() => readScript('가'.repeat(100001), 'a.txt'), /너무 길어요/, '10만 자 넘는 대본');
+  assert.equal(readScript('가'.repeat(100000), 'a.txt').text.length, 100000, '10만 자까지는 가져온다');
   assert.equal(readScript(JSON.stringify({ ...file, target: 1e9, prep: { paras: 1 } })).target, 600);
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: 1 } })).prep, null);
+  assert.deepEqual(readScript(JSON.stringify({ ...file, must: ['가.', 3, '나.'] })).must, ['가.', '나.'], '꼭 말할 문장은 글만');
   assert.deepEqual(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, 2] } })).prep.n, [3, 2], '문단마다 문장 수');
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, '2'] } })).prep.n, null, '깨진 문장 수는 버린다');
 

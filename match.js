@@ -133,6 +133,8 @@ function anchors(s, words, variants = {}) {
     if (k.length < 3 && /\d/.test(w.t)) continue;
     (per[w.s] ??= []).push({ k, end: w.n1, sent: w.s });
   }
+  // 키워드 수 × 문장 수로 느려져서(2MB 대본은 열 때마다 45초) 아주 긴 글(정규화 10만 자 넘음)은 키워드를 쓰지 않고 글자 비교로만 따라간다
+  if (s.length > 100000) return { st, list: [] };
   const sent = st.map((x, i) => s.slice(x, st[i + 1] ?? s.length));
   const vs = new Map(Object.entries(variants).map(([k, v]) => [norm(k), v.map(norm).filter(x => x.length >= 2)]));
   const list = [];
@@ -376,6 +378,8 @@ if (typeof module === 'object') {
   }
   assert.ok(DT['7문장']['많이 바꿔'].in >= 20 && DT['12문장']['많이 바꿔'].in >= 35, '많이 바꿔 읽기 12%, 11% -> 20%, 35% 이상');
 
+  { const BS = Array(9000).fill('아주 긴 대본의 한 문장입니다.'), BN = normMap(BS.join(' ')), BA = anchors(BN.s, toWords(BS));
+    assert.ok(BN.s.length > 100000 && BA.list.length === 0, '아주 긴 글은 키워드를 건너뛴다'); }
   console.log('match.js ok');
 
   // 대본의 각 문장 끝에서 애드리브 nl줄(20개 중 7개씩 건너 고름)을 어절 하나씩 들려주며, app.js onHeard와 같은 규칙으로 커서가 움직이는지 센다

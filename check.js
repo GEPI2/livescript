@@ -331,7 +331,7 @@ export function watchdog(st, win, x = {}) {
 // 막힘 기록: 'audio'는 바로, 'rec?'는 분석을 끈 뒤 5초 안에 인식 결과가 다시 왔을 때만(분석을 끄자 풀림) 'rec'. 'lost', 'denied', 'qa'는 적지 않는다
 export const blockOf = (why, offAt, resAt) => why === 'audio' ? 'audio' : why === 'rec?' && resAt > offAt && resAt - offAt <= BLOCK_MS ? 'rec' : null;
 // 꺼진 이유. 'qa': 발표 중 질의응답에 다녀와 이어 읽었다(분석은 다음 마이크 시작에 다시 켠다)
-const WHY = { 'rec?': '음성 인식이 멈춰서', audio: '분석기에 소리가 안 들어옴', lost: '마이크가 끊김', denied: '마이크를 열지 못함', qa: '질의응답에 다녀옴' };
+const WHY = { 'rec?': '음성 인식이 멈춰서', audio: '분석기에 소리가 안 들어옴', lost: '마이크가 끊김', denied: '마이크를 열지 못함', qa: 'Q&A에 다녀옴' };
 // 결과 창과 실전 뒤 편집 화면 안내에 같이 쓴다. 꺼지지 않았으면 ''. 시작하자마자 꺼졌으면(0초) 켜지 못한 것
 export const audioNote = run => !run.audio?.off ? '' : run.audio.at ? `목소리 분석이 ${mmss(run.audio.at)}에 꺼져 그 뒤 높낮이와 쉼은 없어요(이유: ${WHY[run.audio.off]}).`
   : `목소리 분석을 켜지 못해 높낮이와 쉼은 재지 않았어요(이유: ${WHY[run.audio.off]}).`;
@@ -512,8 +512,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=13');
-  const { readScript } = await import('./lib.js?v=13');
+  const { units } = await import('./shrink.js?v=14');
+  const { readScript } = await import('./lib.js?v=14');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 

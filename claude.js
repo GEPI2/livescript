@@ -1,7 +1,7 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=13';
-import { cleanAi } from './adlib.js?v=13';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=13';
+import { cleanPack } from './qa.js?v=14';
+import { cleanAi } from './adlib.js?v=14';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=14';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -22,7 +22,9 @@ export const keyStore = {
 };
 // 헤더에 넣을 수 있는 글자만 (한글이나 보이지 않는 글자가 섞이면 fetch가 네트워크 오류처럼 실패한다)
 export const keyOk = k => /^[\x21-\x7e]+$/.test(k);
-const BAD_KEY = '키에 쓸 수 없는 글자가 있어요. AI 키 설정에서 키를 다시 복사해 넣어 주세요.';
+const BAD_KEY = '키에 쓸 수 없는 글자가 있어요. AI 키에서 키를 다시 복사해 넣어 주세요.';
+// 붙여넣은 답이든 API로 받은 답이든 같은 글을 쓴다. 필드 이름 같은 개발자 말은 화면에 내지 않는다
+const NOT_FOUND = what => `받은 글에서 ${what} 찾지 못했어요. 답이 처음부터 끝까지 다 들어갔는지 확인해 주세요.`;
 
 // ---- 예상 질문 프롬프트 (API와 붙여넣기가 같은 글을 쓴다) ----
 export const PACK_SCHEMA = {
@@ -218,7 +220,7 @@ const BACKREF = /^["'“‘(]?(그래서|그러므로|따라서|그러니까|그
 
 // 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()). 반환 { paras: [{ imp, keep, drop }] (문장 번호는 0부터), kw: { 키워드: [다른 말] } }
 export function cleanPrep(obj, ps) {
-  if (!obj || !Array.isArray(obj.paras)) throw new Error('paras 목록이 없어요.');
+  if (!obj || !Array.isArray(obj.paras)) throw new Error(NOT_FOUND('문단별 결과를'));
   const flat = ps.flat();
   let o = 0;
   const paras = ps.map((sents, i) => {
@@ -231,7 +233,7 @@ export function cleanPrep(obj, ps) {
     o += n;
     return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop };
   });
-  const kw = {};
+  const kw = Object.create(null);  // 'constructor' 같은 이름도 키워드가 될 수 있다 (app.js·match.js는 Object.entries/keys만 쓴다)
   for (const it of Array.isArray(obj.kw) ? obj.kw : []) {
     const k = typeof it?.k === 'string' ? it.k.normalize('NFC').trim().slice(0, 30) : '';
     const v = (Array.isArray(it?.v) ? it.v : []).filter(x => typeof x === 'string')
@@ -332,7 +334,7 @@ export function adlibPrompt(segs) {
 // 붙여넣기에서는 items 배열만 와도 받는다.
 export function cleanAdlib(obj, n) {
   const items = Array.isArray(obj) ? obj : obj?.items;
-  if (!Array.isArray(items)) throw new Error('items 목록이 없어요.');
+  if (!Array.isArray(items)) throw new Error(NOT_FOUND('애드리브 정리를'));
   const out = Array.from({ length: n }, (_, i) => cleanAi(items.find(x => x?.n === i + 1) ?? (Number.isInteger(items[i]?.n) ? null : items[i])));
   if (!out.some(Boolean)) throw new Error('정리한 내용이 없어요.');
   return out;
@@ -421,7 +423,7 @@ ${tips.length ? tips.map(t => '- ' + (t.text ?? t)).join('\n') : '(없음)'}
 // AI 답 검사(check.js cleanAiCoach, 저장값도 같은 검사): summary 200자, 팁 3개까지, sec가 0~k 정수가 아니면 0, 빈 팁은 버림. 남은 팁이 없으면 Error
 export function cleanCoach(o, k) {
   const c = cleanAiCoach(o, k);
-  if (!c) throw new Error(Array.isArray(o?.tips) ? '쓸 만한 팁이 없어요.' : 'tips 목록이 없어요.');
+  if (!c) throw new Error(Array.isArray(o?.tips) ? '쓸 만한 팁이 없어요.' : NOT_FOUND('코칭 내용을'));
   return c;
 }
 export const parseCoach = (text, k) => parseJson(text, o => cleanCoach(o, k), '발표 코칭');
@@ -435,16 +437,18 @@ export async function coachRun(run, prev, tips, { goal, ...opts } = {}) {
 // ---- API 호출 (스트리밍: 질문이 많아도 시간 초과 없이 받고, 받은 만큼 진행을 보여 준다) ----
 function errorText(status, err = {}, model = MODEL) {
   const t = err.type || '';
-  if (status === 401 || t === 'authentication_error') return 'API 키가 맞지 않아요(401). AI 키 설정에서 키를 다시 넣어 주세요.';
+  if (status === 401 || t === 'authentication_error') return 'API 키가 맞지 않아요(401). AI 키에서 키를 다시 넣어 주세요.';
   // 지출 한도(429나 400)와 크레딧 부족(400)은 기다려도 풀리지 않는다
   if (/usage limit|credit balance/i.test(err.message || '')) return `지출 한도에 걸렸거나 크레딧이 부족해요(${status || t}). Claude Console에서 결제와 한도 설정을 확인해 주세요.`;
   if (status === 403 || t === 'permission_error') return '이 키로는 쓸 수 없어요(403). 키의 권한을 확인해 주세요.';
   if (status === 402 || t === 'billing_error') return '크레딧이나 월 지출 한도를 확인해 주세요(402).';
   if (status === 404 || t === 'not_found_error') return `이 키로는 ${model} 모델을 쓸 수 없어요(404). 키의 워크스페이스 설정을 확인해 주세요.`;
   if (status === 429 || t === 'rate_limit_error') return '요청이 너무 많아요(429). 1분쯤 뒤에 다시 해 주세요.';
-  if (status === 413 || t === 'request_too_large') return '대본이 너무 길어요(413).';
+  // 너무 긴 글은 413이 아니라 400 'prompt is too long'으로 온다
+  if (status === 413 || t === 'request_too_large' || /too long|too many tokens|maximum context/i.test(err.message || '')) return `대본이 너무 길어서 보내지 못했어요(${status || t}). 문단을 나눠 고르거나 대본을 줄여 주세요.`;
   if (status >= 500 || t === 'overloaded_error' || t === 'api_error') return `Anthropic 서버가 바빠요(${status || t}). 잠시 뒤 다시 해 주세요.`;
-  return `요청 오류(${status || t}): ${err.message || '알 수 없는 오류'}`;
+  console.warn('Anthropic 오류', status, err);  // 영어 원문은 화면에 내지 않고 콘솔에만 남긴다
+  return `AI가 요청을 처리하지 못했어요(${status || t || '?'}). 같은 오류가 되풀이되면 이 숫자를 알려 주세요.`;
 }
 
 // 반환: 모델이 쓴 글(text 블록만). 앞에 thinking 블록이 와도 건너뛴다.
@@ -536,7 +540,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(parsePack('네, 여기 있습니다.\n```json\n' + JSON.stringify(good) + '\n```').questions[0].q, '아이폰에서도 되나요?', '코드 블록이 붙어도');
   assert.equal(parsePack(JSON.stringify(good.questions)).questions.length, 1, '배열만 붙여넣어도');
   assert.throws(() => parsePack('{"questions": [ {"q": "잘린'), /JSON/);
-  assert.throws(() => parsePack('{"foo": 1}'), /questions/);
+  assert.throws(() => parsePack('{"foo": 1}'), /질문을 찾지/);
   assert.equal(parsePack('```json\n' + JSON.stringify(good) + '\n```\n참고: {끝} [1]').questions.length, 1, '코드 블록 뒤 설명에 }와 ]가 있어도');
 
   // SSE 응답을 7바이트씩 잘라서 보낸다 (한글이 중간에 잘려도 되는지)
@@ -588,6 +592,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
     assert.equal(calls.length, 0, '이상한 키는 보내지 않는다');
   }
   await err(/바빠요\(529\)/, fail(529, 'overloaded_error', 'Overloaded'));
+  await err(/너무 길어서/, fail(400, 'invalid_request_error', 'prompt is too long: 250000 tokens > 200000 maximum'));
+  await err(/처리하지 못했어요\(400\)/, fail(400, 'invalid_request_error', 'something odd'));
   await err(/인터넷 연결/, new TypeError('Failed to fetch'));
   await err(/거절했어요/, ok('', 'refusal'));
   await err(/잘렸어요/, ok('{"version":1,"questions":[{"id":"q01","q":"잘', 'max_tokens'));
@@ -635,10 +641,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(prep.paras[2], { imp: 1, keep: [1], drop: [0] }, '다음 문단 첫 문장(이처럼)이 가리키는 끝 문장은 안 뺀다, keep이 비면 빼지 않는 문장 하나');
   assert.deepEqual(prep.paras[3], { imp: 2, keep: [0], drop: [] }, '빠진 문단은 기본값');
   assert.deepEqual(prep.kw, { 도입: ['인트로'] }, '다른 말 다듬기');
+  assert.deepEqual(Object.keys(cleanPrep({ paras: [], kw: [{ k: 'constructor', v: ['생성자'] }, { k: 'toString', v: ['글자로'] }] }, []).kw), ['constructor', 'toString'], 'Object 속성 이름도 키워드로 쓴다');
   const many = Array.from({ length: 900 }, (_, i) => ({ k: '키' + i, v: i % 3 ? [] : ['말' + i] }));
   assert.equal(Object.keys(cleanPrep({ paras: [], kw: many }, []).kw).length, 300, '빈 항목은 600개 한도에 세지 않는다');
   assert.equal(parsePrep('네.\n```json\n{"paras":[{"p":1,"imp":1,"keep":[1],"drop":[]}],"kw":[]}\n```', [['가.']]).paras[0].imp, 1, '붙여넣은 JSON');
-  assert.throws(() => parsePrep('{"questions":[]}', [['가.']]), /paras/);
+  assert.throws(() => parsePrep('{"questions":[]}', [['가.']]), /문단별 결과를/);
 
   // 다른 말: Haiku, 대체 모델 없이, 숫자·영문은 그대로
   assert.deepEqual(cleanAlts({ alts: ['지렛대를', '지렛대를', ' 활용을 ', '레버리지를', '', 5] }, '레버리지를'), ['지렛대를', '활용을']);
@@ -672,7 +679,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(cleanAdlib([{ title: '첫째', points: [], worth: false, add: [] }, 'x'], 3), [{ title: '첫째', points: [], worth: false, add: [] }, null, null], '배열만, 번호 없으면 차례로, 빠진 것은 null');
   assert.deepEqual(cleanAdlib({ items: [{ n: 5, title: '없는 번호' }, { n: 1, title: '첫째' }] }, 2), [{ title: '첫째', points: [], worth: false, add: [] }, null], '번호가 있는데 다르면 차례로 쓰지 않는다');
   assert.throws(() => cleanAdlib({ items: [{ n: 1, title: 3 }] }, 1), /정리한 내용이 없어요/);
-  assert.throws(() => parseAdlib('{"paras":[]}', 1), /items/);
+  assert.throws(() => parseAdlib('{"paras":[]}', 1), /애드리브 정리를 찾지/);
   assert.equal(parseAdlib('네.\n```json\n{"items":[{"n":1,"title":"제목","points":["점"],"worth":true,"add":["문장."]}]}\n```', 1)[0].add[0], '문장.', '붙여넣은 JSON');
   mock(ok(JSON.stringify({ items: [{ n: 1, title: '작년 경험', points: ['점'], worth: true, add: ['문장.'] }, { n: 2, title: '인사', points: [], worth: false, add: [] }] })));
   assert.equal((await summarizeAdlib(AD, { key: 'k' }))[1].title, '인사');
@@ -684,9 +691,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=13');
-  const { readScript: readEx } = await import('./lib.js?v=13');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=13');
+  const { units } = await import('./shrink.js?v=14');
+  const { readScript: readEx } = await import('./lib.js?v=14');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=14');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));
@@ -718,7 +725,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual([five.tips.length, five.tips[0].sec, five.tips[1].sec, five.tips[0].what, five.tips[0].how.length, five.summary.length], [3, 2, 0, '무엇 0', 300, 200], '팁 3개, sec 99 → 0, 300자, summary 200자');
   assert.deepEqual(cleanCoach({ summary: '', tips: [{ sec: 1.5, what: '가', how: '나' }, { sec: 1, what: '', how: '나' }] }, 8).tips, [{ sec: 0, what: '가', how: '나' }], '빈 팁은 버림');
   assert.throws(() => cleanCoach({ summary: '요약', tips: [{ sec: 1, what: ' ', how: '' }] }, 8), /팁이 없어요/, '빈 팁만');
-  assert.throws(() => parseCoach('{"summary":"x"}', 8), /tips/);
+  assert.throws(() => parseCoach('{"summary":"x"}', 8), /코칭 내용을/);
   assert.throws(() => parseCoach('{"summary": "잘', 8), /JSON/);
   mock(ok(JSON.stringify(coach)));
   assert.deepEqual(await coachRun(cr, prev, ct, { key: 'k', goal: 240 }), coach);

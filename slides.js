@@ -13,9 +13,9 @@ export function zipEntries(buf) {
   let p = u32(b, e + 16);
   for (let k = 0; k < n; k++) {
     if (u32(b, p) !== 0x02014b50) throw new Error('ZIP 목록이 깨졌어요.');
-    const flag = u16(b, p + 8), method = u16(b, p + 10), size = u32(b, p + 20), len = u16(b, p + 28), ext = u16(b, p + 30), cmt = u16(b, p + 32), at = u32(b, p + 42);
+    const flag = u16(b, p + 8), method = u16(b, p + 10), size = u32(b, p + 20), usize = u32(b, p + 24), len = u16(b, p + 28), ext = u16(b, p + 30), cmt = u16(b, p + 32), at = u32(b, p + 42);
     const name = dec.decode(b.subarray(p + 46, p + 46 + len));
-    out.set(name, { method, size, at, enc: (flag & 1) === 1 });
+    out.set(name, { method, size, usize, at, enc: (flag & 1) === 1 });
     p += 46 + len + ext + cmt;
   }
   return { b, entries: out };
@@ -24,6 +24,7 @@ export async function zipRead(zip, name) {
   const en = zip.entries.get(name);
   if (!en) return null;
   if (en.enc) throw new Error('암호가 걸린 파일은 읽을 수 없어요.');
+  if (en.usize > 20e6) throw new Error('슬라이드 한 장의 글이 너무 커서 읽을 수 없어요.');  // 풀면 수백 MB가 되는 파일을 풀기 전에 막는다
   const { b } = zip, at = en.at, start = at + 30 + u16(b, at + 26) + u16(b, at + 28), data = b.subarray(start, start + en.size);
   if (en.method === 0) return data;
   if (en.method !== 8) throw new Error('지원하지 않는 압축 방식이에요.');
@@ -77,6 +78,7 @@ async function slideNotes(zip, name) {
 export async function pptxSlides(buf) {
   const zip = zipEntries(buf), names = await slideOrder(zip);
   if (!names.length) throw new Error('슬라이드를 찾지 못했어요. PPTX 파일이 맞나요?');
+  if (names.length > 300) throw new Error('슬라이드가 너무 많아요. 300장 이하로 줄여 주세요.');
   const out = [];
   for (const [i, name] of names.entries()) {
     const s = slideFromXml(await text(zip, name));
@@ -109,6 +111,7 @@ export async function pdfSlides(buf, pdfjs) {
   const doc = await pdfjs.getDocument({ data: buf instanceof Uint8Array ? buf : new Uint8Array(buf), isEvalSupported: false, disableFontFace: true }).promise;
   const out = [];
   try {
+    if (doc.numPages > 300) throw new Error('쪽이 너무 많아요. 300쪽 이하로 줄여 주세요.');
     for (let i = 1; i <= doc.numPages; i++) {
       const pg = await doc.getPage(i);
       out.push(pdfPageSlide((await pg.getTextContent()).items, i));
@@ -128,13 +131,15 @@ export const outlineLines = slides => slides.map(s => {
 // 파일 이름이나 첫 슬라이드 제목으로 쓸 발표 주제 어림값
 export const topicOf = (slides, fname = '') => slides[0]?.title && !/^슬라이드 \d+$/.test(slides[0].title) ? clip(slides[0].title, 40) : fname.replace(/\.[^.]+$/, '');
 export const slidesFrom = async (file, load = () => import('./vendor/pdfjs/pdf.min.mjs')) => {
+  if (file.size > 60e6) throw new Error('파일이 너무 커요. 60MB 이하로 줄여 주세요.');  // 통째로 읽기 전에 크기부터 본다
   const buf = new Uint8Array(await file.arrayBuffer()), kind = /\.pdf$/i.test(file.name) || file.type === 'application/pdf' ? 'pdf' : 'pptx';
-  if (buf.length > 60e6) throw new Error('파일이 너무 커요. 60MB 이하로 줄여 주세요.');
   if (kind === 'pdf') {
     const pdfjs = await load();
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
-    return { kind, slides: await pdfSlides(buf, pdfjs) };
+    try { return { kind, slides: await pdfSlides(buf, pdfjs) }; }
+    catch (e) { throw new Error({ PasswordException: '암호가 걸린 PDF는 읽을 수 없어요.', InvalidPDFException: 'PDF 파일이 올바르지 않아요.' }[e.name] || e.message); }  // pdf.js의 영어 오류를 한국어로
   }
+  if (buf[0] === 0xd0 && buf[1] === 0xcf) throw new Error('PPTX나 PDF만 읽어요. 옛 형식(.ppt)이면 PowerPoint에서 PPTX나 PDF로 저장해 주세요.');  // 옛 PPT·DOC(OLE) 서명
   return { kind, slides: await pptxSlides(buf) };
 };
 
@@ -175,6 +180,15 @@ if (typeof process === 'object' && process.argv[1]?.endsWith('slides.js')) {
   assert.equal(topicOf(sl, 'a.pptx'), '표지 제목'); assert.equal(topicOf([{ title: '슬라이드 1' }], 'IR_deck.pdf'), 'IR_deck');
   assert.throws(() => zipEntries(new Uint8Array(30)), /ZIP/);
   await assert.rejects(() => pptxSlides(zip({ 'a.txt': 'x' })), /슬라이드를 찾지/);
+  // 올린 파일이 못 읽는 것일 때 다음 할 일이 보이는 한국어 오류
+  const up = (name, bytes) => ({ name, type: '', arrayBuffer: async () => bytes.buffer });
+  const pdfErr = name => ({ GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.reject(Object.assign(new Error('English'), { name })) }) });
+  await assert.rejects(() => slidesFrom(up('a.ppt', Uint8Array.from([0xd0, 0xcf, 0x11])), null), /옛 형식\(\.ppt\)/);
+  await assert.rejects(() => slidesFrom({ ...up('a.pdf', new Uint8Array(1)), size: 61e6 }, null), /60MB/, '읽기 전에 크기를 본다');
+  await assert.rejects(() => pptxSlides(zip({ 'ppt/slides/slide1.xml': ' '.repeat(21e6) })), /너무 커서/, '풀린 글이 20MB 넘는 슬라이드');
+  await assert.rejects(() => pdfSlides(new Uint8Array(1), { getDocument: () => ({ promise: Promise.resolve({ numPages: 301, destroy() {} }) }) }), /쪽이 너무 많아요/, '301쪽');
+  await assert.rejects(() => slidesFrom(up('a.pdf', new Uint8Array(8)), async () => pdfErr('PasswordException')), /암호가 걸린 PDF/);
+  await assert.rejects(() => slidesFrom(up('a.pdf', new Uint8Array(8)), async () => pdfErr('InvalidPDFException')), /PDF 파일이 올바르지 않아요/);
   assert.deepEqual(unesc('&lt;a&gt; &#54620;&#xD55C; &amp;amp;'), '<a> 한한 &amp;');
   // PDF 쪽: 큰 글자가 위에 있으면 제목, 같은 줄은 왼쪽부터 잇는다
   const it = (str, x, y, h) => ({ str, transform: [h, 0, 0, h, x, y], height: h });

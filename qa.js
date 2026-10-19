@@ -105,7 +105,7 @@ const lines = (v, max, n) => [...new Set((Array.isArray(v) ? v : typeof v === 's
 
 export function cleanPack(obj) {
   const items = Array.isArray(obj) ? obj : Array.isArray(obj?.questions) ? obj.questions : null;
-  if (!items) throw new Error('questions 목록이 없어요.');
+  if (!items) throw new Error('받은 글에서 질문을 찾지 못했어요. 답이 처음부터 끝까지 다 들어갔는지 확인해 주세요.');
   const seen = new Set(), out = [];
   for (const it of items) {
     if (out.length >= LIMIT.questions) break;
@@ -257,9 +257,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(c.questions[3].alts.length, LIMIT.alts);
   assert.equal(c.questions[3].answer.length, LIMIT.answer);
   assert.equal(cleanPack(Array(100).fill({ q: '질문' })).questions.length, LIMIT.questions, '질문 수 상한');
-  assert.throws(() => cleanPack({}), /questions/);
+  assert.throws(() => cleanPack({}), /질문을 찾지/);
   assert.throws(() => cleanPack({ questions: [{ q: ' ' }] }), /하나도/);
-  assert.throws(() => cleanPack(null), /questions/);
+  assert.throws(() => cleanPack(null), /질문을 찾지/);
   // 예시 대본의 질문 팩은 다듬어도 8개 그대로
   const ex = JSON.parse((await import('node:fs')).readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'));
   assert.deepEqual(cleanPack(ex.pack), ex.pack, '예시 질문 팩');

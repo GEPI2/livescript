@@ -42,7 +42,7 @@
   @keyframes reveal { to { visibility: visible; } }
   html:has(body:not(.editing)) { color-scheme: dark; }  /* 발표 화면의 스크롤바·기본색도 어둡게 */
   html, body { overscroll-behavior-y: none; }  /* 대본 처음에서 아래로 쓸어도 새로고침되어 마이크가 꺼지지 않게 */
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-sans); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-sans); word-break: keep-all; overflow-wrap: break-word; }  /* 한글은 낱말 단위로 줄을 바꾼다(좁은 폭에서 마지막 줄에 한 글자만 남지 않게). 아주 긴 낱말만 끊는다 */
   a { color: var(--accent-strong); }
   :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   button { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px var(--space-14); cursor: pointer; min-height: var(--control-min); }
@@ -52,7 +52,7 @@
   .cta, .bottom .primary, #keySave { background: var(--primary-bg); border-color: transparent; color: var(--primary-fg); }
   .primary { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 한 창에 주요 단추는 하나(끝맺는 단추). 나머지 강조는 연보라 */
   .bottom .primary, #keySave { border-color: transparent; }
-  body:has(#empty:not([hidden])) #mode.cta { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 빈 화면에서는 안내 카드의 단추가 주요 */
+  body:has(#empty:not([hidden])) #mode.cta, body.home #mode.cta { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 빈 화면에서는 안내 카드의 단추가, 홈에서는 '새 발표 만들기'가 주요 */
   /* 선택된 칩·탭·세그먼트 */
   [aria-pressed=true], .tabs button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
   header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: var(--space-8); align-items: center; padding: 8px var(--space-24); background: var(--header-bg); }
@@ -75,6 +75,9 @@
   #status .main.late { background: var(--warning-tint); color: var(--warning); }
   body.qa #status { justify-content: flex-start; flex-direction: column; align-items: flex-start; gap: 0; }
   body.qa #status .t { order: 1; font-size: 14px; font-weight: 400; color: var(--ink-muted); }  /* '발표 5:03 경과' */
+  @media (max-width: 420px) { body.qa #status .t { font-size: 12px; } }  /* 폰 폭에서 '발표 0:06 경과'가 잘리지 않게 */
+  @media (max-width: 360px) { body.qa #qaBtn::before { display: none; } }
+  body.qa #status .main, body.qa #status .t { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   body.qa #status .main { order: 0; align-self: flex-start; padding: 0; background: none; color: var(--ink); font-size: 18px; font-weight: 700; }  /* '질문 답변' */
   @media (max-width: 600px) { #status .of, #status .wide { display: none; } #status .t { font-size: 22px; } #status { gap: 0 8px; } }
   /* '듣는 중' 배지: 초록 점은 들리면 채우고, 조용하면 속을 비우고, 다시 연결하는 중이면 점선. 마이크 단추(#mic)가 듣는 중일 때만 보인다 */
@@ -109,7 +112,8 @@
   body:not(.off) #offMsg { display: none; }
   body.editing .p-only, body:not(.editing) .e-only { display: none !important; }  /* #text의 display: block보다 앞서게 */
   @media (max-width: 600px) { header, footer { padding-left: var(--space-16); padding-right: var(--space-16); } .brand span { display: none; } }
-  @media (max-width: 480px) { .brand { display: none; } }
+  @media (max-width: 480px) { .brand { display: none; } }  /* 이때 '내 발표'는 ⋯ 메뉴에 있다 */
+  @media (min-width: 481px) { #mHome { display: none; } }
   @media (max-width: 420px) { header { padding-left: 12px; padding-right: 12px; } header button { padding: 8px; } }
   @media (max-width: 360px) { header { gap: 6px; padding-left: 8px; padding-right: 8px; } header button { padding: 8px 4px; } #status .main { font-size: 18px; } #status .main.late { font-size: 16px; } body.qa #status .main { font-size: 15px; } #cue { font-size: 13px; } #offMsg { padding: 6px 10px; font-size: 14px; white-space: normal; } }  /* 320px에서도 '질의응답 0:45'가 다 보이게 */
 
@@ -119,16 +123,17 @@
   #text:focus-visible { outline-offset: -3px; }
   @media (max-width: 600px) { #text { padding-inline: var(--space-16); border-inline: 0; } }
   /* 시안: 편집 화면의 주요 단추('발표')는 머리줄 맨 오른쪽 */
-  body.editing #mode { order: 9; padding-inline: var(--space-16); }
+  body.editing #mode { padding-inline: var(--space-16); }  /* 마크업 순서가 곧 화면 순서(Tab 순서)다. lib 칸이 남는 자리를 먹어서 '발표'는 오른쪽 끝 */
   body.editing #lib { margin-right: auto; }
-  button.ic { display: inline-flex; align-items: center; gap: 6px; }
+  button.ic { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   @media (max-width: 800px) { #listenBtn span { display: none; } }  /* 좁으면 그림만 (aria-label이 이름) */
   /* 넓은 화면: 아래 줄(목표·예상·자동 줄이기)과 '시간이 모자랄 때'·'버전 기록'이 오른쪽 카드 줄이 된다(시안). 대본 종이는 그 왼쪽에 카드로 둔다. 좁으면 aside는 없는 것과 같고 아래 줄만 막대로 남는다 */
   #edAside { display: contents; }
   .side { display: none; }
   @media (min-width: 1100px) {
     body.editing { --ed-pad: max(var(--space-24), calc((100% - 1232px) / 2)); }
-    body.editing #text { height: calc(100dvh - 112px); margin: 88px 0 24px var(--ed-pad); padding: var(--space-24) 28px; border: 1px solid var(--border); border-radius: var(--radius-xl); }  /* 종이도 카드로 */
+    body.editing #text { width: min(880px, calc(100% - 2 * var(--ed-pad) - 284px)); height: calc(100dvh - 112px); margin: 88px 0 24px var(--ed-pad); padding: var(--space-24) 28px; border: 1px solid var(--border); border-radius: var(--radius-xl); }  /* 종이도 카드로 */
+    body.editing #empty { left: var(--ed-pad); right: calc(var(--ed-pad) + 284px); }  /* 안내 카드는 종이 칸 가운데에 (오른쪽 카드 줄 밑으로 들어가지 않게) */
     #edAside { position: fixed; z-index: 1; right: var(--ed-pad); top: 88px; bottom: 24px; width: 260px; display: flex; flex-direction: column; gap: var(--space-16); overflow-y: auto; }
     footer.e-only { position: static; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-8); padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: none; }
     footer.e-only::before { content: '발표 시간'; grid-column: 1 / -1; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
@@ -195,7 +200,7 @@
   .hardpop .row button.no { border: 0; background: transparent; color: var(--ink-muted); font-weight: 400; }
   #cAdd { align-self: flex-start; }
   #cNav a { display: block; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--ink-muted); font-size: 12px; text-decoration: none; }
-  #cNav a i { display: block; aspect-ratio: 16 / 9; padding: 4px 6px; overflow: hidden; border-radius: 6px; background: var(--border); font-style: normal; font-size: 10px; line-height: 1.3; color: var(--ink-muted); }
+  #cNav a i { display: block; aspect-ratio: 16 / 9; padding: 4px 6px; overflow: hidden; border-radius: 6px; background: var(--border); font-style: normal; font-size: 12px; line-height: 1.3; color: var(--ink-muted); }
   #cNav a span { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #cNav a[aria-current=true] { border: 2px solid var(--accent); padding: 5px; color: var(--accent-strong); font-weight: 600; }
   #cNav a[aria-current=true] i { background: var(--accent-tint); }
@@ -221,6 +226,7 @@
   .htabs button { min-height: 44px; padding: 0 14px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ink-muted); font-weight: 400; }
   .htabs button[aria-selected=true] { background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
   .hsub { margin: 6px 0 var(--space-16); color: var(--ink-muted); }
+  .hlist > :focus-visible, #hRuns button:focus-visible, #hRunsAll button:focus-visible { outline-offset: -3px; }  /* 목록 칸이 overflow:hidden이라 바깥 테두리가 잘린다 */
   .hlist { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); margin-top: var(--space-16); }
   .hlist > button, .hlist > a, .hlist > div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); width: 100%; min-height: 56px; padding: 8px var(--space-20); border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; color: var(--ink); text-align: left; text-decoration: none; font-weight: 600; }
   .hlist > :last-child { border-bottom: 0; }
@@ -310,7 +316,7 @@
   .chip.none { border-color: transparent; background: transparent; color: var(--accent-strong); font-weight: 600; }
   .chip small { margin-left: auto; font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
   #qaLow { color: var(--warning); font-weight: 600; }
-  #qaState { flex: 1 1 12em; white-space: normal; }  /* 좁으면 '판정 모델 받기' 버튼을 다음 줄로 보내고 상태 글은 다 보이게 */
+  #qaState { flex: 1 1 12em; white-space: normal; }  /* 좁으면 '질문 찾기 모델 받기' 버튼을 다음 줄로 보내고 상태 글은 다 보이게 */
   /* 답 카드: 어두운 화면에서 밝게 떠 있는 카드(ink 바탕). 안쪽 글씨는 밝은 값을 쓴다. */
   #card { margin: 0 0 var(--space-16); padding: 26px 28px; border-radius: var(--radius-2xl); background: var(--inverse-bg); color: var(--inverse-ink); }
   #card .small { font-size: 14px; }
@@ -378,6 +384,7 @@
   .uprow .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .uprow .small { margin: 0; }
   button.icon { min-width: var(--control-min); padding: 0; border-color: transparent; background: transparent; color: var(--ink-muted); }
+  @media (max-width: 480px) { #upThumbs { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }  /* 폰에서는 칩 글자가 잘리지 않게 두 칸 */
   #upThumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: var(--space-8) 0 var(--space-12); }
   #upThumbs div { display: flex; align-items: flex-end; aspect-ratio: 16 / 9; padding: 6px 8px; overflow: hidden; border-radius: var(--radius-sm); background: var(--surface-muted); color: var(--ink-muted); font-size: 12px; line-height: 1.3; }
   #upThumbs div.more { align-items: center; justify-content: center; }
@@ -459,7 +466,7 @@
   #cDiffBox .chips { margin: 0; }
   #cDiffBox .chips button { min-height: 36px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 400; }
   #cHistBox { margin-top: var(--space-24); }
-  #cHist { display: grid; grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); gap: 10px; align-items: end; height: 120px; }
+  #cHist { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 72px); gap: 10px; align-items: end; height: 120px; }
   #cHist div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; font-size: 12px; color: var(--ink-muted); }
   #cHist i { display: block; width: 100%; border-radius: 6px 6px 0 0; background: var(--chart-past); }
   #cHist .now { color: var(--ink); font-weight: 600; }
@@ -469,7 +476,9 @@
   .lg .key { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-muted); }
   .lg .key del, .lg .key ins { padding: 0 4px; border-radius: 3px; font-size: 13px; }
   .lg .key u.chg { text-decoration: underline 2px var(--accent); text-underline-offset: 3px; }
-  .lg .key u { width: 12px; height: 4px; border-radius: 2px; background: var(--ink); }
+  .lg .key u:not(.chg) { width: 12px; height: 4px; border-radius: 2px; background: var(--ink); }
+  .lg .key { white-space: nowrap; }
+  @media (max-width: 480px) { .lg h3 { flex-basis: 100%; } }
   .lg .key b { width: 12px; height: 10px; border-radius: 3px; background: var(--chart-within); }
   .lg .key b.over { background: var(--chart-over); }
   #checkMsg:not(:empty), #coachMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
@@ -488,13 +497,13 @@
 </head>
 <body>
 <header>
-  <button class="brand e-only" id="homeBtn" aria-label="내 발표 보기" aria-haspopup="true"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></button>
-  <button id="mode" class="cta">발표</button>
-  <span class="p-only" id="listen" aria-hidden="true"><i></i><span>듣는 중</span></span>
+  <button class="brand e-only" id="homeBtn" aria-label="말랑, 내 발표 보기" aria-expanded="false" aria-controls="home"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg><span>말랑</span></button>
   <select class="e-only grow" id="lib" aria-label="대본 고르기"></select>
   <button class="e-only ic" id="listenBtn" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10L5 10H2.5z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5"/></svg><span>들어보기</span></button>
   <button class="e-only" id="aiBtn">AI 도구</button>
   <button class="e-only" id="menuBtn" aria-label="메뉴">⋯</button>
+  <button id="mode" class="cta">발표</button>
+  <span class="p-only" id="listen" aria-hidden="true"><i></i><span>듣는 중</span></span>
   <span class="p-only grow" id="status"><span class="t" id="stSec"></span><span class="of" id="stOf"></span><span class="main" id="stMain"></span><span id="cue"></span></span>
   <button class="p-only" id="view" aria-label="보기와 발표 점검(가)" aria-haspopup="dialog">가</button>
   <button class="p-only" id="qaBtn">Q&amp;A</button>
@@ -502,7 +511,7 @@
   <div id="bar" class="p-only" aria-hidden="true"><i></i><b hidden></b></div>
 </header>
 
-<textarea class="e-only" id="text" readonly placeholder="여기에 대본을 붙여넣으세요. 자동으로 저장됩니다."></textarea>
+<textarea class="e-only" id="text" readonly placeholder="여기에 대본을 붙여넣어 주세요. 자동으로 저장돼요."></textarea>
 <!-- 문단 카드(시안의 대본 편집): 글이 있으면 #text 대신 문단마다 카드. 글은 그대로 #text에 있고 카드에서 고치면 그 문단 자리만 바뀐다 -->
 <div class="e-only" id="cards" hidden>
   <nav id="cNav" aria-label="문단 목록"></nav>
@@ -515,9 +524,9 @@
   <h1><svg width="36" height="36" viewBox="0 0 30 30" aria-hidden="true"><path d="M15 3c6.5 0 12 4.2 12 11.2 0 7.3-5.6 12.8-12 12.8S3 21.5 3 14.2C3 7.2 8.5 3 15 3z" fill="#4B3FD6"/><circle cx="11" cy="14" r="1.8" fill="#FFFFFF"/><circle cx="19" cy="14" r="1.8" fill="#FFFFFF"/></svg>말랑</h1>
   <p>대본을 소리 내어 읽으면 지금 읽는 곳을 표시하고 화면을 내려 주는 발표 프롬프터예요. 계정 없이 이 브라우저에서 바로 써요.</p>
   <ol>
-    <li>① 대본 붙여넣기 또는 AI 도구로 쓰기</li>
-    <li>② 위 '발표'</li>
-    <li>③ '● 시작'을 누르고 읽기</li>
+    <li>① 대본을 붙여넣거나 'AI 도구'로 써요</li>
+    <li>② 위쪽 '발표'를 눌러요</li>
+    <li>③ '● 시작'을 누르고 소리 내어 읽어요</li>
   </ol>
   <div class="row"><button id="eSample" class="cta">예시로 둘러보기</button><button id="ePaste">직접 붙여넣기</button><a class="btn" href="guide/" target="_blank" rel="noopener">사용 안내서</a></div>
 </div>
@@ -569,28 +578,28 @@
   <div id="qaR">
     <h2 class="lbl" id="qaH">준비한 답변</h2>
     <div id="qaRes" aria-live="polite">  <!-- 판정 결과만 읽어 준다. 말하는 동안 바뀌는 칩은 aria-busy로 막는다(app.js chips) -->
-      <p class="small" id="qaLow" hidden>확신 낮음: 맞는 질문이 없을 수도 있어요</p>
+      <p class="small" id="qaLow" hidden>잘 모르겠어요. 맞는 질문이 없을 수도 있어요</p>
       <div id="chips"></div>
       <p class="small" id="qaTime"></p>
     </div>
     <div id="card" hidden>
       <div class="ctop"><span id="cardHeard">가장 비슷한 질문</span><span class="rank" id="cardRank" hidden></span></div>
-      <h2 id="cardQ"></h2>
+      <h2 id="cardQ" tabindex="-1"></h2>
       <div id="cardKeys"></div>
       <span class="warn" id="cardCheck" hidden>직접 확인</span>
       <ul id="cardA"></ul>
       <p class="small" id="cardSrc" hidden></p>
     </div>
     <div id="cardMore"></div>
-    <div id="hits" hidden><p class="small">관련 대본 구간</p><div id="hitList"></div></div>
+    <div id="hits" hidden><p class="small" id="hitsH" tabindex="-1">관련 대본 구간</p><div id="hitList"></div></div>
     <details id="all">
       <summary>전체 질문 목록</summary>
       <input id="allQ" type="text" enterkeyhint="search" autocomplete="off" placeholder="검색">
       <div id="allList"></div>
     </details>
     <div id="qaGet" hidden>
-      <p class="small" id="qaGetMsg">AI 판정 모델이 없으면 글자 비교로 고릅니다.</p>
-      <button id="qaRetry">판정 모델 받기</button>
+      <p class="small" id="qaGetMsg">질문 찾기 모델이 없으면 글자만 비교해서 골라요.</p>
+      <button id="qaRetry">질문 찾기 모델 받기</button>
     </div>
   </div>
 </section>
@@ -634,20 +643,20 @@
 
 <dialog id="prep" aria-labelledby="prepTitle">
   <h2 id="prepTitle" tabindex="-1" autofocus>Q&amp;A 준비</h2>
-  <p class="small">지금 대본으로 예상 질문과 답을 만듭니다. 만든 뒤에는 꼭 읽어 보고 고친 다음 저장하세요.</p>
+  <p class="small">지금 대본으로 예상 질문과 답을 만들어요. 만든 뒤에는 꼭 읽어 보고 고친 다음 저장해 주세요.</p>
   <label>주제 <input id="topic" data-info="topic" autocomplete="off"></label>
-  <label>청중 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
+  <label>듣는 사람 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
   <label>질문 수 <input id="count" data-info="n" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
   <div class="row">
     <button id="gen" class="primary">AI로 만들기</button>
     <button id="copyPrompt">프롬프트 복사</button>
     <button id="pasteBtn">결과 붙여넣기</button>
   </div>
-  <p class="small" id="keyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn2">AI 키 넣기</button></p>
+  <p class="small" id="keyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn2">AI 키 넣기</button></p>
   <p id="prepMsg" role="status"></p>
   <textarea id="promptOut" rows="6" readonly hidden></textarea>
   <div id="pasteBox" hidden>
-    <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
+    <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
     <div class="row"><button id="pasteApply">적용</button></div>
   </div>
 
@@ -655,12 +664,12 @@
   <div id="qList"></div>
   <button id="addQ">질문 추가</button>
 
-  <h3>판정 모델</h3>
+  <h3>질문 찾기 모델</h3>
   <p class="small" id="modelMsg"></p>
-  <button id="getModel">모델 받기 (약 135MB, 와이파이 권장)</button>
-  <label><input type="checkbox" id="autoCard"> 확신이 높으면 답 카드를 바로 열기 (e5 판정일 때)</label>
+  <button id="getModel">질문 찾기 모델 받기 (약 135MB, 와이파이 권장)</button>
+  <label><input type="checkbox" id="autoCard"> 확신이 높으면 답 카드를 바로 열기 (질문 찾기 모델을 받은 뒤에 돼요)</label>
   <div id="jevBox" hidden>
-    <label><input type="checkbox" id="jevOn"> JEV 모드 (실험): 판정 모델 Kev-0.6B가 e5 후보 5개를 다시 고릅니다</label>
+    <label><input type="checkbox" id="jevOn"> 더 큰 AI 모델로 한 번 더 고르기 (실험, 컴퓨터 Chrome 권장)</label>
     <p class="small" id="jevMsg"></p>
     <button id="getJev" hidden></button>
   </div>
@@ -684,7 +693,7 @@
     <button id="aiQa">Q&amp;A 준비</button>
   </div>
   <div data-pane="gen">
-    <p class="small">발표 정보를 넣으면 AI가 대본 초안을 씁니다. 바뀌는 곳을 확인하고 '적용'을 눌러야 대본이 바뀝니다.</p>
+    <p class="small">발표 정보를 넣으면 AI가 대본 초안을 써요. 바뀌는 곳을 확인하고 '적용'을 눌러야 대본이 바뀌어요.</p>
     <!-- 발표자료 올리기(시안): 자료는 이 기기 안에서만 읽고, 슬라이드마다 한 줄씩 아래 개요 칸에 넣는다 -->
     <label class="drop" id="upDrop" for="slideFile">
       <svg width="32" height="32" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24V8M11 15l7-7 7 7"/><path d="M7 24v4h22v-4"/></svg>
@@ -717,7 +726,7 @@
     <label id="onlySelBox"><input type="checkbox" id="onlySel" checked> <span id="selInfo"></span></label>
   </div>
   <div data-pane="prep">
-    <p class="small">대본을 다 쓴 뒤 한 번 하세요. 늦어질 때 뺄 문장과, 문장의 키워드를 다르게 말해도 따라가도록 비슷한 말을 정해 둡니다. 발표 중에는 AI를 부르지 않습니다.</p>
+    <p class="small">대본을 다 쓴 뒤 한 번 해 두세요. 늦어질 때 뺄 문장과, 키워드를 다르게 말해도 따라가도록 비슷한 말을 정해 둬요. 발표 중에는 AI를 부르지 않아요.</p>
     <p id="prepState"></p>
     <p class="small drop" id="prepCap" hidden><del>흐린 글</del> = 늦으면 뺄 문장</p>
     <div class="diff drop" id="prepDiff" hidden></div>
@@ -749,7 +758,7 @@
 
 <dialog id="hist" aria-labelledby="histTitle">
   <h2 id="histTitle">버전</h2>
-  <p class="small">발표를 시작할 때, AI 결과를 적용하기 전, '버전 저장'을 누를 때 대본마다 최근 30개까지 남습니다.</p>
+  <p class="small">발표를 시작할 때, AI 결과를 적용하기 전, '버전 저장'을 누를 때 대본마다 최근 30개까지 남아요.</p>
   <div class="row"><button id="verSave" class="primary">버전 저장</button></div>
   <p id="histMsg" role="status"></p>
   <div id="verList"></div>
@@ -767,6 +776,7 @@
 <dialog id="menu" aria-labelledby="menuTitle">
   <h2 id="menuTitle">메뉴</h2>
   <div class="grid">
+    <button id="mHome">내 발표</button>
     <button id="mCheck">발표 점검</button>
     <button id="prepBtn">Q&amp;A 준비</button>
     <button id="mImport">파일 가져오기</button>
@@ -787,8 +797,8 @@
   </div>
   <details>
     <summary>데이터가 가는 곳</summary>
-    <p class="small">말소리는 글자로 바꾸려고 Google(Chrome) 또는 Apple(Safari)로 갑니다. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 갑니다. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 갑니다. 질의응답 질문은 이 기기 안에서 판정해서 밖으로 나가지 않습니다. 판정 모델은 Hugging Face에서 기기마다 한 번 받습니다.</p>
-    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 하고 소리를 저장하지 않습니다. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보냅니다. 목소리와 대본 글은 보내지 않습니다. 연습 기록은 이 기기에만 남고 파일로 내보내기에는 들어가지 않습니다. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 누르세요.</p>
+    <p class="small">말소리는 글자로 바꾸려고 Google(Chrome)이나 Apple(Safari)로 가요. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 가요. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 가요. Q&A 질문은 이 기기 안에서 골라서 밖으로 나가지 않아요. 질문 찾기 모델은 Hugging Face에서 기기마다 한 번 받아요.</p>
+    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 하고 소리를 저장하지 않아요. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보내요. 목소리와 대본 글은 보내지 않아요. 연습 기록은 이 기기에만 남고 파일로 내보내기에는 들어가지 않아요. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 눌러 주세요.</p>
     <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   </details>
   <button id="mDel">대본 삭제</button>
@@ -815,13 +825,13 @@
 <dialog id="shrinkDlg" aria-labelledby="shrinkTitle">
   <h2 id="shrinkTitle">목표 시간보다 길어요</h2>
   <p id="shrinkMsg"></p>
-  <p class="small">'발표 준비'에서 고른 덜 중요한 문장을 뺐습니다. 새로 쓴 문장은 없고, 편집 화면의 대본은 그대로입니다.</p>
+  <p class="small">'발표 준비'에서 고른 덜 중요한 문장을 뺐어요. 새로 쓴 문장은 없고, 편집 화면의 대본은 그대로예요.</p>
   <p class="small drop"><del>흐린 글</del> = 늦으면 뺄 문장</p>
   <div class="diff drop" id="shrinkDiff"></div>
   <div class="row bottom">
     <button id="shrinkYes" class="cta">줄인 대본으로 시작</button>
     <span class="grow"></span>
-    <button id="shrinkNo">원문 그대로 시작</button>
+    <button id="shrinkNo">원본으로 시작</button>
   </div>
 </dialog>
 
@@ -834,11 +844,11 @@
     <button id="adPaste">결과 붙여넣기</button>
     <button id="adCopy">복사</button>
   </div>
-  <p class="small" id="adKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn4">AI 키 넣기</button></p>
+  <p class="small" id="adKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn4">AI 키 넣기</button></p>
   <p id="adMsg" role="status"></p>
   <textarea id="adOut" rows="6" readonly hidden aria-label="복사할 글"></textarea>
   <div id="adPasteBox" hidden>
-    <textarea id="adPasteIn" rows="6" aria-label="챗봇이 돌려준 JSON" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
+    <textarea id="adPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
     <div class="row"><button id="adPasteApply">적용</button></div>
   </div>
   <div id="adList"></div>
@@ -898,11 +908,11 @@
         <button id="coachPaste">결과 붙여넣기</button>
       </div>
       <p class="small">AI에는 구간 번호와 잰 숫자만 보내요. 대본 글과 목소리는 보내지 않아요.</p>
-      <p class="small" id="coachKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 JSON을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn5">AI 키 넣기</button></p>
+      <p class="small" id="coachKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn5">AI 키 넣기</button></p>
       <p id="coachMsg" role="status"></p>
       <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
       <div id="coachPasteBox" hidden>
-        <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 JSON" placeholder="챗봇이 돌려준 JSON을 그대로 붙여넣으세요"></textarea>
+        <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
         <div class="row"><button id="coachPasteApply">적용</button></div>
       </div>
       <div class="lg"><h3>구간별 시간</h3><span class="key"><u></u>목표</span><span class="key"><b class="ok"></b>시간 안</span><span class="key"><b class="over"></b>초과</span></div>
@@ -929,10 +939,10 @@
 
 <dialog id="keyDlg" aria-labelledby="keyTitle">
   <h2 id="keyTitle">AI 키</h2>
-  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송됩니다. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보냅니다. 목소리와 대본 글은 보내지 않습니다.</p>
+  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보내요. 목소리와 대본 글은 보내지 않아요.</p>
   <p class="small" id="keyState"></p>
   <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
-  <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워집니다)</label>
+  <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워져요)</label>
   <p class="small" id="keyShared" hidden>이 주소(github.io)는 같은 GitHub 계정의 다른 Pages 사이트와 저장 공간을 같이 써서, 기억한 키를 그 사이트들도 읽을 수 있어요. 팀 키는 기억하지 말고 이 탭에만 두세요.</p>
   <div class="row">
     <button id="keySave" class="primary">저장</button>
@@ -942,7 +952,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=13"></script>
-<script type="module" src="app.js?v=13"></script>
+<script src="match.js?v=14"></script>
+<script type="module" src="app.js?v=14"></script>
 </body>
 </html>

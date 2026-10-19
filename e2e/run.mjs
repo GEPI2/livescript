@@ -287,7 +287,7 @@ t('결과: 두 번 이어 바꿔 말하면 대본 수정을 제안하고 바꾸�
   const after = await p.inputValue('#text');
   assert.ok(before.includes('소리 내어') && !after.includes('소리 내어') && after.includes('소리 내서'), '대본에서 바뀌었다');
   assert.equal(await p.locator('#cSug .sug').count(), 0);
-  assert.match(await p.textContent('#checkMsg'), /'내어'을\(를\) '내서'\(으\)로 \d+곳 바꿨어요\. 새 버전으로 저장했어요\./);
+  assert.match(await p.textContent('#checkMsg'), /\d+곳을 바꿨어요: '내어' → '내서'\. 새 버전으로 저장했어요\./);
   const vers = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.vers'))) || '[]'));
   assert.equal(vers[0].label, '연습 제안 반영'); assert.ok(vers[0].text.includes('소리 내서'), '새 버전');
   assert.ok(vers.slice(1).some(v => v.text.includes('소리 내어')), '바꾸기 전 대본도 버전에 남아 있다(발표 시작 때 저장된 것)');
@@ -440,9 +440,13 @@ t('카드: 연습에서 두 번 바꿔 말한 낱말에 점선 밑줄이 생기�
   assert.equal(await p.locator('.hardpop').isVisible(), true);
   assert.match(await p.textContent('.hardpop .small'), /^'내어' — 연습 때 2번 막혔어요$/);
   assert.deepEqual(await p.locator('.hardpop .row button').allTextContents(), ['내서', '추천 안 함']);
+  await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  assert.equal(await p.locator('.hardpop').count(), 0, 'Esc로 추천 창이 닫힌다');
+  await hard.first().click();
   await p.screenshot({ path: OUT + '/cards-hard.png' });
   const before = await textOf(p);
   await p.click('.hardpop .row button:first-child'); await p.waitForTimeout(300);
+  assert.match(String(await p.evaluate(() => document.activeElement?.id)), /^p\d+$/, '고른 뒤 포커스는 그 문단 카드로 간다');
   const after = await textOf(p);
   assert.equal(after.split('내어').length - 1, before.split('내어').length - 2, '누른 자리 하나만 바뀐다');
   assert.equal(after.split('내서').length - 1, 1);
@@ -457,7 +461,7 @@ t('홈: 말랑을 누르면 발표 카드가 나오고, 카드를 누르면 그 
   assert.equal(await p.textContent('#homeH'), '어떤 발표를 준비할까요?');
   assert.equal(await p.locator('#hGrid .pcard').count(), 3, '대본 둘(처음 빈 대본, 예시) + 새 발표 만들기');
   assert.equal(await p.locator('#hGrid .pcard.on .nm').textContent(), '예시: 말랑 소개');
-  assert.match(await p.locator('#hGrid .pcard.on .mt').textContent(), /^목표 3:00 · 아직 연습 전$/);
+  assert.match(await p.locator('#hGrid .pcard.on .mt').textContent(), /^목표 3:00$/);
   assert.match(await p.locator('#hGrid .pcard.on .th').textContent(), /^안녕하세요\. 오늘은/);
   assert.equal(await p.locator('#hGrid .pcard .badge').first().textContent(), '대본 쓰는 중');
   await p.screenshot({ path: OUT + '/home.png' });
@@ -498,14 +502,79 @@ t('홈: 새 발표 만들기는 이름을 묻고 대본을 더한다. 연습 기
 });
 
 // ---- 설치형 앱: 서비스 워커, 글꼴 ----
+t('홈: 폰 폭에서는 머리줄에 말랑 단추가 없고 ⋯ 메뉴의 내 발표로 간다', async () => {
+  const p = await page(browser, { viewport: { width: 375, height: 812 } }); await open(p); await sample(p);
+  assert.equal(await p.locator('#homeBtn').isVisible(), false, '폰 폭에서는 머리줄 공간이 모자라 숨는다');
+  await p.click('#menuBtn'); assert.equal(await p.locator('#mHome').isVisible(), true);
+  await p.click('#mHome'); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#home').isVisible(), true, '홈이 열린다');
+  assert.equal(await p.locator('dialog[open]').count(), 0, '메뉴는 닫힌다');
+  assert.deepEqual(p.errors, []);
+});
+
+t('발표: Tab으로 단추에 간 뒤 스페이스는 그 단추를 누르고, 마우스로 연 창을 닫은 뒤 스페이스는 마이크다', async () => {
+  const p = await page(browser); await open(p); await sample(p); await present(p);
+  const before = await p.textContent('#mic');
+  await p.evaluate(() => document.activeElement?.blur());
+  for (let i = 0; i < 14 && await p.evaluate(() => document.activeElement?.id) !== 'view'; i++) await p.keyboard.press('Tab');
+  assert.equal(await p.evaluate(() => document.activeElement?.id), 'view', 'Tab으로 가 단추에 닿는다');
+  await p.keyboard.press('Space'); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#viewDlg').evaluate(d => d.open), true, '보기 창이 열린다');
+  assert.equal(await p.textContent('#mic'), before, '마이크는 켜지 않는다');
+  await p.click('#viewClose'); await p.waitForTimeout(200);
+  // 마우스로 연 창을 닫으면 포커스가 보기 단추로 돌아와도 스페이스는 마이크를 켠다
+  await p.click('#view'); await p.waitForTimeout(200); await p.click('#viewClose'); await p.waitForTimeout(200);
+  await p.keyboard.press('Space'); await p.waitForTimeout(300);
+  assert.notEqual(await p.textContent('#mic'), before, '마우스를 쓴 뒤 스페이스는 마이크를 켠다');
+  assert.deepEqual(p.errors, []);
+});
+
+t('보관함: 다른 탭이 만든 대본은 이 탭이 저장해도 목록에서 사라지지 않는다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  const p2 = await p.context().newPage(); await p2.goto(BASE); await p2.waitForFunction(() => !document.getElementById('text').readOnly); await p2.waitForTimeout(300);
+  p2.once('dialog', d => d.accept('두번째'));
+  await p2.evaluate(() => { const s = document.getElementById('lib'); s.value = '+'; s.onchange(); });
+  await p2.waitForTimeout(400);
+  // 옛 목록을 든 첫 탭이 글을 고쳐 저장한다 (예전에는 이때 ls.lib이 옛 목록으로 돌아가 '두번째'가 사라졌다)
+  await p.evaluate(() => { const ta = document.getElementById('text'); ta.value += ' '; ta.dispatchEvent(new Event('input')); });
+  await p.waitForTimeout(300);
+  const names = await p.evaluate(() => JSON.parse(localStorage.getItem('ls.lib')).list.map(x => x.name));
+  assert.ok(names.includes('두번째'), '다른 탭의 대본이 남는다: ' + names);
+  assert.ok(names.length >= 3, '대본 셋: ' + names);
+});
+
+t('보관함: 같은 이름의 새 대본에는 (2)를 붙이고, 기본 이름은 안 쓰인 가장 작은 번호다', async () => {
+  const p = await page(browser); await open(p);
+  p.once('dialog', d => d.accept('대본 1'));
+  await p.evaluate(() => { const s = document.getElementById('lib'); s.value = '+'; s.onchange(); });
+  await p.waitForTimeout(300);
+  let seen = '';
+  p.once('dialog', d => { seen = d.defaultValue(); d.dismiss(); });
+  await p.evaluate(() => { const s = document.getElementById('lib'); s.value = '+'; s.onchange(); });
+  await p.waitForTimeout(300);
+  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#lib option')].map(o => o.textContent).filter(x => !x.includes('새 대본'))), ['대본 1', '대본 1 (2)']);
+  assert.equal(seen, '대본 2', '기본 이름');
+});
+
+t('앱: 파일을 올리기 칸 밖에 놓아도 브라우저가 그 파일로 이동하지 않는다(글은 막지 않는다)', async () => {
+  const p = await page(browser); await open(p);
+  const r = await p.evaluate(() => {
+    const drag = types => { const dt = new DataTransfer(); for (const k of types) k === 'file' ? dt.items.add(new File(['x'], 'a.txt')) : dt.setData('text/plain', 'x'); const ev = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return ev.defaultPrevented; };
+    return { file: drag(['file']), text: drag(['text']) };
+  });
+  assert.equal(r.file, true, '파일은 이동을 막는다');
+  assert.equal(r.text, false, '글 끌어다 놓기는 그대로');
+});
+
 t('앱: 서비스 워커가 새 파일과 글꼴을 캐시하고, 오프라인에서도 열린다', async () => {
   // localhost에서는 앱이 서비스 워커를 켜지 않으므로(개발용) livescript.localhost 주소로 연다
-  const p = await page(browser); await p.goto('http://livescript.localhost:8765/'); await p.waitForFunction(() => !document.getElementById('text').readOnly);
+  const p = await page(browser); await p.goto(BASE.replace('//localhost', '//livescript.localhost'));  // BASE의 포트를 따른다 await p.waitForFunction(() => !document.getElementById('text').readOnly);
   await p.evaluate(() => navigator.serviceWorker.ready);
   await p.reload(); await p.waitForFunction(() => !document.getElementById('text').readOnly);
   await p.waitForTimeout(1500);
   const keys = await p.evaluate(async () => { const out = {}; for (const k of await caches.keys()) out[k] = (await (await caches.open(k)).keys()).map(r => new URL(r.url).pathname.split('/').pop().split('?')[0]); return out; });
-  assert.ok(keys['livescript-v13'].includes('slides.js') && keys['livescript-v13'].includes('compare.js'), '새 모듈이 미리 받기 목록에 있다');
+  const vk = Object.keys(keys).find(k => /^livescript-v\d+$/.test(k));  // ?v= 를 올려도 시험이 깨지지 않게 이름을 찾는다
+  assert.ok(keys[vk]?.includes('slides.js') && keys[vk].includes('compare.js'), '새 모듈이 미리 받기 목록에 있다');
   assert.ok(keys['livescript-fonts-1'].includes('plex.css'), '글꼴 CSS');
   assert.ok(keys['livescript-fonts-1'].some(f => f.endsWith('.woff2')), '쓴 글자의 글꼴 조각');
   assert.equal(await p.evaluate(() => document.fonts.check('16px "IBM Plex Sans KR"')), true);

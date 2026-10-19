@@ -1,15 +1,15 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=15';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=15';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=15';
-import { slidesFrom, outlineLines, topicOf } from './slides.js?v=15';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey } from './compare.js?v=15';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=15';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=15';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=15';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=16';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=16';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=16';
+import { slidesFrom, outlineLines, topicOf } from './slides.js?v=16';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey } from './compare.js?v=16';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=16';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=16';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=16';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, mRow, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME } from './check.js?v=15';
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME } from './check.js?v=16';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -606,6 +606,8 @@ function show() {
   // 발표 점검 구간은 자동 줄이기 단위와 같다(발표 준비가 없으면 준비 없이 나눈 단위, 경계는 같다). 보이는 문장 → 구간
   SU = U ?? units(text, [], spoken);
   secOf = secMap(SU, shr.on && U ? shr.lv : null);
+  const ms = new Set(must()), lv = shr.on && U ? shr.lv : null;
+  keyOf = SU.flatMap((u, i) => u.s.filter(x => !lv || x.top >= lv[i]).map(x => ms.has(text.slice(x.a, x.b))));  // 보이는 문장 → 꼭 말할 문장인가(강조를 잰다)
   if (acc?.length !== SU.length) newRun(true);
 }
 
@@ -748,7 +750,7 @@ let cueOn = store.get('ls.cue') !== '0';  // 실시간 힌트 보기 (기기마�
 // rd: 구간마다 말투 신호 수, cues: [[힌트, 경과 초]], runAud: 목소리 분석(null이면 안 함, { off: 꺼진 이유, at }), re: 발표 중 새로고침했나
 // runT: 기록 번호(처음 시작한 때). t0는 질의응답 시간이나 긴 쉼만큼 뒤로 밀리므로 따로 둔다
 let tx = [];  // 구간마다 그때 들은 확정 말(연습 결과의 '대본과 실제로 한 말'). acc와 같은 때 새로 시작한다
-let SU = [], secOf = [], acc = null, hs = newHear(), runKind = null, rd = [], cues = [], runAud = null, re = false, runT = 0;
+let SU = [], secOf = [], keyOf = [], acc = null, hs = newHear(), runKind = null, rd = [], cues = [], runAud = null, re = false, runT = 0;
 // 메모리만: 말 빠르기 창(5초마다 한 줄), 판정 상태, 보이는 힌트, 높낮이·쉼 프레임(F), 켜진 분석(au)
 let ring = [], ringT = 0, rdT = 0, pst = newPace(), pace = null, readNow = false, flatW = null, cst = newCue(), cueK = null, F = null, au = null;
 let lastTick = Date.now(), resN = 0, recProbe = 0;  // resN: 받은 인식 결과 수(감시용), recProbe: 인식기 굶음으로 분석을 끈 때
@@ -764,10 +766,13 @@ function newRun(keep = false) {
 // 옮겨 간 어절의 문장(구간 첫 어절로 옮기고 읽기 전까지가 건너뛴 앞 구간에 들지 않게). 40ms마다 부르므로 위치와 대본이 그대로면 다시 찾지 않는다.
 let secMemo = null, lastBy = null;  // lastBy: 마지막으로 커서를 옮긴 것 (setCur)
 function secNow() {
-  if (secMemo?.cur !== cur || secMemo.words !== words || secMemo.by !== lastBy)
-    secMemo = { cur, words, by: lastBy, s: Math.max(0, Math.min(secOf[sentAt(words, cur + (lastBy === 'voice' ? 0 : 1))] ?? 0, SU.length - 1)) };
+  if (secMemo?.cur !== cur || secMemo.words !== words || secMemo.by !== lastBy) {
+    const i = sentAt(words, cur + (lastBy === 'voice' ? 0 : 1));
+    secMemo = { cur, words, by: lastBy, s: Math.max(0, Math.min(secOf[i] ?? 0, SU.length - 1)), key: !!keyOf[i] };
+  }
   return secMemo.s;
 }
+const keyNow = () => (secNow(), secMemo.key);  // 지금 문장이 꼭 말할 문장인가
 const wallSum = () => acc ? acc.reduce((x, a) => x + a.wall, 0) : elapsed();  // 결과 창 총 시간과 같은 기준(구간 걸린 시간 합)
 // 발표 중 지금 구간의 누적. 시작 전, 질의응답 중, 대본 끝에 닿은 뒤(맺음말, 정지 뒤에 오는 확정 결과)면 없음 (걸린 시간을 더하는 coachTick과 같은 조건)
 const accAt = () => listening && t0 && !qaMode && !end && acc?.[secNow()];
@@ -820,7 +825,7 @@ function showCoach() {
   // '말하듯이'는 목소리 분석이 있어야 나오므로 분석이 꺼져 있으면(휴대폰, Safari, 끔) 말하지 않는다
   $('modeHelp').textContent = listening ? '정지한 뒤 바꿀 수 있어요.' : {
     read: '힌트 없이 재기만 해요. 끝나면 결과를 보여 줘요.',
-    practice: (audioWant() ? '빠르기와 말투' : '빠르기') + ' 힌트를 위에 하나씩 보여 줘요. 끝나면 결과를 보여 줘요.',
+    practice: (audioWant() ? '빠르기와 말투' : '빠르기') + ' 힌트를 위에 하나씩 보여 줘요. 끝나면 결과를 보여 주고, AI 키가 있으면 AI 코칭도 바로 받아요.',
     live: "'천천히'만 흐리게 보여 줘요. 결과는 정지한 뒤 아래 '점검 결과'에서 봐요." + (desk ? " 목소리 분석을 켜면 '말하듯이'도 보여 줘요. 연습에서 먼저 써 보세요." : ''),
   }[coach] + (blk ? ` 지난번에 ${blk === 'rec' ? '음성 인식이 멈춰서' : '분석기에 소리가 안 들어와서'} 목소리 분석을 꺼 뒀어요. 켜면 다시 시험해요.` : '');
   $('audioRow').hidden = !desk;
@@ -840,7 +845,7 @@ $('audioOn').onchange = () => {
 $('checkOpen').onclick = () => { $('viewDlg').close(); openCheck(); };
 $('mCheck').onclick = () => openCheck();
 
-// ---- 목소리 분석: PC Chrome에서 인식기와 따로 마이크를 하나 더 열어 높낮이와 쉼을 잰다 (소리는 저장하지 않는다) ----
+// ---- 목소리 분석: PC Chrome에서 인식기와 따로 마이크를 하나 더 열어 높낮이·쉼·크기·끝 흐림·강조를 잰다 (소리는 저장하지 않는다) ----
 // 인식기는 건드리지 않는다. 부딪치면 분석만 끄고, 멈춘 인식기는 기존 '다시 듣기'가 맡는다.
 const devKind = () => deviceKind(navigator, matchMedia('(pointer: coarse)').matches, !!window.AudioContext);
 const getJ = k => { try { const v = JSON.parse(store.get(k)); return v && typeof v === 'object' ? v : null; } catch { return null; } };
@@ -876,7 +881,7 @@ function startAudio() {
 }
 // 40ms마다 프레임 하나. 1초마다 감시: 분석기 말소리, 인식 결과 수, 들은 음절, 최대 dB, 바닥, 모두 0
 function audioFrame(me, buf) {
-  const t = performance.now(), r = F.push(buf, me.ctx.sampleRate, t, secNow());
+  const t = performance.now(), r = F.push(buf, me.ctx.sampleRate, t, secNow(), keyNow());
   // 탭이 숨으면 Chrome이 40ms 타이머를 1초 넘게 늦춰 1초 칸에 프레임이 한두 개뿐이다. 그런 칸으로는 충돌을 판정하지 않는다
   if (document.hidden) { me.b = []; me.c = null; return; }
   const c = me.c ??= { t, sp: 0, mx: -Infinity, fl: 0, res: resN, hn: hs.n };
@@ -920,7 +925,7 @@ function saveRun() {
   for (const g of ads) ad[origSec[Math.max(0, g.s ?? 0)] ?? 0]++;  // 애드리브의 앞 문장(원문 번호)이 든 구간
   const r = buildRun({
     t0: runT || t0, kind: runKind || coach, h: hashText(text), target: Math.round(target * 60), r0, el: elapsed(), pct: S.s.length ? Math.round(cur / S.s.length * 100) : 0,
-    lv, re, audio: runAud, acc, aud: F?.secs() ?? null, rd, ad, cues, ai: null,
+    lv, re, audio: runAud, acc, aud: F?.secs() ?? null, emph: F?.emph() ?? null, rd, ad, cues, ai: null,
     info: SU.map((u, i) => ({ w: text.slice(u.s[0].a, u.s[0].a + 40).replace(/\s+/g, ' ').slice(0, 20), n: u.len[lv?.[i] ?? 0], lv: lv?.[i] ?? 0 })),
   });
   if (!r) return null;
@@ -942,7 +947,7 @@ function runPair() {
   const i = runs.findIndex(r => r.t0 === runSel), k = i < 0 ? runs.length - 1 : i;
   return [runs[k] ?? null, runs[k - 1] ?? null];
 }
-const ruleTips = (run, goal) => tips(run, goal).map(x => x.text);
+const ruleTips = (run, goal) => tips(run, goal, 9).map(x => x.text);  // AI에는 화면의 3개보다 많이 준다
 
 function openCheck(t) {
   runSel = t || 0;  // 없으면 가장 최근 기록
@@ -1047,8 +1052,8 @@ function renderCheck() {
   runSel = run.t0;
   $('cRun').replaceChildren(...[...runs].reverse().map(r => new Option(runLabel(r), r.t0, false, r === run)));
   const sum = sumLines(run, prev, goal);
-  if (!run.audio) sum.push(devKind() === 'desktop' ? "목소리 분석 없이 쟀어요. 발표 화면 '가'에서 '목소리 분석(높낮이·쉼)'을 켜면 높낮이와 쉼도 봐요."
-    : '이 브라우저에서는 높낮이와 쉼을 재지 않아요. PC Chrome에서 연습하면 볼 수 있어요.');
+  if (!run.audio) sum.push(devKind() === 'desktop' ? "목소리 분석 없이 쟀어요. 발표 화면 '가'에서 '목소리 분석(높낮이·쉼·크기)'을 켜면 높낮이·쉼·목소리 크기도 봐요."
+    : '이 브라우저에서는 높낮이·쉼·목소리 크기를 재지 않아요. PC Chrome에서 연습하면 볼 수 있어요.');
   $('cStats').replaceChildren(...statCards(run, prev, goal).map(c => {
     const box = mk('div', '', 'stat'), n = mk('div', c.note, c.over ? 'note over' : 'note');
     const v = mk('div', c.value, 'v');
@@ -1128,7 +1133,7 @@ function shrinkFromCheck() {
   $('checkTitle').focus();  // 누른 단추는 다시 그려져 없어졌다
 }
 
-// AI 코칭: 구간 번호와 잰 숫자만 보낸다(claude.js coachPrompt). 키가 없으면 프롬프트 복사 → 결과 붙여넣기. 결과는 그 기록의 ai에 둔다.
+// AI 코칭: 잰 숫자와 읽은 구간의 대본·들은 말을 보낸다(claude.js coachPrompt). 키가 없으면 프롬프트 복사 → 결과 붙여넣기. 결과는 그 기록의 ai에 둔다.
 function setCoachAi(t, ai) {
   const r = runs.find(x => x.t0 === t);
   if (!r) { coachMsg('그사이 기록이 지워졌어요.'); return false; }
@@ -1139,7 +1144,7 @@ function setCoachAi(t, ai) {
   coachMsg("AI 코칭을 받았어요. 위 'AI 코칭'에서 볼 수 있어요.");
   return true;
 }
-$('coachAi').onclick = async () => {
+async function askCoach() {
   if (coachCtl) return coachCtl.abort();
   const [run, prev] = runPair();
   if (!run) return;
@@ -1149,7 +1154,7 @@ $('coachAi').onclick = async () => {
   $('coachMsg').setAttribute('aria-busy', 'true');  // 받는 동안 바뀌는 글자 수를 화면 읽기가 하나하나 읽지 않게
   try {
     const ai = await coachRun(run, prev, ruleTips(run, goal), {
-      key: keyStore.get(), signal: ctl.signal, goal,
+      key: keyStore.get(), signal: ctl.signal, goal, says: compareOf(run)?.says,
       onProgress: x => coachMsg(x.chars ? `AI가 쓰는 중… ${x.chars}자` : 'AI가 생각하는 중…'),
     });
     setCoachAi(run.t0, ai);
@@ -1160,13 +1165,14 @@ $('coachAi').onclick = async () => {
     if (coachCtl === ctl) coachCtl = null;
     $('coachAi').textContent = 'AI 코칭';
   }
-};
+}
+$('coachAi').onclick = askCoach;
 $('coachPrompt').onclick = () => {
   const [run, prev] = runPair();
   if (!run) return;
   const goal = Math.round(target * 60);
   coachJob = run.t0;
-  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal).text, coachMsg, '답');
+  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal, compareOf(run)?.says).text, coachMsg, '답');
   $('coachPasteBox').hidden = false;
 };
 $('coachPaste').onclick = () => { $('coachPasteBox').hidden = false; $('coachPasteIn').focus(); };
@@ -1452,8 +1458,10 @@ $('mic').onclick = () => {
     if (!listening) { start(); return startAudio(); }
     // 리딩·연습은 정지하면 결과 창을 연다(기록이 저장됐고 다른 창이 없을 때, 끝까지 가지 않아도). 실전은 열지 않는다.
     const r = stop();
-    if (r && coach !== 'live' && !document.querySelector('dialog[open]')) openCheck(r.t0);
-    else if (runFull) { runFull = false; tell(FULL); }
+    if (r && coach !== 'live' && !document.querySelector('dialog[open]')) {
+      openCheck(r.t0);
+      if (coach === 'practice' && keyStore.get() && !coachCtl) askCoach();  // 연습은 AI 키가 있으면 코칭을 바로 받는다
+    } else if (runFull) { runFull = false; tell(FULL); }
     return;
   }
   recOff = Date.now();  // 다시 4초를 기다린다
@@ -2154,7 +2162,7 @@ function loadScript() {
   $('target').value = target || '';
   t0 = onSec = matched = seen = end = 0; endQa = false; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
   // 발표 점검: 구간 수가 같을 때만 구간 누적을 되살린다. 높낮이·쉼(F)은 메모리에만 있어서 새로고침 전 것은 빠진다(re).
-  SU = units($('text').value, [], spoken); secOf = []; newRun();
+  SU = units($('text').value, [], spoken); secOf = []; keyOf = []; newRun();
   runs = readRuns(store.get(sk('runs'))); runSel = 0; coachJob = 0;
   try {
     const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; end = +v.end || 0; endQa = v.endQa === true; r0 = +v.r0 || rate();
@@ -2325,7 +2333,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=15').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=16').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다

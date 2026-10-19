@@ -32,6 +32,11 @@ export const MED = 5, RUN_MIN = 3, PARTS = 8;  // 높낮이 5프레임 중앙값
 export const P_SHORT = 0.25, P_LONG = 1, P_MAX = 3;  // 쉼: 0.25~1초 짧은 쉼, 1~3초 긴 쉼, 3초 넘으면 세지 않음(대본 밖 길이)
 export const F0 = 55, BIN = 0.5, BINS = 96;  // 55Hz부터 0.5반음 칸 96개(880Hz까지)
 export const VOICED_MIN = 75;  // 유성 3초(40ms 프레임 75개) 미만이면 높낮이 폭을 내지 않는다
+// 목소리 크기·문장 끝 흐림·강조. dB는 잡음 바닥 위다(마이크 거리에 따라 달라서 같은 연습 안에서 비교한다. 자동 음량 보정은 끄고 받는다)
+export const QUIET_DB = 6, LOW_VOL = 20;  // ponytail: 다른 구간 중앙값보다 6dB 넘게 작으면 작아짐, 바닥 위 20dB 미만이면 작게 들림. 노트북 마이크로 잡은 추정
+export const TAIL_MS = 300, FALL_DB = 10, FALL_N = 25, FALL_P = 0.3;  // ponytail: 쉬기 직전 0.3초가 그 말 덩어리(앞부분 1초 이상) 중앙값보다 10dB 넘게 작으면 끝 흐림. 한국어 문장 끝의 자연스러운 내려감보다 크게 잡은 추정. 30% 넘으면 팁
+export const JUMP = 1.2;  // ponytail: 구간 빠르기가 읽은 구간 중앙값의 1.2배를 넘으면 갑자기 빨라짐(인식 시각 오차 ±15%보다 크게). 추정
+export const EMPH_DB = 1, EMPH_ST = 1, EMPH_MIN = 25;  // ponytail: 꼭 말할 문장의 p90이 다른 문장보다 1dB, 1반음 넘게 높지 않으면 강조가 약함(유성 1초 이상일 때만). 커서가 인식보다 약 1초 늦어 문장 앞머리가 앞 문장에 섞인다
 export const WIN_SEC = 10, WIN_N = 3;  // ponytail: 실시간 높낮이 10초 창, 최근 유효 창 3개 평균(US11205418B2, 재확인 필요)
 // 실시간 힌트(초)
 export const CUE_GAP = { practice: 20, live: 60 }, CUE_SAME = { practice: 60, live: 180 }, READ_SAME = 180, BRIGHT = 6;  // Rhema 20초(재확인 필요)
@@ -209,19 +214,34 @@ const semi = f => 12 * Math.log2(f / F0);
 const binOf = p => Math.min(BINS - 1, Math.max(0, Math.floor(p / BIN)));
 const median = a => [...a].sort((x, y) => x - y)[a.length >> 1];
 const width = ps => { const h = new Uint16Array(BINS); for (const p of ps) h[binOf(p)]++; return pct(h, 0.9) - pct(h, 0.1); };
+const tot = h => h.reduce((a, b) => a + b, 0);
+const dbq = (h, q) => { const n = tot(h); for (let i = 0, a = 0; i < h.length; i++) if ((a += h[i]) >= q * n) return i; return null; };  // 1dB 칸 히스토그램의 q 백분위
+const DBS = 81;  // 바닥 위 0~80dB
 
 // 40ms마다 마이크 프레임(AnalyserNode 2048샘플)을 넣는다. k: 구간 수
-// push(x, sr, t, s): x 원래 샘플, t 프레임 끝 시각(ms, performance.now()), s 지금 구간. 반환 { db, f: 높낮이 Hz | null, v: 유성음, on: 말소리, floor }
+// push(x, sr, t, s, key): x 원래 샘플, t 프레임 끝 시각(ms, performance.now()), s 지금 구간, key 지금 문장이 꼭 말할 문장인가. 반환 { db, f: 높낮이 Hz | null, v: 유성음, on: 말소리, floor }
 // 쉼 = 다음 말소리 시작 - 마지막으로 바닥 + 6dB를 넘은 때. 200ms 대기는 말소리를 끌 때만 쓰고 길이에는 넣지 않는다.
 // 시작과 끝은 프레임을 8조각(약 5ms)으로 나눈 조각 시작 시각으로 잰다(40ms 프레임 시각으로 재면 0.25초 문턱 근처 쉼이 ±40ms 흔들린다).
 // ponytail: 쉼 사이에 바닥 + 6dB를 넘는 잡음 조각이 끼면 쉼이 둘로 나뉜다(프레임으로 재도 같다). 교실 기록에서 잦으면 짧은 조각을 무시한다.
+const NO_AUD = { st: null, p25: null, p1: null, run: null, vol: null, ends: null, fall: null };
 export function frames(k) {
   const fq = [], fh = new Int32Array(121), hist = Array.from({ length: k }, () => new Uint16Array(BINS));
   const vn = new Array(k).fill(0), seen = new Array(k).fill(0), p25 = new Array(k).fill(0), p1 = new Array(k).fill(0), rn = new Array(k).fill(0);
   let floor = Infinity, tPrev = null, on = false, loudT = null, prevLoud = false, gap = null, rise = null, runStart = null, sRun = 0, sGap = 0;
-  let vr = [], vc = 0, win = [], flats = [], runs = [];
-  const add = (p, t, s) => { const h = hist[s], b = binOf(p); if (h[b] < 65535) h[b]++; vn[s]++; win.push([t, p]); };
-  const commit = m => { for (; vc < m; vc++) add(median(vr.slice(Math.max(0, vc - 2), vc + 3).map(o => o.p)), vr[vc].t, vr[vc].s); };
+  let vr = [], vc = 0, win = [], flats = [], runs = [], seg = [];  // seg: 지금 말 덩어리의 프레임 [t, 바닥 위 dB]
+  // 목소리 크기: 구간마다 유성 프레임의 바닥 위 dB. 강조: [다른 문장, 꼭 말할 문장]의 크기와 높낮이. 끝 흐림: 잰 문장 끝 수와 흐린 수
+  const vh = Array.from({ length: k }, () => new Uint32Array(DBS)), kd = [new Uint32Array(DBS), new Uint32Array(DBS)], kp = [new Uint32Array(BINS), new Uint32Array(BINS)];
+  const ends = new Array(k).fill(0), fall = new Array(k).fill(0);
+  const add = (p, t, s, key) => { const h = hist[s], b = binOf(p); if (h[b] < 65535) h[b]++; vn[s]++; kp[+key][b]++; win.push([t, p]); };
+  const commit = m => { for (; vc < m; vc++) add(median(vr.slice(Math.max(0, vc - 2), vc + 3).map(o => o.p)), vr[vc].t, vr[vc].s, vr[vc].key); };
+  // 끝 흐림: 쉬기 직전 0.3초의 크기 중앙값이 그 말 덩어리 앞부분(말소리 프레임 1초 이상)보다 10dB 넘게 작았나. end: 말소리가 끝난 때
+  const tailFall = (end, s) => {
+    const a = seg.filter(f => f[0] <= end), body = a.filter(f => f[0] <= end - TAIL_MS && f[1] > OFF_DB).map(f => f[1]), tail = a.filter(f => f[0] > end - TAIL_MS).map(f => f[1]);
+    seg = seg.filter(f => f[0] > end);
+    if (body.length < FALL_N || !tail.length) return;
+    ends[s]++;
+    if (median(body) - median(tail) >= FALL_DB) fall[s]++;
+  };
   const endVoiced = () => { if (vr.length >= RUN_MIN) commit(vr.length); vr = []; vc = 0; };
   const endRun = (end, s) => {
     if (runStart == null || end < runStart) return;
@@ -229,11 +249,11 @@ export function frames(k) {
     rn[s] = Math.max(rn[s], len); runs.push([end, len]);
   };
   function brk() {  // 프레임이 끊기면 진행 중인 쉼과 연속 발화를 끊는다(그 틈은 쉼으로 세지 않음)
-    endRun(loudT, sRun); endVoiced();
+    endRun(loudT, sRun); endVoiced(); seg = [];
     on = false; loudT = null; prevLoud = false; gap = null; rise = null; runStart = null;
   }
   return {
-    push(x, sr, t, s = 0) {
+    push(x, sr, t, s = 0, key = false) {
       s = Math.min(k - 1, Math.max(0, s));
       if (tPrev != null && t - tPrev > GAP_MS) brk();
       const dtF = tPrev == null ? 0 : (t - tPrev) / 1000;
@@ -248,6 +268,7 @@ export function frames(k) {
         while ((need -= fh[b]) > 0) b++;
         floor = Math.min(b - 120, floor + FLOOR_UP * dtF);
       }
+      if (floor < Infinity) { seg.push([t, e - floor]); if (seg.length > 1500) seg.shift(); }  // 1분까지
       // 조각마다 바닥 + 6dB를 넘나: 말소리 끝(loudT)과 다시 시작한 때(rise), 그 사이 틈(gap)
       const n = x.length / PARTS, bd = x.length / sr * 1000 / PARTS;
       for (let j = 0; j < PARTS; j++) {
@@ -264,13 +285,18 @@ export function frames(k) {
         if (gap != null && gap >= P_SHORT * 1000) {
           if (gap <= P_MAX * 1000) (gap < P_LONG * 1000 ? p25 : p1)[sGap]++;
           endRun(rise - gap, sGap);
+          tailFall(rise - gap, sGap);
           runStart = rise;
         }
         runStart ??= rise;
       } else if (on && loudT != null && t - (loudT + bd) >= OFF_MS) on = false;
       // 유성음 높낮이: 5프레임 중앙값, 3프레임보다 짧은 유성 구간은 버린다(2프레임 늦게 넣는다)
       const { x: y, sr: r } = down(x, sr), f = yin(y, r), v = f != null && e > floor + ON_DB;
-      if (v) { vr.push({ p: semi(f), t, s }); if (vr.length >= RUN_MIN) commit(vr.length - 2); }
+      if (v) {
+        const u = Math.min(DBS - 1, Math.max(0, Math.round(e - floor)));
+        vh[s][u]++; kd[+key][u]++;
+        vr.push({ p: semi(f), t, s, key }); if (vr.length >= RUN_MIN) commit(vr.length - 2);
+      }
       else endVoiced();
       while (win.length && win[0][0] < t - WIN_SEC * 1000) win.shift();
       return { db: e, f, v, on, floor };
@@ -283,13 +309,20 @@ export function frames(k) {
       const rs = [...runs.map(r => r[1]), ...(cur == null ? [] : [cur])];
       return { flat: flats.length ? flats.reduce((a, b) => a + b, 0) / flats.length : null, run: rs.length ? Math.max(...rs) : null };
     },
-    // 구간마다 { st: [p10, p90] 반음 | null(유성 3초 미만), p25: 짧은 쉼, p1: 긴 쉼, run: 쉬지 않고 가장 길게 말한 초 }. 프레임이 없던 구간은 모두 null
+    // 구간마다 { st: [p10, p90] 반음 | null(유성 3초 미만), p25: 짧은 쉼, p1: 긴 쉼, run: 쉬지 않고 가장 길게 말한 초,
+    //   vol: 유성 프레임 바닥 위 dB 중앙값 | null(유성 3초 미만), ends: 잰 문장 끝 수, fall: 그 가운데 흐린 수 }. 프레임이 없던 구간은 모두 null
     secs() {
       const cur = runStart != null && loudT != null && loudT >= runStart ? (loudT - runStart) / 1000 : 0;
       return hist.map((h, i) => seen[i] ? {
         st: vn[i] >= VOICED_MIN ? [pct(h, 0.1), pct(h, 0.9)] : null,
         p25: p25[i], p1: p1[i], run: Math.max(rn[i], i === sRun ? cur : 0),
-      } : { st: null, p25: null, p1: null, run: null });
+        vol: tot(vh[i]) >= VOICED_MIN ? dbq(vh[i], 0.5) : null, ends: ends[i], fall: fall[i],
+      } : { ...NO_AUD });
+    },
+    // 강조: 꼭 말할 문장과 다른 문장의 유성 프레임 p90 차이 { db, st: 반음, n: 꼭 말할 문장 유성 프레임 수 }. 어느 쪽이든 모자라면 null
+    emph() {
+      if (tot(kd[1]) < EMPH_MIN || tot(kp[1]) < EMPH_MIN || tot(kd[0]) < VOICED_MIN || tot(kp[0]) < VOICED_MIN) return null;
+      return { db: dbq(kd[1], 0.9) - dbq(kd[0], 0.9), st: pct(kp[1], 0.9) - pct(kp[0], 0.9), n: tot(kd[1]) };
     },
   };
 }
@@ -333,13 +366,14 @@ export const blockOf = (why, offAt, resAt) => why === 'audio' ? 'audio' : why ==
 // 꺼진 이유. 'qa': 발표 중 질의응답에 다녀와 이어 읽었다(분석은 다음 마이크 시작에 다시 켠다)
 const WHY = { 'rec?': '음성 인식이 멈춰서', audio: '분석기에 소리가 안 들어옴', lost: '마이크가 끊김', denied: '마이크를 열지 못함', qa: 'Q&A에 다녀옴' };
 // 결과 창과 실전 뒤 편집 화면 안내에 같이 쓴다. 꺼지지 않았으면 ''. 시작하자마자 꺼졌으면(0초) 켜지 못한 것
-export const audioNote = run => !run.audio?.off ? '' : run.audio.at ? `목소리 분석이 ${mmss(run.audio.at)}에 꺼져 그 뒤 높낮이와 쉼은 없어요(이유: ${WHY[run.audio.off]}).`
-  : `목소리 분석을 켜지 못해 높낮이와 쉼은 재지 않았어요(이유: ${WHY[run.audio.off]}).`;
+export const audioNote = run => !run.audio?.off ? '' : run.audio.at ? `목소리 분석이 ${mmss(run.audio.at)}에 꺼져 그 뒤 높낮이·쉼·목소리 크기는 없어요(이유: ${WHY[run.audio.off]}).`
+  : `목소리 분석을 켜지 못해 높낮이·쉼·목소리 크기는 재지 않았어요(이유: ${WHY[run.audio.off]}).`;
 
 // ---- 기록 ----
 // { v: 1, t0, kind, h: 대본 해시, target: 목표 초, r0, el: 상태줄 경과 초, wall, talk, off, chars, heard, anch, gaps, pct, lv: 자동 줄이기 단계 | null,
 //   re: 발표 중 새로고침(그 앞 높낮이·쉼 빠짐), audio: null(분석 안 함) | { off: 'rec?' | 'audio' | 'lost' | 'denied' | 'qa' | null, at: 초 | null },
-//   secs: [{ w: 첫 20자, n, lv, wall, talk, off, chars, heard, anch, gaps, st: [p10, p90] | null, p25, p1, run, rd: 말투 신호 수, ad: 애드리브 수 }],
+//   secs: [{ w: 첫 20자, n, lv, wall, talk, off, chars, heard, anch, gaps, st: [p10, p90] | null, p25, p1, run, rd: 말투 신호 수, ad: 애드리브 수, vol, ends, fall }],
+//   emph: 꼭 말할 문장 강조 { db, st, n } | null,
 //   cues: [[k, 초]], read: 말투 신호 수, ai: AI 코칭 | null }
 const num = x => Number.isFinite(x) && x > 0 ? x : 0;
 const r1 = x => Math.round(num(x) * 10) / 10, int = x => Math.round(num(x));
@@ -354,8 +388,8 @@ export function cleanAiCoach(o, k) {
   return tips.length ? { summary: line(o.summary, 200), tips } : null;
 }
 // 저장할 때는 구간을 배열로 줄인다(키 이름을 빼면 30구간 기록이 8000자 안에 넉넉히 든다). 대본마다 sk('runs')에 저장하고 readRuns로 읽는다.
-const SEC = ['w', 'n', 'lv', 'wall', 'talk', 'off', 'chars', 'heard', 'anch', 'gaps', 'st', 'p25', 'p1', 'run', 'rd', 'ad'];
-const packRun = r => ({ ...r, secs: r.secs.map(s => SEC.map(k => s[k])) });
+const SEC = ['w', 'n', 'lv', 'wall', 'talk', 'off', 'chars', 'heard', 'anch', 'gaps', 'st', 'p25', 'p1', 'run', 'rd', 'ad', 'vol', 'ends', 'fall'];  // 새 값은 끝에 더한다(옛 기록은 null)
+const packRun = r => ({ ...r, secs: r.secs.map(s => { const a = SEC.map(k => s[k]); while (a.length && a.at(-1) == null) a.pop(); return a; }) });  // 끝의 빈 값은 뺀다(목소리 분석 없는 기록)
 export const saveRuns = runs => JSON.stringify(runs.map(packRun));
 // localStorage 값은 믿지 않는다: 모양이 틀리면 null, 숫자는 유한한 0 이상(아니면 0), 모르는 키는 버린다. 구간은 배열과 객체를 다 받는다.
 export function cleanRun(o) {
@@ -364,7 +398,9 @@ export function cleanRun(o) {
     w: str(s?.w, 20), n: int(s?.n), lv: lvl(s?.lv), wall: r1(s?.wall), talk: r1(s?.talk), off: r1(s?.off), chars: int(s?.chars), heard: int(s?.heard),
     anch: int(s?.anch), gaps: int(s?.gaps), st: Array.isArray(s?.st) && s.st.length === 2 && s.st.every(Number.isFinite) ? s.st.map(r1) : null,
     p25: opt(s?.p25, int), p1: opt(s?.p1, int), run: opt(s?.run, r1), rd: int(s?.rd), ad: int(s?.ad),
+    vol: opt(s?.vol, r1), ends: opt(s?.ends, int), fall: s?.ends == null ? null : Math.min(int(s?.fall), int(s.ends)),
   }));
+  const em = o.emph, sg = x => Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;  // 강조 차이는 음수일 수 있다
   const a = o.audio;
   return {
     v: 1, t0: int(o.t0), kind: KINDS.includes(o.kind) ? o.kind : 'live', h: str(o.h, 16), target: int(o.target), r0: Math.round(num(o.r0) * 100) / 100, el: r1(o.el),
@@ -373,6 +409,7 @@ export function cleanRun(o) {
     audio: a && typeof a === 'object' ? { off: WHY[a.off] ? a.off : null, at: opt(a.at, r1) } : null,
     secs, cues: (Array.isArray(o.cues) ? o.cues : []).filter(c => Array.isArray(c) && WORD[c[0]]).slice(-50).map(c => [c[0], r1(c[1])]),
     read: int(o.read), ai: cleanAiCoach(o.ai, secs.length),
+    emph: em && typeof em === 'object' && Number.isFinite(em.db) && Number.isFinite(em.st) ? { db: sg(em.db), st: sg(em.st), n: int(em.n) } : null,
   };
 }
 // 저장 모양이 8000자를 넘으면(구간이 50개 넘는 긴 대본) 힌트 기록, 구간 첫 글, AI 결과 순서로 뺀다.
@@ -385,13 +422,13 @@ export function fitRun(r) {
   return r;
 }
 // 기록을 만든다. o = { t0, kind, h, target(초), r0, el, pct, lv, re, audio, acc: newAcc 값, info: [{ w, n, lv }], aud: frames().secs() | null,
-//   rd: 구간마다 말투 신호 수, ad: 구간마다 애드리브 수, cues, ai }. 말한 시간이 20초 미만이면 null(저장하지 않음)
+//   emph: frames().emph() | null, rd: 구간마다 말투 신호 수, ad: 구간마다 애드리브 수, cues, ai }. 말한 시간이 20초 미만이면 null(저장하지 않음)
 export function buildRun(o) {
   const sum = k => o.acc.reduce((x, a) => x + a[k], 0);
   if (sum('talk') < RUN_TALK) return null;
-  const tot = Object.fromEntries(ACC.map(k => [k, sum(k)])), none = { st: null, p25: null, p1: null, run: null };
-  const secs = o.info.map((x, i) => ({ ...x, ...o.acc[i], ...(o.aud?.[i] ?? none), rd: o.rd?.[i] ?? 0, ad: o.ad?.[i] ?? 0 }));
-  return fitRun(cleanRun({ ...o, ...tot, secs, read: secs.reduce((x, s) => x + s.rd, 0) }));
+  const all = Object.fromEntries(ACC.map(k => [k, sum(k)]));
+  const secs = o.info.map((x, i) => ({ ...x, ...o.acc[i], ...(o.aud?.[i] ?? NO_AUD), rd: o.rd?.[i] ?? 0, ad: o.ad?.[i] ?? 0 }));
+  return fitRun(cleanRun({ ...o, ...all, secs, read: secs.reduce((x, s) => x + s.rd, 0) }));
 }
 export function readRuns(json) {
   let v;
@@ -455,16 +492,19 @@ export function statCards(run, prev, goal) {
 // '반음은 피아노 건반 한 칸'은 결과 창 범례에 둔다(구간 하나만 열어도 보이게)
 export function secRows(run, prev, goal) {
   const E = bands(run.secs.map(s => s.n), goal, run.r0), same = prev && prev.h === run.h && prev.secs.length === run.secs.length;
-  const stopAt = finished(run) ? -1 : run.secs.findLastIndex(s => s.wall > 0);
+  const stopAt = finished(run) ? -1 : run.secs.findLastIndex(s => s.wall > 0), vm = volMid(run.secs);
   return run.secs.map((s, i) => {
     const e = E[i], r = rateOf(s), wd = s.st ? s.st[1] - s.st[0] : null;
-    const words = [r != null && '빠르기 ' + paceWord(r), wd != null && '높낮이 ' + pitchWord(wd), s.off >= 1 && '대본 밖 ' + mmss(s.off)].filter(Boolean).join(' · ');
+    const words = [r != null && '빠르기 ' + paceWord(r), wd != null && '높낮이 ' + pitchWord(wd), vm != null && s.vol != null && s.vol < vm - QUIET_DB && '목소리 작아짐',
+      s.fall > 0 && `끝 흐림 ${s.fall}번`, s.off >= 1 && '대본 밖 ' + mmss(s.off)].filter(Boolean).join(' · ');
     const nums = [
       `기대 ${mmss(e.lo)}~${mmss(e.hi)}`,
       r != null && perMin(r),
       wd != null && `높낮이 폭 ${Math.round(wd)}반음`,
       s.p25 != null && `쉼 ${s.p25 + s.p1}번(1초 넘는 쉼 ${s.p1}번)`,
       s.run >= 1 && `쉬지 않고 가장 길게 ${Math.round(s.run)}초`,
+      s.vol != null && `목소리 크기: 주변 소리보다 ${Math.round(s.vol)}dB 큼`,
+      s.ends > 0 && `문장 끝 ${s.ends}번 가운데 ${s.fall}번 작아짐`,
       s.p25 == null && s.talk > 0 && `1.5초 넘게 멈춤 ${s.gaps}번`,  // 읽지 않은 구간에는 내지 않는다
       r > PACE_NEWS && '뉴스 아나운서(1분에 약 350자)보다 빨랐어요.',
       same && prev.secs[i].wall > 0 && `지난번 ${mmss(prev.secs[i].wall)}`,
@@ -479,17 +519,22 @@ export function secRows(run, prev, goal) {
 // '읽는 말투' 줄(연습·실전·여러 모드 기록만, 리딩은 []): 말투 신호 횟수와 구간, 대본 그대로 비율, 키워드 이동, 애드리브, 설명.
 // 분석을 하지 않았거나 60초가 차기 전에 꺼졌으면 신호를 낼 수 없었으므로 통계만 둔다(그 까닭은 요약 줄이 이미 말한다).
 export function toneLines(run) {
-  if (run.kind === 'read') return [];
+  const e = run.emph, sgn = x => { x = Math.round(x) || 0; return (x > 0 ? '+' : '') + x; };  // -0과 +0은 0
+  const em = e ? [`꼭 말할 문장은 다른 문장보다 소리 ${sgn(e.db)}dB, 높이 ${sgn(e.st)}반음이었어요.`] : [];
+  if (run.kind === 'read') return em;
   const rd = run.secs.flatMap((s, i) => s.rd ? [i] : []), sum = k => run.secs.reduce((x, s) => x + s[k], 0);
   const stat = `대본 그대로 ${run.heard ? Math.min(100, Math.round(run.chars / run.heard * 100)) : 0}% · 키워드로 따라감 ${run.anch}번 · 애드리브 ${sum('ad')}개`;
-  if (!run.audio || (run.audio.off && run.audio.at < READ_WIN)) return [stat];
-  return [rd.length ? `말투 신호 ${sum('rd')}번(${nos(rd)}번 구간)` : '말투 신호는 나오지 않았어요.', stat,
+  if (!run.audio || (run.audio.off && run.audio.at < READ_WIN)) return [stat, ...em];
+  return [rd.length ? `말투 신호 ${sum('rd')}번(${nos(rd)}번 구간)` : '말투 신호는 나오지 않았어요.', stat, ...em,
     '눈 맞춤은 잴 수 없어요. 대본과 똑같이, 높낮이 변화가 적게 읽으면 나오는 신호예요. 판정이 아니에요.'];
 }
-// '다음에 해 볼 것' 3개까지, 이 순서로: 목표를 넘음, 빠른 구간, 높낮이가 좁은 구간, 12초 넘게 쉬지 않은 구간, 말투 신호, 목표보다 짧음.
+// '다음에 해 볼 것' n개(화면은 3개)까지, 이 순서로: 목표를 넘음, 빠른 구간, 갑자기 빨라진 구간, 문장 끝 흐림, 작은 목소리, 강조가 약함,
+// 높낮이가 좁은 구간, 12초 넘게 쉬지 않은 구간, 말투 신호, 목표보다 짧음.
 // 끝까지 가지 않았으면 '넘음'은 이 빠르기로 끝까지 간 어림으로 보고, '짧음'은 내지 않는다.
 // 반환 [{ k, text }]. k 'over'이면 앱이 '자동 줄이기 켜기' 버튼을 붙인다(지금 대본으로 한 발표 준비가 있고 꺼져 있을 때).
-export function tips(run, goal) {
+// 구간 목소리 크기의 중앙값(잰 구간이 셋 넘을 때만. 적으면 비교하지 않는다)
+const volMid = S => { const v = S.map(s => s.vol).filter(x => x != null); return v.length >= 3 ? median(v) : null; };
+export function tips(run, goal, n = 3) {
   const S = run.secs, E = bands(S.map(s => s.n), goal, run.r0), out = [], at = f => S.flatMap((s, i) => f(s) ? [i] : []);
   const full = finished(run), all = fullTime(run) ?? run.wall;
   if (goal && all > goal + OK_HI) {
@@ -499,12 +544,21 @@ export function tips(run, goal) {
   }
   const fast = at(s => rateOf(s) > PACE_FAST), flat = at(s => s.st && s.st[1] - s.st[0] < NARROW), rd = at(s => s.rd > 0);
   if (fast.length) out.push({ k: 'fast', text: `${secsOf(fast, S)}이 빨랐어요. 문장 끝에서 한 박자 쉬어 보세요.` });
+  const rates = S.map(rateOf).filter(r => r != null), mid = rates.length >= 3 ? median(rates) : null;
+  const jump = mid ? at(s => rateOf(s) > JUMP * mid).filter(i => !fast.includes(i)) : [];
+  if (jump.length) out.push({ k: 'jump', text: `${secsOf(jump, S)}에서 다른 구간보다 갑자기 빨라졌어요. 구간이 바뀔 때 한 박자 쉬고 시작해 보세요.` });
+  const ends = S.reduce((x, s) => x + (s.ends ?? 0), 0), fell = S.reduce((x, s) => x + (s.fall ?? 0), 0);
+  if (fell >= 3 && fell >= FALL_P * ends) out.push({ k: 'fall', text: `문장 끝 ${ends}번 가운데 ${fell}번 소리가 작아졌어요(${secsOf(at(s => s.fall > 0), S)}). 마지막 낱말까지 또렷하게 말해 보세요.` });
+  const vm = volMid(S), quiet = vm == null ? [] : at(s => s.vol != null && s.vol < vm - QUIET_DB);
+  if (vm != null && vm < LOW_VOL) out.push({ k: 'low', text: '목소리가 주변 소리보다 크게 들리지 않았어요. 마이크에 가까이 가거나 조금 더 크게 말해 보세요.' });
+  else if (quiet.length) out.push({ k: 'quiet', text: `${secsOf(quiet, S)}은 다른 구간보다 목소리가 작아졌어요. 처음과 같은 크기로 말해 보세요.` });
+  if (run.emph && run.emph.db < EMPH_DB && run.emph.st < EMPH_ST) out.push({ k: 'emph', text: '꼭 말할 문장을 다른 문장과 비슷한 크기와 높이로 말했어요. 그 문장 앞에서 한 박자 쉬고 조금 크고 높게 말해 보세요.' });
   if (flat.length) out.push({ k: 'flat', text: `${secsOf(flat, S)}은 높낮이 폭이 좁았어요. 강조할 낱말을 조금 높게 말해 보세요.` });
   const L = S.reduce((b, s, i) => (s.run ?? 0) > (S[b].run ?? 0) ? i : b, 0);
   if (S[L]?.run > LONG_RUN) out.push({ k: 'run', text: `${L + 1}번 구간에서 ${Math.round(S[L].run)}초 동안 쉬지 않았어요. 쉼표에서 쉬어 보세요.` });
   if (rd.length) out.push({ k: 'read', text: `${secsOf(rd, S)}은 대본 그대로, 고른 높낮이로 읽었어요. 한두 문장은 대본을 보지 않고 말해 보세요.` });
   if (goal && full && run.wall < OK_LO * goal) out.push({ k: 'short', text: `목표보다 ${mmss(goal - run.wall)} 짧아요. 천천히 읽거나 설명을 더해 보세요.` });
-  return out.slice(0, 3);
+  return out.slice(0, n);
 }
 
 // node check.js 로 실행하면 확인
@@ -512,8 +566,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=15');
-  const { readScript } = await import('./lib.js?v=15');
+  const { units } = await import('./shrink.js?v=16');
+  const { readScript } = await import('./lib.js?v=16');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -831,7 +885,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 구간마다 따로 센다. 프레임이 없던 구간은 null
   F = frames(3); feed(F, sig([[0.5, 0], [4, 150], [0.4, 0]]), { s: 1 });
   const z3 = F.secs();
-  assert.deepEqual(z3[0], { st: null, p25: null, p1: null, run: null });
+  assert.deepEqual(z3[0], { st: null, p25: null, p1: null, run: null, vol: null, ends: null, fall: null });
   assert.ok(z3[1].st && z3[1].run > 3.8, '1번 구간에 유성과 연속 발화');
   // 쉼과 끝난 연속 발화는 쉼 앞 말소리의 구간에 든다 (구간 0에서 말하고 쉰 뒤 구간 1에서 다시 말함)
   F = frames(2); feed(F, sig([[0.5, 0], [3, 150], [0.6, 0]]), { s: 0 });
@@ -840,6 +894,33 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const z2 = F.secs();
   assert.deepEqual([z2[0].p25, z2[1].p25], [1, 0], '쉼은 앞 구간');
   near(z2[0].run, 3, 0.1, '끝난 연속 발화는 앞 구간'); near(z2[1].run, 3, 0.1, '이어지는 연속 발화는 지금 구간');
+  // 목소리 크기: 구간마다 바닥 위 dB. 진폭 0.3(-13.5dBFS)은 잡음(-60dBFS) 위 약 46dB, 0.06은 약 14dB 작다
+  const cat = (...xs) => { const o = new Float32Array(xs.reduce((a, x) => a + x.length, 0)); let i = 0; for (const x of xs) { o.set(x, i); i += x.length; } return o; };
+  F = frames(2); feed(F, sig([[1, 0], [4, 150], [0.4, 0]]), { s: 0 });
+  const quiet = sig([[4, 150], [0.4, 0]], SR, 0.06);
+  for (let t = 43; t * SR / 1000 <= quiet.length; t += 40) { const e = Math.round(t * SR / 1000); F.push(quiet.subarray(e - N, e), SR, 5400 + t, 1); }
+  const zv = F.secs();
+  near(zv[0].vol, 46.5, 2, '큰 목소리 바닥 위 dB'); near(zv[0].vol - zv[1].vol, 14, 1.5, '진폭 1/5이면 약 14dB 작다');
+  // 끝 흐림: 1.5초 말하고 마지막 0.3초를 진폭 1/10(20dB 작게)로 흐린 뒤 쉼. 흐리지 않은 말 덩어리는 세기만 한다
+  const fallSig = (end) => cat(sig([[1, 0], [1.5, 150]]), sig([[0.3, 150]], SR, 0.3 * end), sig([[0.6, 0], [1.5, 150], [0.6, 0]]));
+  F = frames(1); feed(F, fallSig(0.1));
+  assert.deepEqual([F.secs()[0].ends, F.secs()[0].fall], [1, 1], '흐린 끝 1번');
+  F = frames(1); feed(F, fallSig(1));
+  assert.deepEqual([F.secs()[0].ends, F.secs()[0].fall], [1, 0], '또렷한 끝');
+  F = frames(1); feed(F, sig([[1, 0], [0.6, 150], [0.6, 0], [1.5, 150], [0.6, 0]]));
+  assert.equal(F.secs()[0].ends, 0, '1초 안 되는 말 덩어리는 재지 않는다');
+  // 강조: 꼭 말할 문장(key)을 2배 크게(+6dB), 높게(150 → 200Hz, +5반음) 말했다
+  const emphOf = (amp, hz) => {
+    const F2 = frames(1), a = sig([[1, 0], [4, 150], [0.4, 0]]), b = sig([[3, hz], [0.4, 0]], SR, amp);
+    for (let t = 43; t * SR / 1000 <= a.length; t += 40) { const e = Math.round(t * SR / 1000); F2.push(a.subarray(e - N, e), SR, t, 0, false); }
+    for (let t = 43; t * SR / 1000 <= b.length; t += 40) { const e = Math.round(t * SR / 1000); F2.push(b.subarray(e - N, e), SR, 5400 + t, 0, true); }
+    return F2.emph();
+  };
+  const em = emphOf(0.6, 200);
+  near(em.db, 6, 1, '꼭 말할 문장 +6dB'); near(em.st, 5, 0.6, '꼭 말할 문장 +5반음'); assert.ok(em.n > 60);
+  const em0 = emphOf(0.3, 150);
+  assert.ok(Math.abs(em0.db) <= 1 && Math.abs(em0.st) <= 0.5, '같은 크기·높이');
+  assert.equal(frames(1).emph(), null, '꼭 말할 문장이 없으면 null');
 
   // 8. 목소리 분석 켜기와 충돌 감시
   const nav = (o = {}) => ({ userAgent: 'Mozilla/5.0 (Macintosh)', mediaDevices: { getUserMedia() {} }, userAgentData: { mobile: false, brands: [{ brand: 'Not.A/Brand', version: '99' }, { brand: 'Chromium', version: '141' }, { brand: 'Google Chrome', version: '141.0.1' }] }, ...o });
@@ -946,9 +1027,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(sumLines(cleanRun({ ...br, pct: 98, wall: 175 }), br, 180)[0], '2:55 · 목표 3:00 안에 들어왔어요 · 지난번보다 1:33 짧아요', '98%면 끝까지 간 것(마지막 문장 인식 실패)');
   assert.equal(runLabel(cleanRun({ ...br, pct: 98 })).includes('%까지'), false);
   assert.ok(sumLines(cleanRun({ ...br, el: 300, re: true, audio: { off: 'rec?', at: 192 }, kind: 'read', lv: [0, 0] }), null, 0).join('|')
-    .includes('리딩은 자동 줄이기 없이 쟀어요.|멈춘 시간 0:32은 빼고 쟀어요.|새로고침 전 높낮이·쉼은 빠졌어요.|목소리 분석이 3:12에 꺼져 그 뒤 높낮이와 쉼은 없어요(이유: 음성 인식이 멈춰서).'));
+    .includes('리딩은 자동 줄이기 없이 쟀어요.|멈춘 시간 0:32은 빼고 쟀어요.|새로고침 전 높낮이·쉼은 빠졌어요.|목소리 분석이 3:12에 꺼져 그 뒤 높낮이·쉼·목소리 크기는 없어요(이유: 음성 인식이 멈춰서).'));
   assert.equal(audioNote(br), '');
-  assert.equal(audioNote({ audio: { off: 'denied', at: 0 } }), '목소리 분석을 켜지 못해 높낮이와 쉼은 재지 않았어요(이유: 마이크를 열지 못함).', '시작하자마자 실패');
+  assert.equal(audioNote({ audio: { off: 'denied', at: 0 } }), '목소리 분석을 켜지 못해 높낮이·쉼·목소리 크기는 재지 않았어요(이유: 마이크를 열지 못함).', '시작하자마자 실패');
   assert.equal(cleanRun({ ...br, audio: { off: 'qa', at: 83 } }).audio.off, 'qa');
   assert.equal(runLabel(cleanRun({ ...base, t0: new Date(2026, 9, 12, 14, 5).getTime(), wall: 292, pct: 42 })), '10/12 14:05 · 연습 · 4:52 · 42%까지');
   assert.deepEqual(toneLines(br), [], '리딩은 말투 줄 없음');
@@ -973,6 +1054,35 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(tips(tr([{}], { wall: 110, pct: 98 }), 180)[0].k, 'short', '98%면 끝까지 간 것');
   assert.equal(tips(tr([{ wall: 100 }, { wall: 26 }], { wall: 126, pct: 53, talk: 120, heard: 500 }), 120)[0].text, '이 빠르기면 끝까지 목표보다 1:58 길어요. 1번 구간이 가장 많이 넘었어요.', '어림으로 넘음');
   assert.equal(tips(tr([{ st: [1, 2] }, { st: [1, 2] }, { run: 20 }, { rd: 1 }], { wall: 300, talk: 100, heard: 600 }), 180).length, 3, '3개까지');
+  // 갑자기 빨라짐(다른 구간 중앙값의 1.2배, '빠름'은 아님), 문장 끝 흐림, 작은 목소리, 강조
+  const slow = { talk: 30, heard: 120 }, tk = (secs, o) => Object.fromEntries(tips(tr(secs, o), 0, 9).map(x => [x.k, x.text]));
+  assert.equal(tk([slow, slow, { talk: 30, heard: 150 }, slow]).jump, '3번 구간에서 다른 구간보다 갑자기 빨라졌어요. 구간이 바뀔 때 한 박자 쉬고 시작해 보세요.');
+  assert.equal(tk([slow, slow, { talk: 30, heard: 140 }, slow]).jump, undefined, '1.2배 안');
+  assert.equal(tk([slow, { talk: 30, heard: 150 }]).jump, undefined, '읽은 구간이 셋 미만이면 비교하지 않는다');
+  assert.equal(tk([{ ends: 3, fall: 2 }, { ends: 3, fall: 1 }, { ends: 3, fall: 0 }]).fall, '문장 끝 9번 가운데 3번 소리가 작아졌어요(1, 2번 구간). 마지막 낱말까지 또렷하게 말해 보세요.');
+  assert.equal(tk([{ ends: 6, fall: 2 }, { ends: 5, fall: 1 }]).fall, undefined, '30% 미만');
+  assert.equal(tk([{ vol: 40 }, { vol: 41 }, { vol: 30 }, { vol: 40 }]).quiet, '3번 구간은 다른 구간보다 목소리가 작아졌어요. 처음과 같은 크기로 말해 보세요.');
+  assert.deepEqual(Object.keys(tk([{ vol: 15 }, { vol: 16 }, { vol: 9 }])).filter(k => /low|quiet/.test(k)), ['low'], '전체가 작으면 작은 구간 대신 전체를');
+  assert.equal(tk([{ vol: 40 }, { vol: 30 }]).quiet, undefined, '잰 구간이 셋 미만');
+  assert.match(tk([{}], { emph: { db: 0.4, st: -0.3, n: 80 } }).emph, /^꼭 말할 문장을 다른 문장과 비슷한/);
+  assert.equal(tk([{}], { emph: { db: 3, st: 0, n: 80 } }).emph, undefined, '크게 말했으면 강조한 것');
+  assert.equal(tips(tr([{ st: [1, 2] }, { st: [1, 2] }, { run: 20 }, { rd: 1 }], { wall: 300, talk: 100, heard: 600 }), 180, 9).length, 4, 'AI에는 3개 넘게');
+  const vr = secRows(tr([{ vol: 40, ends: 3, fall: 2 }, { vol: 41 }, { vol: 30.4 }]), null, 0);
+  assert.match(vr[0].words, /끝 흐림 2번/); assert.match(vr[2].words, /목소리 작아짐/); assert.doesNotMatch(vr[0].words, /목소리 작아짐/);
+  assert.ok(vr[2].nums.includes('목소리 크기: 주변 소리보다 30dB 큼') && vr[0].nums.includes('문장 끝 3번 가운데 2번 작아짐'));
+  assert.ok(!secRows(tr([{}]), null, 0)[0].nums.some(x => /목소리 크기|문장 끝/.test(x)), '목소리 값이 없으면 내지 않는다');
+  const et = tr([{}], { emph: { db: 3.4, st: -0.6, n: 80 } });
+  assert.ok(toneLines(et).includes('꼭 말할 문장은 다른 문장보다 소리 +3dB, 높이 -1반음이었어요.'));
+  assert.deepEqual(toneLines({ ...et, kind: 'read' }), ['꼭 말할 문장은 다른 문장보다 소리 +3dB, 높이 -1반음이었어요.'], '리딩에도 강조는 보인다');
+  assert.ok(toneLines(tr([{}], { emph: { db: 0.3, st: -0.4, n: 80 } })).includes('꼭 말할 문장은 다른 문장보다 소리 0dB, 높이 0반음이었어요.'), '반올림해 0이면 기호 없이');
+  // 기록: 강조 차이는 음수도 둔다, 틀린 값은 null, 흐린 수는 잰 수를 넘지 않는다, 옛 기록은 null
+  assert.deepEqual(cleanRun({ ...base, emph: { db: -2.345, st: 1, n: 50 } }).emph, { db: -2.3, st: 1, n: 50 });
+  assert.equal(cleanRun({ ...base, emph: { db: 'x', st: 1 } }).emph, null);
+  assert.deepEqual([cleanRun({ ...base, secs: [{ ...s0, ends: 2, fall: 5 }] }).secs[0].fall, cleanRun(base).secs[0].vol, cleanRun(base).secs[0].fall], [2, null, null]);
+  assert.deepEqual(readRuns(saveRuns([cleanRun({ ...base, secs: [{ ...s0, vol: 33.3, ends: 4, fall: 1 }], emph: { db: 1, st: 2, n: 30 } })]))[0].secs[0].vol, 33.3, '저장했다 읽어도');
+  assert.equal(JSON.parse(saveRuns([cleanRun(base)]))[0].secs[0].length, 16, '목소리 값이 없으면 저장 배열이 늘지 않는다');
+  const v60 = fitRun(cleanRun({ ...big, secs: Array(60).fill({ ...big.secs[0], vol: 46.5, ends: 99, fall: 99 }) }));
+  assert.ok(saveRuns([v60]).length - 2 < REC_MAX, '목소리 값이 다 찬 60구간');
 
   console.log(`check.js ok (yin 프레임 250개 ${tYin.toFixed(0)}ms)`);
 }

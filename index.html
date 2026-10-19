@@ -797,7 +797,7 @@
   <details>
     <summary>데이터가 가는 곳</summary>
     <p class="small">말소리는 글자로 바꾸려고 Google(Chrome)이나 Apple(Safari)로 가요. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 가요. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 가요. Q&A 질문은 이 기기 안에서 골라서 밖으로 나가지 않아요. 질문 찾기 모델은 Hugging Face에서 기기마다 한 번 받아요.</p>
-    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 하고 소리를 저장하지 않아요. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보내요. 목소리와 대본 글은 보내지 않아요. 연습 기록은 이 기기에만 남고 파일로 내보내기에는 들어가지 않아요. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 눌러 주세요.</p>
+    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 하고 소리를 저장하지 않아요. 발표 점검의 AI 코칭은 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요. 연습 기록은 이 기기에만 남고 파일로 내보내기에는 들어가지 않아요. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 눌러 주세요.</p>
     <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   </details>
   <button id="mDel">대본 삭제</button>
@@ -873,7 +873,7 @@
     <div class="row seg" role="group" aria-labelledby="coachTitle"><button data-coach="read">리딩</button><button data-coach="practice">연습</button><button data-coach="live">실전</button></div>
     <p class="small" id="modeHelp"></p>
     <label><input type="checkbox" id="cueOn"> 실시간 힌트 보기</label>
-    <label id="audioRow"><input type="checkbox" id="audioOn"> <span>목소리 분석(높낮이·쉼) <span class="small">감정은 재지 않아요</span></span></label>
+    <label id="audioRow"><input type="checkbox" id="audioOn"> <span>목소리 분석(높낮이·쉼·크기) <span class="small">감정은 재지 않아요</span></span></label>
     <div class="row"><button id="checkOpen" aria-haspopup="dialog">점검 결과</button></div>
   </div>
   </div></div>
@@ -885,7 +885,7 @@
   <p id="checkNoSr" hidden>이 브라우저는 음성 인식이 안 돼서 점검할 수 없어요. Chrome을 쓰세요.</p>
   <div id="checkBody">
     <div class="row"><button id="cRead" class="primary">리딩으로 시작</button><button id="cPractice" class="primary">연습으로 시작</button></div>
-    <p class="small">리딩은 힌트 없이 재기만 하고, 연습은 힌트를 하나씩 보여 줘요. 정지하면 이 창이 열려요.</p>
+    <p class="small">리딩은 힌트 없이 재기만 하고, 연습은 힌트를 하나씩 보여 줘요. 정지하면 이 창이 열리고, 연습은 AI 키가 있으면 AI 코칭도 바로 받아요.</p>
     <p id="checkMsg" role="status"></p>
     <p class="small" id="cEmpty">아직 기록이 없어요. 리딩이나 연습으로 시작해 20초 넘게 읽고 정지하면 여기에 결과가 나와요.</p>
     <label id="cRunRow">기록 <select id="cRun"></select></label>
@@ -906,7 +906,7 @@
         <button id="coachPrompt">프롬프트 복사</button>
         <button id="coachPaste">결과 붙여넣기</button>
       </div>
-      <p class="small">AI에는 구간 번호와 잰 숫자만 보내요. 대본 글과 목소리는 보내지 않아요.</p>
+      <p class="small">AI에는 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요. 연습으로 하면 정지할 때 AI 키가 있으면 바로 받아요.</p>
       <p class="small" id="coachKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn5">AI 키 넣기</button></p>
       <p id="coachMsg" role="status"></p>
       <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
@@ -938,7 +938,7 @@
 
 <dialog id="keyDlg" aria-labelledby="keyTitle">
   <h2 id="keyTitle">AI 키</h2>
-  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 구간 번호와 잰 숫자만 보내요. 목소리와 대본 글은 보내지 않아요.</p>
+  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요.</p>
   <p class="small" id="keyState"></p>
   <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
   <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워져요)</label>
@@ -951,7 +951,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=15"></script>
-<script type="module" src="app.js?v=15"></script>
+<script src="match.js?v=16"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

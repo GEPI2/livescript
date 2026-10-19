@@ -302,6 +302,43 @@ t('결과: 그대로 두기를 누르면 같은 제안이 다시 나오지 않�
   await practiceRun(p, swapNae, false);
   assert.equal(await p.locator('#cSug .sug').count(), 0, '세 번째 연습에도 나오지 않는다');
 });
+t('결과: 목소리 분석을 켜고 연습하면 기록에 목소리 크기·끝 흐림 칸이 생기고 오류가 없다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await p.evaluate(() => localStorage.setItem('ls.audio', JSON.stringify({ l: false, r: true })));  // 가짜 마이크(삑 소리)로 분석기를 돌린다
+  await practiceRun(p);
+  const run = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.runs'))))[0]);
+  assert.ok(run.audio, '목소리 분석을 했다');
+  assert.ok(run.secs.some(s => typeof s[17] === 'number'), '끝 흐림 칸(ends)이 저장된 구간이 있다. 삑 소리는 유성음이 아니라 크기와 강조는 비어도 된다');
+  assert.equal(run.emph ?? null, null);
+  assert.deepEqual(p.errors, []);
+});
+t('결과: 연습을 정지하면 AI 키가 있을 때 대본과 들은 말로 AI 코칭을 바로 받는다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 2, what: "'그러니까'로 문장을 시작하는 말버릇이 있었어요.", how: '첫 낱말 앞에서 한 박자 쉬고 바로 시작해 보세요.' }] };
+  const sse = [{ type: 'message_start', message: { id: 'm', content: [] } }, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(coach) } }, { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }, { type: 'message_stop' }]
+    .map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+  const sent = [], cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' };
+  await p.route('https://api.anthropic.com/**', r => {
+    if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
+    sent.push(JSON.parse(r.request().postData()));
+    return r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'text/event-stream' }, body: sse });
+  });
+  await p.evaluate(() => sessionStorage.setItem('ls.key', 'sk-ant-test'));
+  await practiceRun(p, (i, x) => i === 2 ? '그러니까 ' + x : x);
+  for (let i = 0; i < 50 && await p.textContent('#cTipsH') !== 'AI 코칭'; i++) await p.waitForTimeout(100);
+  assert.equal(await p.textContent('#cTipsH'), 'AI 코칭');
+  assert.equal(sent.length, 1, '정지할 때 한 번 보낸다');
+  const u = sent[0].messages[0].content;
+  assert.ok(u.includes('<대본과한말>\n1번 구간\n대본: ' + SENTS[0]), '읽은 구간의 대본');
+  assert.ok(u.includes('한 말: 그러니까 ') || u.includes(' 그러니까 '), '들은 말');
+  assert.equal(await p.textContent('#cAiSum'), coach.summary);
+  assert.match(await p.textContent('#cTips li'), /^2번 구간: '그러니까'로 문장을 시작하는 말버릇이 있었어요\. 첫 낱말 앞에서/);
+  assert.deepEqual(p.errors, []);
+});
 t('결과: 회차별 시간 막대와 구간부터 연습 단추', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await p.fill('#target', '3');

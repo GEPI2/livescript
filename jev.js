@@ -64,7 +64,7 @@ let jobP = null, worker = null, stopLoad = null;  // stopLoad: 준비를 기다�
 export function loadJev(onProgress) {
   jobP ??= (async () => {
     if (!await gpuOk()) throw new Error('nogpu');
-    const w = worker = new Worker(new URL('./jev-worker.js?v=15', import.meta.url), { type: 'module' }), calls = new Map();
+    const w = worker = new Worker(new URL('./jev-worker.js?v=16', import.meta.url), { type: 'module' }), calls = new Map();
     let n = 0;
     await new Promise((ok, no) => {
       stopLoad = no;

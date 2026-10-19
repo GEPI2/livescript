@@ -1,7 +1,7 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=15';
-import { cleanAi } from './adlib.js?v=15';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=15';
+import { cleanPack } from './qa.js?v=16';
+import { cleanAi } from './adlib.js?v=16';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=16';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -347,7 +347,7 @@ export async function summarizeAdlib(segs, opts) {
   return parseAdlib(await callClaude({ ...opts, system: p.system, user: p.user, schema: ADLIB_SCHEMA, effort: 'low' }), segs.length);
 }
 
-// ---- 발표 점검 코칭: 구간 번호, 위치, 글자 수와 잰 숫자만 보낸다. 대본 글과 목소리는 보내지 않는다 ----
+// ---- 발표 점검 코칭: 구간 번호, 위치, 글자 수와 잰 숫자를 보낸다. 연습 기록(says)이 있으면 읽은 구간의 대본과 들은 말도. 목소리는 보내지 않는다 ----
 // 첫 구간에는 반과 이름이 들어가기 쉽다. 팁은 구간 번호로 돌아오고 앱이 구간 글을 가지고 있다.
 export const COACH_SCHEMA = {
   type: 'object',
@@ -368,12 +368,14 @@ export const COACH_SCHEMA = {
 };
 
 // run: check.js 기록, prev: 고른 기록 바로 앞 기록(없으면 null), tips: check.js tips()의 [{ text }](구간 번호와 숫자만 담김),
-// goal: 지금 목표 초(결과 창에서 바꿀 수 있다, 기본은 기록의 목표)
-export function coachPrompt(run, prev, tips = [], goal = run.target) {
+// goal: 지금 목표 초(결과 창에서 바꿀 수 있다, 기본은 기록의 목표), says: compare.js 연습 기록 { secs: [{ s: 보인 대본, x: 들은 말 }] } | null
+export function coachPrompt(run, prev, tips = [], goal = run.target, says = null) {
   const k = run.secs.length, E = bands(run.secs.map(s => s.n), goal, run.r0), n = x => x == null ? '-' : Math.round(x);
   const where = i => i < k / 3 ? '처음' : i < 2 * k / 3 ? '중간' : '끝';
-  const perMin = s => s.talk >= PACE_TALK ? Math.round(s.heard / s.talk * 6) * 10 : null;
-  const system = `너는 학생의 발표 연습을 돕는 코치다. 앱이 발표 연습을 재서 구간 번호와 잰 숫자만 보낸다. 대본 글과 목소리는 받지 않는다.
+  const perMin = s => s.talk >= PACE_TALK ? Math.round(s.heard / s.talk * 6) * 10 : null, sgn = x => (x > 0 ? '+' : '') + x;
+  // 읽은 구간만. 읽지 않은 구간의 대본은 보내지 않는다
+  const talk = (says?.secs ?? []).flatMap((x, i) => run.secs[i]?.wall && x.s ? [`${i + 1}번 구간\n대본: ${x.s}\n한 말: ${x.x.trim() || '(받아 적은 말 없음)'}`] : []);
+  const system = `너는 학생의 발표 연습을 돕는 코치다. ${talk.length ? '앱이 발표 연습을 재서 구간마다 잰 숫자와 대본, 음성 인식이 받아 적은 말을 보낸다. 목소리는 받지 않는다.' : '앱이 발표 연습을 재서 구간 번호와 잰 숫자만 보낸다. 대본 글과 목소리는 받지 않는다.'}
 
 잰 값의 뜻과 한계
 - 감정은 재지 않는다. 높낮이 폭, 쉼, 빠르기는 감정 표현과 함께 달라지는 대리 지표일 뿐이다.
@@ -382,15 +384,23 @@ export function coachPrompt(run, prev, tips = [], goal = run.target) {
 - 쉼 수: 0.25~3초 쉰 횟수다. 쉬지 않고 가장 긴 초: 0.25초 넘는 쉼 없이 이어 말한 가장 긴 시간이다.
 - 1.5초 넘는 멈춤: 인식 결과 사이의 틈이다. 목소리 분석을 하지 않았으면 쉼 대신 이 값을 본다.
 - 대본 밖 초: 대본에 없는 말을 한 시간이다. 그대로 %: 받아 적은 음절 가운데 대본을 따라간 비율이다.
+- 목소리 크기 dB: 유성음이 잡음 바닥보다 몇 dB 큰지의 중앙값이다. 마이크 거리에 따라 달라서 구간끼리 비교한다. 다른 구간보다 6dB 넘게 작으면 작아진 것으로 본다(추정).
+- 끝 흐림: 0.25초 넘게 쉬기 직전 0.3초가 그 말 덩어리보다 10dB 넘게 작았던 문장 끝 수 / 잰 문장 끝 수다. 웅얼거림을 대신 보는 값이다(추정).
+- 강조: 발표자가 '꼭 말할 문장'으로 표시한 문장을 다른 문장보다 얼마나 크게(dB), 높게(반음) 말했는지다(가장 크고 높은 10% 기준). 0 근처면 강조가 약했다. 화면 위치가 말보다 약 1초 늦어 문장 앞머리가 앞 문장에 섞인다.
 - 기대 초: 목표 시간을 구간 글자 수 비율로 나눈 값이다. 목표가 없으면 발표를 시작할 때의 말 속도로 잡은 범위다.
 - '-'는 재지 않은 값이다. 걸린 초가 '-'인 구간은 읽지 않은 구간이다(중간에 멈췄거나 건너뜀).
 
 한국어 기준
 - 소리 내어 읽기(낭독)는 초당 4.8~5.1음절, 1분에 약 290~305자다. 자유롭게 말하면 초당 약 4.2음절이고, 뉴스 아나운서는 5.7~6.0음절이다.
-
+${talk.length ? `
+대본과 한 말
+- 한 말은 음성 인식이 받아 적은 글이다. 문장부호가 없고, '어·음' 같은 군말은 빠졌을 수 있고, 잘못 받아 적은 낱말도 있다. 낱말 하나가 다르다고 발음을 탓하지 않는다.
+- tips 가운데 하나 이상은 내용에 대해 쓴다: 빼먹은 핵심 내용, 되풀이한 말버릇(예: '그러니까', '약간'), 대본보다 자연스럽게 바꿔 말한 곳(대본에 반영하라고 권한다).
+- 대본이나 한 말을 옮길 때는 20자 안쪽으로 짧게 따온다.
+` : ''}
 규칙
 - tips는 3개까지 쓴다. sec는 구간 번호이고, 발표 전체에 대한 팁이면 0이다. 읽지 않은 구간에는 팁을 쓰지 않는다.
-- 받은 숫자 밖의 숫자를 지어내지 않는다. 감정이나 성격을 판단하지 않는다.
+- 받은 숫자 밖의 숫자를 지어내지 않는다. 감정이나 성격을 판단하지 않는다. 사투리나 억양은 재지 않으므로 말하지 않는다.
 - what에는 숫자로 본 점을, how에는 다음 연습에서 할 행동 하나를 쓴다. 모두 해요체 한국어로 쓴다.
 - summary는 한 문장이다.
 
@@ -398,7 +408,8 @@ export function coachPrompt(run, prev, tips = [], goal = run.target) {
 {"summary":"...","tips":[{"sec":2,"what":"...","how":"..."}]}`;
   // 읽지 않은 구간(걸린 시간 0)은 번호, 위치, 글자 수, 기대 초만 두고 잰 값은 '-' (0초나 멈춤 0번으로 읽히지 않게)
   const rows = run.secs.map((s, i) => [i + 1, where(i), s.n, n(s.wall), E[i].b ?? `${n(E[i].lo)}~${n(E[i].hi)}`, n(perMin(s)),
-    s.st ? n(s.st[1] - s.st[0]) : '-', s.p25 == null ? '-' : s.p25 + s.p1, n(s.run), n(s.off), s.heard ? Math.min(100, Math.round(s.chars / s.heard * 100)) : '-', s.gaps]
+    s.st ? n(s.st[1] - s.st[0]) : '-', s.p25 == null ? '-' : s.p25 + s.p1, n(s.run), n(s.off), s.heard ? Math.min(100, Math.round(s.chars / s.heard * 100)) : '-', s.gaps,
+    n(s.vol), s.ends ? `${s.fall}/${s.ends}` : '-']
     .map((x, j) => s.wall || [0, 1, 2, 4].includes(j) ? x : '-').join(' | '));
   const user = `<발표점검>
 모드: ${NAME[run.kind]}
@@ -408,15 +419,15 @@ export function coachPrompt(run, prev, tips = [], goal = run.target) {
 평균 빠르기: ${perMin(run) == null ? '-' : `1분에 약 ${perMin(run)}자`}
 목소리 분석: ${!run.audio ? '하지 않음(높낮이 폭과 쉼 없음)' : run.audio.off ? `${n(run.audio.at)}초에 꺼짐(그 뒤 높낮이 폭과 쉼 없음)` : '함'}
 구간 수: ${k}
-구간 | 위치 | 글자 수 | 걸린 초 | 기대 초 | 1분에 자 | 높낮이 폭 반음 | 쉼 수 | 쉬지 않고 가장 긴 초 | 대본 밖 초 | 그대로 % | 1.5초 넘는 멈춤
+강조: ${!run.emph ? '재지 않음(꼭 말할 문장이 없거나 목소리 분석을 하지 않음)' : `꼭 말할 문장이 다른 문장보다 소리 ${sgn(run.emph.db)}dB, 높이 ${sgn(run.emph.st)}반음`}
+구간 | 위치 | 글자 수 | 걸린 초 | 기대 초 | 1분에 자 | 높낮이 폭 반음 | 쉼 수 | 쉬지 않고 가장 긴 초 | 대본 밖 초 | 그대로 % | 1.5초 넘는 멈춤 | 목소리 크기 dB | 끝 흐림
 ${rows.join('\n')}
 지난 기록 총 시간: ${!prev ? '없음' : !(finished(run) && finished(prev)) ? '비교 안 함(끝까지 읽지 않은 기록이 있음)' : n(prev.wall) + '초' + (prev.h === run.h ? '' : '(대본이 달라 구간은 비교하지 않음)')}
 </발표점검>
 <규칙으로찾은것>
 ${tips.length ? tips.map(t => '- ' + (t.text ?? t)).join('\n') : '(없음)'}
 </규칙으로찾은것>
-
-위 숫자로 다음 연습에서 해 볼 것을 정해 주세요.`;
+${talk.length ? `<대본과한말>\n${talk.join('\n\n')}\n</대본과한말>\n\n위 숫자와 대본, 한 말로` : '\n위 숫자로'} 다음 연습에서 해 볼 것을 정해 주세요.`;
   return { system, user, text: system + '\n\n' + user };
 }
 
@@ -429,8 +440,8 @@ export function cleanCoach(o, k) {
 export const parseCoach = (text, k) => parseJson(text, o => cleanCoach(o, k), '발표 코칭');
 
 // 짧은 답이라 생각은 적게(effort low). 모델은 기본(MODEL)이고 대체 모델도 그대로 쓴다. opts.goal: 지금 목표 초
-export async function coachRun(run, prev, tips, { goal, ...opts } = {}) {
-  const p = coachPrompt(run, prev, tips, goal ?? run.target);
+export async function coachRun(run, prev, tips, { goal, says, ...opts } = {}) {
+  const p = coachPrompt(run, prev, tips, goal ?? run.target, says);
   return parseCoach(await callClaude({ ...opts, system: p.system, user: p.user, schema: COACH_SCHEMA, effort: 'low' }), run.secs.length);
 }
 
@@ -691,9 +702,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=15');
-  const { readScript: readEx } = await import('./lib.js?v=15');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=15');
+  const { units } = await import('./shrink.js?v=16');
+  const { readScript: readEx } = await import('./lib.js?v=16');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=16');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));
@@ -716,7 +727,12 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const part = { ...cr, pct: 26, secs: cr.secs.map((s, i) => i < 2 ? s : { ...s, wall: 0, talk: 0, off: 0, chars: 0, heard: 0, anch: 0, gaps: 0, st: null, p25: null, p1: null, run: null }) };
   const pu = coachPrompt(part, prev, [], 180).user;
   assert.ok(pu.includes('진행: 26%까지 읽고 멈춤') && pu.includes('지난 기록 총 시간: 비교 안 함') && cp.user.includes('진행: 끝까지 읽음'), '진행');
-  assert.match(pu, /\n3 \| 처음 \| \d+ \| - \| \d+ \| - \| - \| - \| - \| - \| - \| -\n/, '읽지 않은 구간');
+  assert.match(pu, /\n3 \| 처음 \| \d+ \| - \| \d+ \| - \| - \| - \| - \| - \| - \| - \| - \| -\n/, '읽지 않은 구간');
+  // 목소리 크기·끝 흐림·강조
+  assert.ok(cp.user.includes('강조: 재지 않음') && cp.user.includes('| 목소리 크기 dB | 끝 흐림\n') && cp.system.includes('웅얼거림을 대신 보는 값') && cp.system.includes('사투리나 억양은 재지 않으므로'));
+  const vc = { ...cr, emph: { db: 3.4, st: -0.5, n: 80 }, secs: cr.secs.map((x, i) => ({ ...x, vol: 40 - i, ends: 3, fall: i % 2 })) };
+  const vu = coachPrompt(vc, null, [], 180).user;
+  assert.ok(vu.includes('강조: 꼭 말할 문장이 다른 문장보다 소리 +3.4dB, 높이 -0.5반음') && / \| 40 \| 0\/3\n2 \| /.test(vu) && / \| 39 \| 1\/3\n/.test(vu), vu.slice(-400));
   assert.ok(cp.system.includes('읽지 않은 구간에는 팁을 쓰지 않는다'));
   assert.ok(!JSON.stringify(COACH_SCHEMA).match(/maxItems|minItems|minLength|maxLength|minimum|maximum/));
   const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 3, what: '3번 구간이 빨랐어요.', how: '문장 끝에서 한 박자 쉬어 보세요.' }] };
@@ -733,6 +749,23 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(cb.output_config.format, { type: 'json_schema', schema: COACH_SCHEMA });
   assert.equal(cb.output_config.effort, 'low'); assert.equal(cb.model, 'claude-opus-5-5'); assert.equal(cb.goal, undefined);
   assert.equal(cb.messages[0].content, coachPrompt(cr, prev, ct, 240).user, '보내는 글은 프롬프트 복사와 같다');
+
+  // 내용 코칭: 연습 기록(says)을 주면 읽은 구간의 대본과 들은 말을 보낸다. 읽지 않은 구간의 대본은 보내지 않는다
+  const secText = SU.map(u => ex.text.slice(u.s[0].a, u.s.at(-1).b));
+  const says = { secs: secText.map((s, i) => ({ s, x: i === 1 ? '' : '그러니까 ' + s.slice(0, 30) })) };
+  const tp = coachPrompt(cr, prev, ct, 180, says);
+  assert.ok(tp.system.includes('구간마다 잰 숫자와 대본, 음성 인식이 받아 적은 말을 보낸다') && tp.system.includes('내용에 대해') && !tp.system.includes('대본 글과 목소리는 받지 않는다'));
+  assert.ok(tp.user.includes(`<대본과한말>\n1번 구간\n대본: ${secText[0]}\n한 말: 그러니까 `) && tp.user.includes('2번 구간\n대본: ') && tp.user.includes('한 말: (받아 적은 말 없음)'));
+  const head = cp.user.slice(0, cp.user.indexOf('</규칙으로찾은것>'));
+  assert.ok(head.length > 100 && tp.user.startsWith(head), '숫자 부분은 그대로');
+  assert.ok(tp.user.endsWith('</대본과한말>\n\n위 숫자와 대본, 한 말로 다음 연습에서 해 볼 것을 정해 주세요.'));
+  const pt = coachPrompt(part, prev, [], 180, says).user;
+  assert.ok(pt.includes(secText[1]) && !secText.slice(2).some(s => pt.includes(s)), '읽지 않은 구간(3번부터)의 대본은 보내지 않는다');
+  assert.equal(coachPrompt(cr, prev, ct, 180, { secs: [] }).text, cp.text, '들은 말이 없으면 숫자만');
+  assert.ok(!/undefined|NaN|null/.test(tp.text));
+  mock(ok(JSON.stringify(coach)));
+  await coachRun(cr, prev, ct, { key: 'k', goal: 180, says });
+  assert.equal(JSON.parse(calls[0].init.body).messages[0].content, tp.user, '코칭 요청에 대본과 한 말이 들어간다');
 
   console.log('claude.js ok');
 }

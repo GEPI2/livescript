@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:; media-src 'self' blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data: blob:; media-src 'self' blob:">
 <title>말랑</title>
 <meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="manifest.webmanifest">
@@ -391,11 +391,37 @@
   #qa input { margin: 8px 0; min-height: 48px; border-radius: var(--radius-lg); background: var(--surface-muted); }  /* 위 dialog input 규칙보다 뒤에 둬야 먹는다 */
   .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
   #prepMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
-  .qitem { margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  /* Q&A 준비 목록: 분류마다 묶고, 질문은 한 줄(질문·키워드·표시)로 접어 둔다. 누르면 그 자리에서 고친다 */
+  .qhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: var(--space-24) 0 var(--space-8); }
+  .qhead h2 { flex: 1; margin: 0; font-size: 18px; }
+  .qhead input { width: min(260px, 100%) !important; }
+  #qList h3 { display: flex; gap: 6px; margin: var(--space-20) 0 var(--space-8); font-size: 15px; }
+  #qList h3 span { color: var(--ink-muted); font-weight: 400; }
+  .qitem { margin: 6px 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
   .qitem.check { border-color: var(--warning); }
+  .qitem > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 52px; padding: 10px 14px; cursor: pointer; list-style: none; }
+  .qitem > summary::-webkit-details-marker { display: none; }
+  .qitem .qt { flex: 1 1 14em; min-width: 0; font-weight: 600; }
+  .qitem .qk { display: flex; flex-wrap: wrap; gap: 4px; }
+  .qitem .qk span, .qitem .qb { padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink-muted); font-size: 12px; }
+  .qitem .qb.warn { background: var(--warning-tint); color: var(--warning); font-weight: 600; }
+  .qitem .qbody { padding: 0 14px 14px; }
   .qitem label { margin: 6px 0; }
   .qitem .chk { padding: 2px 10px; border-radius: var(--radius-pill); font-size: 13px; }
   .qitem.check .chk { background: var(--warning-tint); color: var(--warning); font-weight: 600; }
+  #qaOpt summary, #qaNoKey summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+  .qmat { margin: var(--space-12) 0; padding: 8px 8px 8px 14px; border: 1px dashed var(--accent-border); border-radius: var(--radius-lg); }
+  .qmat .small { margin: 0; white-space: normal; }
+  .qimg { display: block; max-width: 220px; max-height: 140px; margin: 6px 0; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  /* 답 카드의 부가자료: 붙인 그림이나 슬라이드(PDF는 쪽 그림, PPTX는 제목과 글) */
+  #cardMat { margin: var(--space-16) 0 0; }
+  #cardMat img { display: block; max-width: 100%; max-height: 40vh; border-radius: var(--radius-lg); background: #fff; }
+  #cardMat .ms { display: block; margin-top: 6px; font-size: 14px; opacity: .8; }
+  #cardMat .st { padding: 14px 16px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--inverse-ink) 10%, transparent); }
+  #cardMat .st b { display: block; margin-bottom: 4px; }
+  #cardMat .st p { margin: 0; font-size: 15px; }
+  .qmodel { margin-top: var(--space-32); padding-top: var(--space-16); border-top: 1px solid var(--border); }
+  .qmodel h2 { margin: 0 0 4px; font-size: 16px; }
   .bottom { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 10px 20px 20px; background: var(--surface); box-shadow: 0 -1px 0 var(--border); }
 
   /* AI 도구, 버전, 메뉴 */
@@ -677,7 +703,7 @@
     <div class="row"><span class="small grow" id="qaState"></span></div>
     <h2 class="lbl">들은 질문</h2>
     <p id="live"></p>
-    <button id="ask">질문 듣기</button>
+    <button id="ask" hidden>다음 질문</button>
     <label class="lbl" for="qaText">채팅으로 들어온 질문</label>
     <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="붙여넣고 Enter를 눌러 주세요">
   </div>
@@ -694,6 +720,7 @@
       <div id="cardKeys"></div>
       <span class="warn" id="cardCheck" hidden>직접 확인</span>
       <ul id="cardA"></ul>
+      <div id="cardMat" hidden></div>
       <p class="small" id="cardSrc" hidden></p>
     </div>
     <div id="cardMore"></div>
@@ -748,43 +775,40 @@
 
 <section class="e-only q-only page" id="prep" aria-labelledby="prepTitle">
   <h1 id="prepTitle" tabindex="-1">Q&amp;A 준비</h1>
-  <p class="small">지금 대본으로 예상 질문과 답을 만들어요. 만든 뒤에는 꼭 읽어 보고 고친 다음 저장해 주세요.</p>
-  <label>주제 <input id="topic" data-info="topic" autocomplete="off"></label>
-  <label>듣는 사람 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
-  <label>질문 수 <input id="count" data-info="n" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
-  <div class="row">
-    <button id="gen" class="primary">AI로 만들기</button>
-    <button id="copyPrompt">프롬프트 복사</button>
-    <button id="pasteBtn">결과 붙여넣기</button>
-  </div>
-  <p class="small" id="keyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn2">AI 키 넣기</button></p>
+  <p class="lead">대본으로 예상 질문과 답을 만들어요. 고치면 바로 저장돼요.</p>
+  <div class="row"><button id="gen" class="cta">질문 만들기</button><button id="genMore" hidden>질문 더 만들기</button></div>
+  <div class="row qmat"><span class="small grow" id="qaMatT"></span><button id="qaMatBtn">발표 자료 올리기</button><input id="qaFile" type="file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden></div>
+  <details id="qaOpt">
+    <summary>더 맞춤으로 만들기</summary>
+    <label>주제 <input id="topic" data-info="topic" autocomplete="off" placeholder="비워 두면 대본에서 짐작해요"></label>
+    <label>듣는 사람 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
+    <label>질문 수 <input id="count" data-info="n" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
+  </details>
+  <details id="qaNoKey">
+    <summary>AI 키 없이 만들기</summary>
+    <p class="small" id="keyHint">프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣어 주세요. <button id="keyBtn2">AI 키 넣기</button></p>
+    <div class="row"><button id="copyPrompt">프롬프트 복사</button><button id="pasteBtn">결과 붙여넣기</button></div>
+    <textarea id="promptOut" rows="6" readonly hidden></textarea>
+    <div id="pasteBox" hidden>
+      <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
+      <div class="row"><button id="pasteApply">적용</button></div>
+    </div>
+  </details>
   <p id="prepMsg" role="status"></p>
-  <textarea id="promptOut" rows="6" readonly hidden></textarea>
-  <div id="pasteBox" hidden>
-    <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-    <div class="row"><button id="pasteApply">적용</button></div>
-  </div>
-
-  <h3>질문 <span id="qCount">0</span>개</h3>
+  <div class="qhead"><h2>질문 <span id="qCount">0</span>개</h2><input id="qFind" type="search" autocomplete="off" placeholder="질문 찾기" aria-label="질문 찾기"></div>
   <div id="qList"></div>
-  <button id="addQ">질문 추가</button>
-
-  <h3>질문 찾기 모델</h3>
-  <p class="small" id="modelMsg"></p>
-  <button id="getModel">질문 찾기 모델 받기 (약 135MB, 와이파이 권장)</button>
-  <label><input type="checkbox" id="autoCard"> 확신이 높으면 답 카드를 바로 열기 (질문 찾기 모델을 받은 뒤에 돼요)</label>
-  <div id="jevBox" hidden>
-    <label><input type="checkbox" id="jevOn"> 더 큰 AI 모델로 한 번 더 고르기 (실험, 컴퓨터 Chrome 권장)</label>
-    <p class="small" id="jevMsg"></p>
-    <button id="getJev" hidden></button>
-  </div>
-
-  <div class="row bottom">
-    <button id="savePack" class="primary">저장</button>
-    <button id="exportPack">내보내기</button>
-    <button id="importBtn">가져오기</button>
-    <input id="importFile" type="file" accept=".json,application/json" hidden>
-  </div>
+  <button id="addQ">＋ 질문 추가</button>
+  <section class="qmodel" aria-labelledby="modelH">
+    <h2 id="modelH">질문 찾기 모델</h2>
+    <p class="small" id="modelMsg"></p>
+    <button id="getModel">질문 찾기 모델 받기 (약 135MB, 와이파이 권장)</button>
+    <div id="jevBox" hidden>
+      <label><input type="checkbox" id="jevOn"> 더 큰 AI 모델로 한 번 더 고르기 (실험, 컴퓨터 Chrome 권장)</label>
+      <p class="small" id="jevMsg"></p>
+      <button id="getJev" hidden></button>
+    </div>
+  </section>
+  <div class="row sfoot"><button id="exportPack">질문 내보내기</button><button id="importBtn">질문 가져오기</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
 </section>
 
 <dialog id="ai" aria-labelledby="aiTitle">

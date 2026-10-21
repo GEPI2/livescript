@@ -143,6 +143,23 @@ export const slidesFrom = async (file, load = () => import('./vendor/pdfjs/pdf.m
   return { kind, slides: await pptxSlides(buf) };
 };
 
+// PDF 쪽 그림(Q&A 답 카드에 띄울 부가자료): 앞 max쪽만, 폭 w px JPEG Blob 배열. 캔버스가 있는 브라우저에서만 부른다
+export async function pdfThumbs(file, { max = 60, w = 640, load = () => import('./vendor/pdfjs/pdf.min.mjs') } = {}) {
+  const pdfjs = await load();
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise, out = [];
+  try {
+    for (let i = 1; i <= Math.min(doc.numPages, max); i++) {
+      const pg = await doc.getPage(i), v = pg.getViewport({ scale: w / pg.getViewport({ scale: 1 }).width }), c = document.createElement('canvas');
+      c.width = Math.round(v.width); c.height = Math.round(v.height);
+      await pg.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
+      out.push(await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.75)));
+      pg.cleanup();
+    }
+  } finally { doc.destroy(); }
+  return out;
+}
+
 // node slides.js 로 확인
 if (typeof process === 'object' && process.argv[1]?.endsWith('slides.js')) {
   const assert = (await import('node:assert')).default, zlib = await import('node:zlib');

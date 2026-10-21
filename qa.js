@@ -98,7 +98,9 @@ export function fromB64(b64) {
 }
 
 // ---- 질문 팩 검사 (AI 결과, 붙여넣은 JSON, 가져온 파일은 모두 믿지 않는다) ----
-export const LIMIT = { questions: 60, alts: 12, answer: 6, text: 200, line: 300, keys: 4, key: 30 };
+export const LIMIT = { questions: 60, alts: 12, answer: 6, text: 200, line: 300, keys: 4, key: 30, slide: 300 };
+// 질문 분류(Q&A 준비 목록을 묶는다). 모르는 값이나 없으면 분류 없이 둔다(목록에서는 '기타')
+export const CATS = ['내용', '근거·숫자', '한계·위험', '비교', '활용·계획', '기타'];
 const str = (v, max) => typeof v === 'string' ? v.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, max) : '';
 const lines = (v, max, n) => [...new Set((Array.isArray(v) ? v : typeof v === 'string' ? v.split('\n') : [])
   .map(x => str(x, max)).filter(Boolean))].slice(0, n);
@@ -122,6 +124,10 @@ export function cleanPack(obj) {
       keys: lines(typeof it.keys === 'string' ? it.keys.split(/[,，\n]/) : it.keys, LIMIT.key, LIMIT.keys),  // 답 카드 맨 위 핵심 키워드(시안). 없어도 된다
       source: str(it.source, LIMIT.line),
       check: it.check === true,
+      // 있을 때만 둔다(옛 팩과 모양이 같게): 분류, 답에 띄울 슬라이드 번호(1부터), 발표자가 고친 질문(다시 만들어도 남긴다)
+      ...(CATS.includes(it.cat) && { cat: it.cat }),
+      ...(Number.isInteger(it.slide) && it.slide > 0 && it.slide <= LIMIT.slide && { slide: it.slide }),
+      ...(it.mine === true && { mine: true }),
     });
   }
   if (!out.length) throw new Error('쓸 수 있는 질문이 하나도 없어요.');
@@ -248,6 +254,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(c.questions[0], { id: 'q01', q: '첫 질문', alts: ['가'], answer: ['줄1', '줄2'], keys: [], source: '', check: false }, '다듬기, 중복 제거, 문자열 아닌 값 버리기');
   assert.deepEqual(cleanPack([{ q: '질문', keys: ['가', ' 가 ', '나', '', 3, '다', '라', '마'] }]).questions[0].keys, ['가', '나', '다', '라'], '핵심 키워드는 4개까지, 중복·빈 값 버림');
   assert.deepEqual(cleanPack([{ q: '질문', keys: '가, 나，다\n라' }]).questions[0].keys, ['가', '나', '다', '라'], '쉼표로 적어도 된다');
+  assert.deepEqual(cleanPack([{ q: '가', cat: '비교', slide: 3, mine: true }, { q: '나', cat: '아무거나', slide: 0 }, { q: '다', slide: 2.5, mine: 1 }]).questions.map(({ cat, slide, mine }) => ({ cat, slide, mine })),
+    [{ cat: '비교', slide: 3, mine: true }, {}, {}].map(x => ({ cat: x.cat, slide: x.slide, mine: x.mine })), '분류·슬라이드·고친 표시는 맞을 때만');
   assert.deepEqual(c.questions[1].alts, ['x']);
   const SS = ['앱은 설치 없이 브라우저에서 무료로 씁니다.', '질문 판정은 기기 안에서 합니다.', '발표가 늦어지면 뒷부분을 줄여 줍니다.', '무료 오픈소스 모델을 씁니다.'];
   assert.deepEqual(scriptHits(SS, '무료로 쓸 수 있나요').map(h => h.i), [0, 3], '질문의 음절 조각이 많이 든 문장부터');

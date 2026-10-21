@@ -1,5 +1,5 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=17';
+import { cleanPack, CATS } from './qa.js?v=17';
 import { cleanAi } from './adlib.js?v=17';
 import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=17';
 
@@ -43,8 +43,10 @@ export const PACK_SCHEMA = {
           keys: { type: 'array', items: { type: 'string' } },
           source: { type: 'string' },
           check: { type: 'boolean' },
+          cat: { type: 'string', enum: CATS },
+          slide: { type: 'integer' },
         },
-        required: ['id', 'q', 'alts', 'answer', 'keys', 'source', 'check'],
+        required: ['id', 'q', 'alts', 'answer', 'keys', 'source', 'check', 'cat', 'slide'],
         additionalProperties: false,
       },
     },
@@ -53,7 +55,10 @@ export const PACK_SCHEMA = {
   additionalProperties: false,
 };
 
-export function qaPrompt({ topic, audience, n, script }) {
+// info: { topic, audience, n, script, outline(한 줄에 슬라이드 하나, 없으면 ''), refs, rubric(평가 기준 줄들), have(이미 있는 질문들) }.
+// 주제와 듣는 사람을 적지 않았으면 대본에서 짐작한다
+export function qaPrompt({ topic, audience, n, script, outline = '', refs = '', rubric = [], have = [] }) {
+  const slides = outline.split('\n').map(x => x.trim()).filter(Boolean);
   const system = `너는 발표 준비를 돕는다. 발표가 끝난 뒤 질의응답에서 청중이 물을 만한 예상 질문과 답을 만든다.
 발표자는 질문을 듣고 따라 말하며, 앱이 그 말을 준비된 질문과 비교해 답 카드를 띄운다.
 
@@ -67,14 +72,30 @@ export function qaPrompt({ topic, audience, n, script }) {
 - 답은 아래 자료(발표 정보와 대본)에 있는 내용으로만 쓴다. 숫자나 사실을 지어내지 않는다.
 - 자료만으로 답할 수 없으면 답에 확인할 점을 적고 check를 true로 한다. 자료에 근거가 있으면 false.
 - source: 답의 근거가 된 대본 문장을 그대로 옮긴다. 없으면 빈 문자열.
+- cat: 질문 분류. ${CATS.map(c => `'${c}'`).join(', ')} 가운데 하나.
+- slide: ${slides.length ? '답할 때 화면에 띄우면 좋은 슬라이드 번호(<슬라이드>의 번호). 맞는 슬라이드가 없으면 0.' : '0으로 둔다(슬라이드 자료가 없다).'}${rubric.length ? `
+- 평가 기준이 있으면 심사위원이 그 기준으로 물을 질문도 넣는다.` : ''}${have.length ? `
+- <이미있는질문>과 같거나 거의 같은 질문은 만들지 않는다.` : ''}
 - id: q01, q02처럼 차례로 붙인다.
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
-{"version":1,"questions":[{"id":"q01","q":"...","alts":["...","..."],"answer":["..."],"keys":["...","..."],"source":"...","check":false}]}`;
+{"version":1,"questions":[{"id":"q01","q":"...","alts":["...","..."],"answer":["..."],"keys":["...","..."],"source":"...","check":false,"cat":"내용","slide":0}]}`;
   const user = `<발표정보>
-주제: ${topic || '(적지 않음)'}
-청중: ${audience || '(적지 않음)'}
-</발표정보>
+주제: ${topic || '(적지 않음. 대본에서 짐작한다)'}
+청중: ${audience || '(적지 않음. 대본에서 짐작한다)'}
+</발표정보>${slides.length ? `
+<슬라이드>
+${slides.map((x, i) => `${i + 1}. ${x}`).join('\n')}
+</슬라이드>` : ''}${refs.trim() ? `
+<참고자료>
+${refs.trim()}
+</참고자료>` : ''}${rubric.length ? `
+<평가기준>
+${rubric.map((x, i) => `${i + 1}. ${x}`).join('\n')}
+</평가기준>` : ''}${have.length ? `
+<이미있는질문>
+${have.map(x => '- ' + x).join('\n')}
+</이미있는질문>` : ''}
 <대본>
 ${script}
 </대본>
@@ -647,6 +668,10 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(p.system.includes('7개') && p.system.includes('6~8개') && p.system.includes('check를 true') && p.system.includes('"version":1'));
   assert.ok(p.user.includes('<대본>\n안녕하세요.\n</대본>') && p.text.startsWith(p.system));
   assert.ok(!JSON.stringify(PACK_SCHEMA).match(/maxItems|minItems|minLength|maxLength/), '구조화 출력이 받지 않는 제약은 넣지 않는다');
+  assert.ok(p.user.includes('주제: 라이브스크립트') && !p.user.includes('<슬라이드>') && p.system.includes('0으로 둔다(슬라이드 자료가 없다)') && p.system.includes("'한계·위험'"), '분류와 슬라이드');
+  const pq = qaPrompt({ n: 5, script: '안녕하세요.', outline: '도입: 문제\n\n해결: 방법', refs: '설문 30명', rubric: ['근거가 있나'], have: ['무료인가요?'] });
+  assert.ok(pq.user.includes('주제: (적지 않음. 대본에서 짐작한다)') && pq.user.includes('<슬라이드>\n1. 도입: 문제\n2. 해결: 방법\n</슬라이드>') && pq.user.includes('<참고자료>\n설문 30명')
+    && pq.user.includes('<평가기준>\n1. 근거가 있나') && pq.user.includes('<이미있는질문>\n- 무료인가요?') && pq.system.includes('<슬라이드>의 번호') && pq.system.includes('같거나 거의 같은 질문은 만들지 않는다'), '자료·평가 기준·있는 질문');
 
   const good = { version: 1, questions: [{ id: 'q01', q: '아이폰에서도 되나요?', alts: ['사파리에서 돼요'], answer: ['네.'], source: '', check: false }] };
   assert.equal(parsePack('네, 여기 있습니다.\n```json\n' + JSON.stringify(good) + '\n```').questions[0].q, '아이폰에서도 되나요?', '코드 블록이 붙어도');

@@ -1,8 +1,8 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=17';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=17';
 import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun, rubOf } from './claude.js?v=17';
 import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=17';
-import { slidesFrom, outlineLines, topicOf } from './slides.js?v=17';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=17';
 import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=17';
 import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=17';
 import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=17';
@@ -236,6 +236,7 @@ function initRec() {
       hearReset(hs, sessionNorm.length);
       sessionNorm = ''; cut = 0;
       if (qSeg) { qSeg.done += qSeg.cur + ' '; qSeg.cur = ''; qSeg.from = 0; }
+      qaIdx = -1;
       tape.end();
     }
     resFinal = e.results.length;
@@ -261,7 +262,7 @@ function initRec() {
     if (Date.now() - lastHeard > 1500) { lastResume = Date.now(); if (a && recOff <= lastHeard) a.gaps++; }
     lastHeard = Date.now();
     // 질의응답 중에는 대본 추적을 멈춘다 (질문과 답의 낱말에 커서가 끌려가지 않게)
-    if (qaMode) { onQuestion(q); return; }
+    if (qaMode) { qaIdx = e.results.length - 1; const L = e.results[qaIdx]; onQuestion(q, L.isFinal, L[0].transcript, qaIdx); return; }
     say(t, true);
     onHeard(heard + sessionNorm.slice(cut));
     const b = accAt();
@@ -274,6 +275,7 @@ function initRec() {
     hearReset(hs, sessionNorm.length);
     sessionNorm = ''; cut = 0; resFinal = 0; finalSeen = 0;
     if (qSeg) { qSeg.done += qSeg.cur + ' '; qSeg.cur = ''; qSeg.from = 0; }
+    qaIdx = -1;
     tape.end();  // 정지했으면 여기서 마지막 애드리브가 정해진다
     // 기다리는 사이 '정지'를 눌렀으면 다시 켜지 않는다
     if (listening) setTimeout(() => { if (listening) try { rec.start(); } catch {} }, errored ? 1000 : 0);
@@ -978,23 +980,29 @@ const sidSec = sid => { let o = 0; for (const [i, u] of SU.entries()) { if (sid 
 let dbp = null;
 function idb() {
   return dbp ??= new Promise((ok, no) => {
-    const q = indexedDB.open('livescript-rec', 1);
-    q.onupgradeneeded = () => q.result.createObjectStore('segs');
+    const q = indexedDB.open('livescript-rec', 2);
+    q.onupgradeneeded = () => { for (const n of ['segs', 'media']) if (!q.result.objectStoreNames.contains(n)) q.result.createObjectStore(n); };
     q.onsuccess = () => { const d = q.result; d.onversionchange = () => { d.close(); dbp = null; }; ok(d); };
     q.onerror = () => no(q.error); q.onblocked = () => no(new Error('blocked'));
   }).catch(e => { dbp = null; throw e; });
 }
 // f(store)가 돌려준 요청의 결과를 거래가 끝난 뒤 돌려준다
-async function idbDo(mode, f) {
+async function idbDo(mode, f, name = 'segs') {
   const d = await idb();
   return new Promise((ok, no) => {
-    const tx = d.transaction('segs', mode), q = f(tx.objectStore('segs'));
+    const tx = d.transaction(name, mode), q = f(tx.objectStore(name));
     tx.oncomplete = () => ok(q?.result); tx.onerror = tx.onabort = () => no(tx.error);
   });
 }
 const keyRange = p => IDBKeyRange.bound(p, p + '\uffff');
 const segPut = (k, v) => idbDo('readwrite', st => st.put(v, k));
 const segDel = p => idbDo('readwrite', st => st.delete(keyRange(p))).catch(() => {});
+// 부가자료(media): `${대본 id}:slides` → { kind, name, slides: [{ n, title, body }] }, `${id}:thumb:${n}` → PDF 쪽 그림 Blob, `${id}:img:${질문 id}` → 답에 붙인 그림 Blob
+const media = (mode, f) => idbDo(mode, f, 'media');
+const mediaPut = (k, v) => media('readwrite', st => st.put(v, k));
+const mediaGet = k => media('readonly', st => st.get(k)).catch(() => null);
+const mediaDel = p => media('readwrite', st => st.delete(keyRange(p))).catch(() => {});
+const mediaKeys = p => media('readonly', st => st.getAllKeys(keyRange(p))).catch(() => []);
 // 이 발표(대본 id, t0)의 조각들 [{ key, blob, ms, marks }] (오래된 것부터). 저장소를 못 열면 []
 async function segsOf(id, t0) {
   try {
@@ -1758,7 +1766,6 @@ function showTab() {
 }
 // 탭으로 간다. 빈 대본이면 연습·실전에 가지 않고, [확인 필요]가 남았으면 묻는다. 갔으면 true
 function goTab(t) {
-  if (tab === 'qa' && t !== 'qa' && !okClose()) return false;
   if (t === 'practice' || t === 'live') {
     if (!$('text').value.trim()) { tell("먼저 대본을 쓰거나 붙여넣어 주세요."); return false; }
     const n = marks();
@@ -1853,8 +1860,8 @@ addEventListener('keydown', e => {
 let pack = null, qsents = [], V = null, vecKey = '', pipe = null, busy = false;
 let modelState = store.get('ls.embLoading') ? 'crashed' : 'off';  // off | loading | ready | failed | crashed
 let modelErr = '', modelJob = null, vecJob = null;
-// 이 기기 설정: 답 카드 자동 열기(기본 꺼짐, 기준값은 qa.js confidence), JEV 모드(실험, 기본 꺼짐, WebGPU가 있는 기기에만 보임)
-let autoCard = store.get('ls.autoCard') === '1', jevOn = store.get('ls.jev') === '1';
+// 이 기기 설정: JEV 모드(실험, 기본 꺼짐, WebGPU가 있는 기기에만 보임)
+let jevOn = store.get('ls.jev') === '1';
 let jev = null, jevJob = null, jevState = store.get('ls.jevLoading') ? 'crashed' : 'off';  // off | loading | ready | failed | nogpu | crashed
 const HAS_GPU = !!navigator.gpu;
 
@@ -1926,8 +1933,6 @@ $('jevOn').onchange = () => {
   showJev(); showModel();
   jevNow();
 };
-$('autoCard').checked = autoCard;
-$('autoCard').onchange = () => { autoCard = $('autoCard').checked; autoCard ? store.set('ls.autoCard', '1') : store.del('ls.autoCard'); };
 
 // 불러오기나 계산이 실패하면 음절 비교로 돌아간다. 실행이 한 번 실패하면 transformers의 실행 순서가 막혀
 // 이후 계산도 모두 실패하므로(새로고침해야 풀림) 모델을 더 쓰지 않는다.
@@ -2027,25 +2032,38 @@ $('getModel').onclick = () => getModel(t => t && ($('modelMsg').textContent = t)
 $('qaRetry').onclick = () => getModel(t => t && ($('qaGetMsg').textContent = t)).finally(showModel);
 
 // ---- 질의응답 화면 ----
-let qaMode = false, qSeg = null;  // qSeg: '질문'을 누른 뒤 모으는 중인 말 { from, done, cur }
+// Q&A를 켜면 누를 것 없이 듣는다. 말하는 동안 글자 비교로 가장 비슷한 질문의 답 카드를 바로 띄우고, 말이 끝나면(확정 결과) 질문 찾기 모델로 다시 골라
+// 확실하면 카드를 잠근다. 잠긴 동안 발표자가 답하는 말에는 카드가 바뀌지 않고, 묻는 말끝이나 다른 질문과 확실히 맞는 말이 들리면 새 질문으로 본다.
+// ponytail: 묻는 말끝은 어림이다(답에 '…해 주세요'가 나오면 새 질문으로 본다). 틀리면 '다음 질문'을 누른다
+let qaMode = false, qSeg = null, qLock = null, qaIdx = -1;  // qSeg: 지금 질문으로 모으는 말 { from: 인식 결과 번호, done, cur }, qLock: 잠근 카드의 질문 id('none': 해당 없음), qaIdx: 마지막 인식 결과 번호
 let asked = '', askedBy = 'voice';  // 마지막으로 판정한 질문과 받은 길('voice', 'chat'). 전체 목록에서 고른 카드에도 보여 준다.
+const ASK = /(까요|나요|니까|가요|죠|뭐예요|뭔가요|어때요|는지요|은지요|궁금(합니다|해요|한데요)|알고\s*싶(어요|습니다)|주세요|주시겠어요|주실\s*수\s*있나요)\s*[?？]?$/;
+const isAsk = t => ASK.test(t.trim()) || /[?？]\s*$/.test(t);
 // 왼쪽 '들은 질문' 칸: 안내 글은 작게, 들은 질문은 크게
 function liveMsg(t) { const l = $('live'); l.textContent = t; l.className = ''; delete l.dataset.src; }
 function liveQ(t, by) { if (!t) return liveMsg(''); const l = $('live'); l.textContent = '“' + t + '”'; l.className = 'q'; l.dataset.src = by === 'chat' ? '채팅으로 받음' : '음성으로 받음'; }
 let judgeN = 0;  // 판정 번호. 새 질문을 시작하면 늘려서 늦게 끝난 판정을 버린다.
+// 새 질문을 받을 준비: 카드·후보를 지우고 다음 인식 결과부터 모은다
+function freshQ() {
+  qLock = null; judgeN++; asked = '';
+  qSeg = { from: qaIdx + 1, done: '', cur: '' };
+  $('card').hidden = true; $('hits').hidden = true; $('chips').textContent = ''; $('chips').classList.remove('final'); $('qaTime').textContent = ''; $('qaLow').hidden = true;
+}
 
 function setQa(on) {
   if (on) { tape.close(0); qaAt = Date.now(); closeUndo(); stopAudio('qa'); if (listening) saveRun(); }  // 질의응답에서 하는 말은 애드리브가 아니다. 목소리 분석은 다음 시작 때 다시 켠다
-  qaMode = on; qSeg = null;
+  qaMode = on;
   sayNone();  // 돌아왔을 때 예전 말이 남지 않게
   document.body.classList.toggle('qa', on);
   $('qaBtn').textContent = on ? '대본으로' : 'Q&A';
-  askBtn();
   if (on) {
+    qaIdx = listening ? resFinal - 1 : -1; freshQ();
     scrollTo(0, 0); showModel(); renderAll();
-    if ($('card').hidden) liveMsg(pack ? "'질문 듣기'를 누르고 청중 질문을 따라 말한 뒤 한 번 더 누르세요. 채팅 질문은 아래 칸에 붙여넣으세요." : '');
+    liveMsg(!pack ? '' : SR ? '질문을 따라 말하면 답 카드가 바로 떠요. 채팅 질문은 아래 칸에 붙여넣어 주세요.' : NO_SR);
+    if (SR && !listening && pack) start();  // Q&A를 누른 것이 시작이다(누를 것을 줄인다)
   }
-  else jump(cur);  // 질의응답 중에 들은 말에 커서가 끌려가지 않게
+  else { qSeg = null; qLock = null; jump(cur); }  // 질의응답 중에 들은 말에 커서가 끌려가지 않게
+  askBtn(); showCoach();
 }
 // 발표 중 질의응답에 다녀와 대본을 이어 읽으면 목소리 분석은 다음 마이크 시작까지 꺼져 있다. 결과 창에 그 때를 적는다
 $('qaBtn').onclick = () => {
@@ -2053,37 +2071,43 @@ $('qaBtn').onclick = () => {
   if (!qaMode && listening && runAud && !runAud.off && !au && cur < S.s.length) runAud = { off: 'qa', at: wallSum() };
 };
 
-// 답 카드를 연 동안(body.carded)은 '질문' 버튼을 작게 줄이고 카드를 화면 위로 올린다
+// '다음 질문'은 카드가 잠겼을 때만. 답 카드를 연 동안(body.carded)은 카드를 화면 위로 올린다
 function askBtn() {
-  $('ask').textContent = qSeg ? '듣는 중 · 다시 누르면 고르기' : $('card').hidden ? '질문 듣기' : '다음 질문 듣기';
-  $('ask').classList.toggle('on', !!qSeg);
+  $('ask').hidden = !qLock;
   document.body.classList.toggle('carded', !$('card').hidden);
 }
+$('ask').onclick = () => {
+  freshQ(); askBtn();
+  liveMsg('다음 질문을 따라 말해 주세요.');
+  if (SR && !listening) start();
+};
 
-function ask() {
-  if (!qSeg) {
-    qSeg = { from: listening ? resFinal : 0, done: '', cur: '' };
-    asked = ''; judgeN++;
-    $('card').hidden = true; $('hits').hidden = true; $('chips').textContent = ''; $('chips').classList.remove('final'); $('qaTime').textContent = ''; $('qaLow').hidden = true;
-    liveMsg(SR ? '질문을 따라 말한 뒤 한 번 더 누르세요.' : NO_SR);
-    if (!listening && SR) start();
-  } else {
-    const text = (qSeg.done + qSeg.cur).replace(/\s+/g, ' ').trim();
-    qSeg = null;
-    if (text) judge(text);
-    else liveMsg('질문을 듣지 못했어요. 다시 눌러 주세요.');
-  }
-  askBtn();
-}
-$('ask').onclick = ask;
-
-// 말하는 동안: 음절 비교로 후보를 계속 바꿔 보여 준다
-function onQuestion(q) {
+// 들은 말. 말하는 동안에는 글자 비교 1등의 답을 바로 띄우고(잠그지 않는다), 확정되면 판정한다. 잠긴 동안에는 새 질문인지만 본다
+function onQuestion(q, fin, last, idx) {
   if (!qSeg || !pack) return;
+  if (qLock) { if (fin && last.trim()) newAsk(last.trim(), idx); return; }
   qSeg.cur = q;
   const text = (qSeg.done + q).replace(/\s+/g, ' ').trim();
+  if (!text) return;
   liveQ(text.slice(-80), 'voice');
-  if (text) chips(rank(pack, qsents, text).slice(0, 3), text, false);
+  if (fin) return judge(text);
+  const top = rank(pack, qsents, text).slice(0, 3);
+  if (top[0]?.b > 0) openCard(top[0].q, top, text, 'live', 0);
+}
+// 잠긴 동안 확정된 말이 새 질문인가: 묻는 말끝이거나, 다른 질문과 확실히 맞으면(모델이 있으면 확신, 없으면 글자 비교 0.6 이상)
+async function newAsk(t, idx) {
+  const lock = qLock;
+  let fresh = isAsk(t);
+  if (!fresh) {
+    try {
+      const qv = pipe && V ? await embed(pipe, [t]) : null, all = rank(pack, qsents, t, qv, V);
+      fresh = !!all[0] && all[0].q.id !== lock && (qv ? confidence(all).sure : all[0].b >= 0.6);
+    } catch (e) { modelBroke(e); }
+  }
+  if (!fresh || qLock !== lock || !qaMode) return;
+  freshQ();
+  qSeg = { from: idx, done: '', cur: t };
+  judge(t);
 }
 
 // 두 번째 탭이나 입력칸 Enter: e5 + 음절 비교로 판정. JEV 모드면 Kev가 e5 후보 5개와 '해당 없음' 가운데 다시 고른다.
@@ -2113,13 +2137,13 @@ async function judge(text, by = 'voice') {
     }
     if (n !== judgeN) return;
   }
-  const c = qv ? confidence(all) : null;
-  const auto = autoCard && c?.sure && !jv?.noneFirst && (!jv || jv.top[0].q === all[0].q);
-  chips(top, text, true, jv?.noneFirst, !!qv);
-  $('qaLow').hidden = !c?.low;
+  // 확실하면 카드를 열고 잠근다: 모델이 있으면 '확신 낮음'이 아닐 때, 없으면 글자 비교 0.3 이상. 아니면 후보 칩과 '잘 모르겠어요'(같은 질문을 이어 모은다)
+  const c = qv ? confidence(all) : null, best = jv?.noneFirst ? null : top[0], ok = !!best && (qv ? !c.low : best.b >= 0.3);
   $('qaTime').textContent = (qv ? '이 기기 안에서 골랐어요' : '글자 비교로 골랐어요') + ` · ${ms + (jv?.ms ?? 0)}ms` + jmsg;
   liveQ(text, by);  // 들은 질문은 카드를 열어도 왼쪽에 남는다
-  if (auto) openCard(all[0].q, top, text, 'auto', 0);
+  if (ok) openCard(best.q, top, text, 'auto', 0);
+  else { $('card').hidden = true; chips(top, text, true, jv?.noneFirst, !!qv); askBtn(); }
+  $('qaLow').hidden = ok;
 }
 
 function chip(label, fn, cls = '') {
@@ -2137,9 +2161,7 @@ function chips(top, text, final, noneFirst = false, sim = false) {
   box.classList.toggle('final', final);  // 판정이 끝난 후보는 번호를 달고 1순위에 테두리
   // 말하는 동안 바뀌는 후보는 읽어 주지 않는다 (화면 읽기 소리가 질문 인식에 섞이지 않게). 판정이 끝나면 읽어 준다.
   $('qaRes').setAttribute('aria-busy', !final);
-  const none = final && chip('해당 없음 · 관련 대본 구간 보기', () => {
-    box.textContent = ''; $('qaLow').hidden = true; showHits(asked);
-  }, 'none');
+  const none = final && chip('해당 없음 · 관련 대본 구간 보기', () => { box.textContent = ''; $('qaLow').hidden = true; showHits(asked); }, 'none');
   if (none && noneFirst) box.append(none);
   top.forEach((r, i) => {
     const b = chip(r.q.q, () => openCard(r.q, top, text, final ? 'chip' : 'live', i), i ? '' : 'top');
@@ -2152,9 +2174,9 @@ function chips(top, text, final, noneFirst = false, sim = false) {
 // 카드는 다음 '질문'을 누를 때까지 저절로 바뀌지 않는다
 // how: 어떻게 열었나('chip', 'live' 말하는 중의 칩, 'more' 카드 아래 칩, 'list' 전체 목록, 'auto' 자동). rank: 후보 중 몇째(0부터)
 function openCard(q, top = [], text = '', how = '', rank = -1) {
-  qSeg = null;
-  $('chips').textContent = ''; $('hits').hidden = true; liveQ(text, askedBy); $('qaLow').hidden = true;
-  $('cardHeard').textContent = rank < 0 ? '고른 질문' : rank ? '비슷한 질문' : '가장 비슷한 질문';
+  if (how !== 'live') { qLock = q.id; qSeg = { from: qaIdx + 1, done: '', cur: '' }; }  // 다음 말은 답이거나 새 질문
+  $('chips').textContent = ''; $('hits').hidden = true; if (how !== 'live') liveQ(text, askedBy); $('qaLow').hidden = true;
+  $('cardHeard').textContent = how === 'live' ? '듣는 중 · 가장 비슷한 질문' : rank < 0 ? '고른 질문' : rank ? '비슷한 질문' : '가장 비슷한 질문';
   $('cardRank').hidden = rank < 0;
   $('cardRank').textContent = (rank + 1) + '순위';
   $('cardQ').textContent = q.q;
@@ -2169,6 +2191,7 @@ function openCard(q, top = [], text = '', how = '', rank = -1) {
   }
   $('cardSrc').textContent = q.source ? '근거: ' + q.source : '';
   $('cardSrc').hidden = !q.source;
+  cardMat(q);
   // 카드 아래: 다른 후보(번호는 순위)와 '해당 없음'. 답의 일부로 보이지 않게 이름표를 단다
   const more = $('cardMore');
   more.textContent = '';
@@ -2187,16 +2210,17 @@ function openCard(q, top = [], text = '', how = '', rank = -1) {
     });
     more.append(chip('해당 없음 · 관련 대본 구간 보기', () => showHits(asked), 'none'));
   }
+  const was = $('card').hidden;
   $('card').hidden = false;
   askBtn();
-  $('card').scrollIntoView({ block: 'start' });
-  if (how !== 'auto') $('cardQ').focus({ preventScroll: true });  // 누른 칩은 사라지므로 포커스를 답 카드 제목으로 (화면 읽기도 답이 열린 것을 안다). 자동으로 열릴 때는 포커스를 뺏지 않는다
+  if (was) $('card').scrollIntoView({ block: 'start' });
+  if (['chip', 'more', 'list'].includes(how)) $('cardQ').focus({ preventScroll: true });  // 누른 칩은 사라지므로 포커스를 답 카드 제목으로 (화면 읽기도 답이 열린 것을 안다). 자동으로 열릴 때는 포커스를 뺏지 않는다
 }
 
 // '해당 없음'(시안): 들은 질문과 가까운 대본 문장을 보여 주고, 누르면 질의응답에서 나가 그 문장으로 간다. 없으면 전체 질문 목록을 연다.
 function showHits(text) {
   const ss = sents.map((_, i) => words.filter(w => w.s === i).map(w => w.t).join(' ')), hs = text ? scriptHits(ss, text) : [];
-  $('card').hidden = true; askBtn();
+  $('card').hidden = true; qLock = 'none'; qSeg = { from: qaIdx + 1, done: '', cur: '' }; askBtn();
   $('hits').hidden = false;
   $('hitList').replaceChildren(...(hs.length ? hs.map(h => {
     const b = chip(h.t.length > 90 ? h.t.slice(0, 89) + '…' : h.t, () => { $('hits').hidden = true; setQa(false); jump(sentStart(h.i), 'tap'); });
@@ -2223,28 +2247,38 @@ for (const id of ['qaText', 'allQ']) $(id).onfocus = e => setTimeout(() => e.tar
 $('qaText').onkeydown = e => {
   const v = e.target.value.trim();
   if (e.key !== 'Enter' || e.isComposing || !v) return;
-  qSeg = null;
-  $('card').hidden = true;
-  askBtn();
+  freshQ(); askBtn();
   judge(v, 'chat');
 };
 
-// ---- Q&A 준비 창 (편집 화면) ----
-let draft = [], genCtl = null;
+// ---- Q&A 준비 ([Q&A] 탭) ----
+// draft: 화면의 질문 목록(빈 질문도 둔다). 고칠 때마다 빈 질문을 뺀 팩으로 바로 저장한다(qa.js cleanPack). 질문 벡터는 고치기를 멈춘 뒤 다시 계산한다.
+// 발표자가 고친 질문은 mine으로 두어 '질문 다시 만들기'에도 남긴다. qOpen: 펼쳐 둔 질문 id(다시 그려도 펼친 채로)
+let draft = [], genCtl = null, qOpen = new Set(), vecT = 0;
 const copyQs = qs => qs.map(q => ({ ...q, alts: [...q.alts], answer: [...q.answer], keys: [...(q.keys || [])] }));
 const prepMsg = t => { $('prepMsg').textContent = t; };
-// 저장하지 않은 질문 수정. 이 탭(sessionStorage)에 대본마다 두어서 창을 닫거나 새로고침해도 다시 열면 보인다.
-let dirty = false;
-const draftKey = () => 'ls.draft.' + lib.cur;
-function touched() { dirty = true; try { sessionStorage.setItem(draftKey(), JSON.stringify(draft)); } catch {} }
-function clean() { dirty = false; try { sessionStorage.removeItem(draftKey()); } catch {} }
+const newId = () => 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function touched(it) {
+  if (it) it.mine = true;
+  const items = draft.filter(q => q.q.trim());
+  $('qCount').textContent = items.length;
+  if (!items.length) { store.del(sk('pack')); store.del('ls.vec'); setPack(null); showModel(); return; }
+  let p;
+  try { p = cleanPack({ questions: items }); } catch (e) { return prepMsg(e.message); }
+  if (!save(sk('pack'), JSON.stringify(p))) prepMsg('이 기기에 저장하지 못했어요. 저장 공간이 가득 찼어요. 쓰지 않는 발표를 지우거나 질문을 내보내 두세요.');
+  setPack(p);
+  clearTimeout(vecT);
+  if (pipe) vecT = setTimeout(() => vectors().then(showModel), 1500);
+  showModel();
+}
 
-function info() {
+function info(have = []) {
   return {
     topic: $('topic').value.trim(),
     audience: $('audience').value.trim(),
     n: Math.max(1, Math.min(40, Math.round(+$('count').value) || 20)),
     script: $('text').value.normalize('NFC').trim(),
+    outline: pinfo.outline || '', refs: pinfo.refs || '', rubric: rubOf(pinfo.rubric || ''), have,
   };
 }
 
@@ -2266,56 +2300,70 @@ function field(tag, label, value, set) {
   l.append(label, el);
   el.value = value;
   if (tag === 'textarea') el.rows = Math.min(8, Math.max(2, value.split('\n').length));
-  el.oninput = () => { set(el.value); touched(); };
+  el.oninput = () => set(el.value);
   return l;
 }
 
+// 분류마다 묶고(CATS 차례, 분류가 없으면 '기타'), 질문은 한 줄로 접어 둔다. 찾기 칸은 질문과 바꿔 묻는 말에서 찾는다
 function renderDraft() {
-  const box = $('qList');
-  box.textContent = '';
-  $('qCount').textContent = draft.length;
-  draft.forEach((it, i) => {
-    const d = document.createElement('div');
-    d.className = 'qitem' + (it.check ? ' check' : '');
-    d.setAttribute('role', 'group'); d.setAttribute('aria-label', `질문 ${i + 1}`);  // 같은 이름의 칸이 여덟 번 읽히지 않게 번호를 붙인다
-    const chk = document.createElement('label'), cb = document.createElement('input');
-    chk.className = 'chk';
-    cb.type = 'checkbox'; cb.checked = it.check; cb.setAttribute('aria-label', `질문 ${i + 1} 직접 확인`);
-    cb.onchange = () => { it.check = cb.checked; d.classList.toggle('check', cb.checked); touched(); };
-    chk.append(cb, ' 직접 확인');
-    const del = chip('삭제', () => { draft.splice(i, 1); renderDraft(); touched(); (box.children[Math.min(i, draft.length - 1)]?.querySelector('input') ?? $('addQ')).focus(); });  // 지운 단추는 사라지므로 포커스를 이웃 질문으로
-    del.className = ''; del.setAttribute('aria-label', `질문 ${i + 1} 삭제`);
-    const row = document.createElement('div'), gap = document.createElement('span');
-    row.className = 'row';
-    gap.className = 'grow';
-    row.append(chk, gap, del);
-    const src = document.createElement('p');
-    src.className = 'small';
-    src.textContent = '근거: ' + it.source;
-    src.hidden = !it.source;
-    d.append(
-      field('input', `질문 ${i + 1}`, it.q, v => { it.q = v; }),
-      field('textarea', '바꿔 묻는 말 (한 줄에 하나)', it.alts.join('\n'), v => { it.alts = v.split('\n'); }),
-      field('textarea', '답 (한 줄에 하나)', it.answer.join('\n'), v => { it.answer = v.split('\n'); }),
-      field('input', '핵심 키워드 (쉼표로 나눠 2~3개, 답 카드 맨 위에 보여요)', (it.keys || []).join(', '), v => { it.keys = v.split(/[,，]/); }),
-      src, row,
-    );
-    box.append(d);
-  });
+  const box = $('qList'), f = plain($('qFind').value), groups = new Map(CATS.map(c => [c, []]));
+  draft.forEach((it, i) => { if (!f || plain([it.q, ...it.alts].join(' ')).includes(f)) groups.get(CATS.includes(it.cat) ? it.cat : '기타').push(i); });
+  $('qCount').textContent = draft.filter(q => q.q.trim()).length;
+  $('gen').textContent = genCtl ? '멈추기' : draft.length ? '질문 다시 만들기' : '질문 만들기';
+  $('genMore').hidden = !draft.length || !!genCtl;
+  box.replaceChildren(...[...groups].flatMap(([c, is]) => {
+    if (!is.length) return [];
+    const h = mk('h3', c); h.append(mk('span', String(is.length)));
+    return [h, ...is.map(qItem)];
+  }));
+  if (!box.children.length) box.append(mk('p', draft.length ? '찾는 질문이 없어요.' : "아직 질문이 없어요. '질문 만들기'를 눌러 주세요.", 'small'));
 }
+function qItem(i) {
+  const it = draft[i], d = mk('details', '', 'qitem' + (it.check ? ' check' : '')), sm = mk('summary'), body = mk('div', '', 'qbody'), qt = mk('span', it.q || '새 질문', 'qt');
+  d.open = qOpen.has(it.id);
+  d.ontoggle = () => { d.open ? qOpen.add(it.id) : qOpen.delete(it.id); };
+  const keys = mk('span', '', 'qk');
+  keys.append(...(it.keys || []).filter(k => k.trim()).slice(0, 3).map(k => mk('span', k.trim())));
+  sm.append(qt, keys, ...(it.check ? [mk('span', '직접 확인', 'qb warn')] : []), ...(it.slide ? [mk('span', `슬라이드 ${it.slide}`, 'qb')] : []), ...(imgs.has(it.id) ? [mk('span', '그림', 'qb')] : []));
+  const set = (f, redraw) => v => { f(v); touched(it); if (redraw) renderDraft(); else qt.textContent = it.q || '새 질문'; };
+  const cat = document.createElement('select'), cl = mk('label', '분류 ', 'small');
+  cat.append(...CATS.map(c => new Option(c, c, false, c === (it.cat || '기타'))));
+  cat.onchange = () => set(v => { it.cat = v; }, true)(cat.value);
+  cl.append(cat);
+  const chk = document.createElement('label'), cb = document.createElement('input');
+  chk.className = 'chk'; cb.type = 'checkbox'; cb.checked = it.check; cb.setAttribute('aria-label', `${it.q || '새 질문'} 직접 확인`);
+  cb.onchange = () => set(v => { it.check = v; }, true)(cb.checked);
+  chk.append(cb, ' 직접 확인');
+  const del = mk('button', '삭제'); del.setAttribute('aria-label', `${it.q || '새 질문'} 삭제`);
+  del.onclick = () => { draft.splice(i, 1); touched(); if (imgs.delete(it.id)) media('readwrite', st => st.delete(`${lib.cur}:img:${it.id}`)).catch(() => {}); renderDraft(); $('addQ').focus(); };
+  const row = mk('div', '', 'row'), src = mk('p', '근거: ' + it.source, 'small');
+  src.hidden = !it.source;
+  row.append(chk, mk('span', '', 'grow'), del);
+  body.append(
+    field('input', '질문', it.q, set(v => { it.q = v; })),
+    field('textarea', '바꿔 묻는 말 (한 줄에 하나)', it.alts.join('\n'), set(v => { it.alts = v.split('\n'); })),
+    field('textarea', '답 (한 줄에 하나)', it.answer.join('\n'), set(v => { it.answer = v.split('\n'); })),
+    field('input', '핵심 키워드 (쉼표로 나눠 2~3개, 답 카드 맨 위에 보여요)', (it.keys || []).join(', '), set(v => { it.keys = v.split(/[,，]/); })),
+    cl, ...qMat(it, set), src, row,
+  );
+  d.append(sm, body);
+  return d;
+}
+$('qFind').oninput = renderDraft;
 
-function setDraft(p, how) {
-  draft = copyQs(p.questions);
-  renderDraft();
-  const n = p.questions.filter(q => q.check).length;
-  prepMsg(`${how} 질문 ${p.questions.length}개를 불러왔어요.` + (n ? ` '직접 확인'이 켜진 ${n}개는 자료에 근거가 없으니 확인해 주세요.` : '') + " 읽어 보고 고친 뒤 '저장'을 누르세요.");
-  touched();
+// 받은 질문 팩을 목록에 넣는다. 다시 만들 때는 발표자가 고친 질문(mine)을 남기고, 더 만들 때는 모두 남긴다. 새 질문은 id를 새로 붙인다(남긴 질문과 겹치지 않게)
+function takePack(p, how, keep = draft.filter(q => q.mine)) {
+  const fresh = copyQs(p.questions).map(q => ({ ...q, id: newId(), mine: undefined }));
+  draft = [...keep, ...fresh];
+  touched(); renderDraft();
+  const n = fresh.filter(q => q.check).length;
+  prepMsg(`${how} 질문 ${fresh.length}개를 넣었어요.` + (keep.length && how !== '더 만든' ? ` 직접 고친 질문 ${keep.length}개는 그대로 뒀어요.` : '') + (n ? ` '직접 확인'이 붙은 ${n}개는 자료에 근거가 없으니 확인해 주세요.` : ''));
 }
 
 function showKey() {
   const k = keyStore.get();
   $('gen').hidden = !k;
-  $('keyHint').hidden = !!k;
+  $('qaNoKey').open = !k;
   $('aiGo').hidden = !k;
   $('aiKeyHint').hidden = !!k;
   $('genGo').hidden = !k;
@@ -2328,37 +2376,133 @@ function showKey() {
   updAlt();
 }
 
+// ---- 부가자료: 올린 발표 자료(슬라이드)와 답에 붙인 그림 (이 기기의 IndexedDB에만 둔다. 파일로 내보내기에는 들어가지 않는다) ----
+// slideRec: 지금 대본의 슬라이드 { kind, name, slides, thumbs: 쪽 그림이 있는 쪽 번호 } | null, imgs: 그림을 붙인 질문 id. objectURL은 대본을 바꿀 때 놓는다
+let slideRec = null, imgs = new Set(), matSeq = 0;
+const murls = new Map();
+async function mediaUrl(k) {
+  if (!murls.has(k)) { const b = await mediaGet(k); if (!(b instanceof Blob)) return null; murls.set(k, URL.createObjectURL(b)); }
+  return murls.get(k);
+}
+const dropUrl = k => { if (murls.has(k)) { URL.revokeObjectURL(murls.get(k)); murls.delete(k); } };
+function freeMedia() { for (const u of murls.values()) URL.revokeObjectURL(u); murls.clear(); }
+async function loadMedia() {
+  const id = lib.cur, [rec, tk, ik] = await Promise.all([mediaGet(`${id}:slides`), mediaKeys(`${id}:thumb:`), mediaKeys(`${id}:img:`)]);
+  if (id !== lib.cur) return;
+  slideRec = Array.isArray(rec?.slides) ? { ...rec, thumbs: new Set(tk.map(k => +String(k).split(':')[2])) } : null;
+  imgs = new Set(ik.map(k => String(k).split(':').slice(2).join(':')));
+  showMat();
+  if (tab === 'qa') renderDraft();
+}
+// 읽은 자료를 이 대본에 둔다. PDF는 쪽 그림을 뒤에서 만든다(앞 60쪽)
+async function keepSlides(file, kind, slides) {
+  const id = lib.cur;
+  try { await mediaDel(`${id}:thumb:`); await mediaPut(`${id}:slides`, { kind, name: file.name, slides: slides.map(({ n, title, body }) => ({ n, title, body })) }); } catch { return; }
+  for (const k of [...murls.keys()]) if (k.startsWith(`${id}:thumb:`)) dropUrl(k);
+  slideRec = { kind, name: file.name, slides, thumbs: new Set() };
+  showMat();
+  if (kind !== 'pdf') return;
+  try {
+    const th = await pdfThumbs(file);
+    for (const [i, b] of th.entries()) if (b) await mediaPut(`${id}:thumb:${i + 1}`, b);
+    if (lib.cur === id && slideRec?.name === file.name) slideRec.thumbs = new Set(th.flatMap((b, i) => b ? [i + 1] : []));
+  } catch (e) { console.warn('쪽 그림', e); }
+}
+// [Q&A] 탭 위 자료 줄
+function showMat() {
+  $('qaMatT').textContent = slideRec ? `발표 자료: ${slideRec.name} · ${slideRec.slides.length}장. 답마다 맞는 슬라이드를 붙여요.` : '발표 자료(PPT·PDF)를 올리면 답에 맞는 슬라이드를 붙여요. 그림은 질문마다 붙일 수 있어요.';
+  $('qaMatBtn').textContent = slideRec ? '자료 바꾸기' : '발표 자료 올리기';
+}
+$('qaMatBtn').onclick = () => $('qaFile').click();
+$('qaFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  prepMsg('자료를 읽는 중이에요…');
+  try {
+    const { kind, slides } = await slidesFrom(f);
+    pinfo.outline = outlineLines(slides); store.set(sk('qaInfo'), JSON.stringify(pinfo)); fillInfo();  // 질문을 만들 때 슬라이드 개요를 보내 AI가 답마다 슬라이드를 고른다
+    await keepSlides(f, kind, slides);
+    renderDraft();
+    prepMsg(`슬라이드 ${slides.length}장을 읽었어요. '질문 다시 만들기'를 누르면 답마다 맞는 슬라이드를 붙여요.`);
+  } catch (err) { prepMsg('자료를 읽지 못했어요. ' + err.message); }
+};
+// 그림 붙이기: 긴 변 1280px JPEG로 줄여 둔다
+async function shrinkImg(file, max = 1280) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, max / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close?.();
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
+}
+// 질문 하나의 부가자료 칸: 답에 띄울 슬라이드 고르기(자료가 있을 때), 그림 붙이기·빼기
+function qMat(it, set) {
+  const out = [], key = () => `${lib.cur}:img:${it.id}`;
+  if (slideRec) {
+    const sel = document.createElement('select'), l = mk('label', '답에 띄울 슬라이드 ', 'small');
+    sel.append(new Option('없음', 0), ...slideRec.slides.map(x => new Option(`${x.n}. ${x.title}`.slice(0, 50), x.n, false, x.n === it.slide)));
+    sel.onchange = () => set(v => { it.slide = +v || undefined; }, true)(sel.value);
+    l.append(sel); out.push(l);
+  }
+  const pick = document.createElement('input'), l = mk('label', imgs.has(it.id) ? '그림 바꾸기 ' : '그림 붙이기 ', 'small');
+  pick.type = 'file'; pick.accept = 'image/*';
+  pick.onchange = async () => {
+    const f = pick.files[0];
+    if (!f) return;
+    try { await mediaPut(key(), await shrinkImg(f)); dropUrl(key()); imgs.add(it.id); renderDraft(); }
+    catch { prepMsg('그림을 붙이지 못했어요. 다른 그림 파일로 해 보세요.'); }
+  };
+  l.append(pick); out.push(l);
+  if (imgs.has(it.id)) {
+    const im = new Image(), rm = mk('button', '그림 빼기');
+    im.className = 'qimg'; im.alt = '답에 붙인 그림';
+    mediaUrl(key()).then(u => { if (u) im.src = u; });
+    rm.onclick = async () => { await media('readwrite', st => st.delete(key())).catch(() => {}); dropUrl(key()); imgs.delete(it.id); renderDraft(); };
+    out.push(im, rm);
+  }
+  return out;
+}
+// 답 카드의 부가자료: 붙인 그림이 먼저, 없으면 고른 슬라이드(쪽 그림이 있으면 그림, 없으면 제목과 글)
+async function cardMat(q) {
+  const box = $('cardMat'), my = ++matSeq, id = lib.cur, sl = q.slide && slideRec?.slides[q.slide - 1], mine = imgs.has(q.id);
+  box.replaceChildren(); box.hidden = true;
+  const url = mine ? await mediaUrl(`${id}:img:${q.id}`) : sl && slideRec.thumbs.has(q.slide) ? await mediaUrl(`${id}:thumb:${q.slide}`) : null;
+  if (my !== matSeq) return;
+  if (url) {
+    const im = new Image(); im.src = url; im.alt = mine ? '답에 붙인 그림' : `슬라이드 ${q.slide}: ${sl.title}`;
+    box.append(im, ...(mine ? [] : [mk('span', `슬라이드 ${q.slide}`, 'ms')]));
+  } else if (sl) { const d = mk('div', '', 'st'); d.append(mk('b', `슬라이드 ${q.slide} · ${sl.title}`), ...(sl.body ? [mk('p', sl.body.slice(0, 240))] : [])); box.append(d); }
+  box.hidden = !box.children.length;
+}
+
 function openQa() {
-  if (!draft.length) try { draft = copyQs(JSON.parse(sessionStorage.getItem(draftKey())) || []); if (draft.length) dirty = true; } catch { draft = []; }
-  if (!draft.length && pack) draft = copyQs(pack.questions);
+  draft = copyQs(pack?.questions || []);
   fillInfo(); renderDraft(); showKey(); showModel(); showJev();
   $('prepTitle').focus({ preventScroll: true });
 }
-// 질의응답에는 저장한 질문만 쓰이므로 [Q&A] 탭을 떠나기 전에 묻는다. 떠나면 고친 내용을 버리고 저장한 질문으로 돌아간다(새로고침은 이 탭에 남은 초안으로 잇는다).
-const okClose = () => !dirty || (confirm('저장하지 않은 질문 수정이 있어요. 나가면 고친 내용은 버리고 저장한 질문으로 돌아가요. 나갈까요?') && (draft = [], clean(), true));
 
-$('gen').onclick = async () => {
+// 질문 만들기: 칸을 채우지 않아도 대본(과 올린 자료·평가 기준)으로 만든다. more: 지금 질문과 겹치지 않게 5개 더
+async function genQs(more) {
   if (genCtl) return genCtl.abort();
-  const inf = info();
-  if (!inf.script) return prepMsg('먼저 대본을 붙여넣으세요.');
-  genCtl = new AbortController();
-  $('savePack').disabled = true;  // 만드는 동안 저장하면 옛 초안이 저장된다
-  $('gen').textContent = '멈추기';
-  prepMsg('AI에 보내는 중…');
+  const inf = info(more ? draft.map(q => q.q.trim()).filter(Boolean) : []);
+  if (!inf.script) return prepMsg('먼저 [대본]에 대본을 써 주세요.');
+  if (more) inf.n = 5;
+  genCtl = new AbortController(); renderDraft();
+  prepMsg('AI가 질문을 만드는 중이에요…');
   try {
     const p = await generatePack(inf, {
       key: keyStore.get(), signal: genCtl.signal,
       onProgress: x => prepMsg(x.chars ? `AI가 쓰는 중… 질문 ${x.questions}개` : 'AI가 생각하는 중…'),
     });
-    setDraft(p, 'AI가 만든');
+    takePack(p, more ? '더 만든' : 'AI가 만든', more ? draft : undefined);
   } catch (e) {
     prepMsg(e.name === 'AbortError' ? '멈췄어요.' : e.message);
   } finally {
-    genCtl = null;
-    $('gen').textContent = 'AI로 만들기';
-    $('savePack').disabled = false;
+    genCtl = null; renderDraft();
   }
-};
+}
+$('gen').onclick = () => genQs(false);
+$('genMore').onclick = () => genQs(true);
 
 // 프롬프트를 보여 주고 클립보드에 복사한다 (Q&A 준비와 AI 도구가 같이 쓴다)
 async function copyPrompt(out, text, msg, what) {
@@ -2381,46 +2525,17 @@ $('copyPrompt').onclick = () => {
 $('pasteBtn').onclick = () => { $('pasteBox').hidden = false; $('pasteIn').focus(); };
 $('pasteApply').onclick = () => {
   try {
-    setDraft(parsePack($('pasteIn').value), '붙여넣은');
+    takePack(parsePack($('pasteIn').value), '붙여넣은');
     $('pasteIn').value = '';
     $('pasteBox').hidden = $('promptOut').hidden = true;
   } catch (e) { prepMsg('적용하지 못했어요. ' + e.message); }
 };
 
 $('addQ').onclick = () => {
-  draft.push({ id: '', q: '', alts: [], answer: [], source: '', check: false });
-  renderDraft();
-  touched();
-  $('qList').lastElementChild.querySelector('input').focus();
-};
-
-$('savePack').onclick = async () => {
-  const items = draft.filter(it => it.q.trim());
-  if (!items.length) {
-    store.del(sk('pack')); store.del('ls.vec');
-    setPack(null); draft = []; renderDraft(); showModel();
-    clean();
-    return prepMsg('질문을 모두 지웠어요.');
-  }
-  let p;
-  try { p = cleanPack({ questions: items }); } catch (e) { return prepMsg(e.message); }
-  const s = JSON.stringify(p);
-  const saved = save(sk('pack'), s);  // 가득 찼으면 벡터를 비우고 한 번 더
-  setPack(p);
-  draft = copyQs(p.questions);
-  renderDraft();
-  const done = saved ? `저장했어요. 질문 ${p.questions.length}개`
-    : `이 기기에 저장하지 못했어요. 지금 화면에서만 쓸 수 있으니 내보내기로 파일에 저장해 두세요. 질문 ${p.questions.length}개`;
-  prepMsg(done);
-  $('prepMsg').scrollIntoView({ block: 'nearest' });  // 맨 아래 '저장'을 눌러도 결과가 보이게
-  if (saved) clean();
-  // 모델이 이 기기에 있으면 지금 벡터를 계산해 둔다 (휴대폰에서 15~30초)
-  if (pipe || (modelState === 'off' && await modelCached())) {
-    await loadJudge(() => {});
-    await vectors((i, n) => prepMsg(`${done}. 질문 찾기 준비 중 ${i}/${n}`));
-    if (pack === p) prepMsg(V ? `${done}. 질문 찾기 준비도 끝났어요.` : done);  // 그사이 다시 저장했으면 그쪽이 알린다
-  } else if (modelState !== 'loading') prepMsg(`${done}. 질문 찾기 모델을 쓰려면 아래 '질문 찾기 모델 받기'를 누르세요.`);
-  showModel();
+  const id = newId();
+  draft.push({ id, q: '', alts: [], answer: [], keys: [], source: '', check: false, mine: true });
+  qOpen.add(id); renderDraft();
+  $('qList').querySelector(`.qitem[open] input`)?.focus();
 };
 
 $('exportPack').onclick = () => {
@@ -2434,7 +2549,7 @@ $('importFile').onchange = async e => {
   e.target.value = '';
   if (!f) return;
   if (f.size > 2e6) return prepMsg('파일이 너무 커요. 질문 팩 JSON 파일인지 확인해 주세요.');
-  try { setDraft(parsePack(await f.text()), '파일에서 가져온'); } catch (err) { prepMsg('가져오지 못했어요. ' + err.message); }
+  try { takePack(parsePack(await f.text()), '파일에서 가져온', []); } catch (err) { prepMsg('가져오지 못했어요. ' + err.message); }
 };
 
 // ---- AI 키 창 ----
@@ -2502,7 +2617,8 @@ function loadScript() {
   fillInfo();
   try { setPack(cleanPack(JSON.parse(store.get(sk('pack'))))); } catch { setPack(null); }  // 질문 팩도 대본마다 (첫 대본은 예전 ls.pack)
   loadShrink();
-  draft = []; dirty = false;
+  draft = []; qOpen = new Set(); clearTimeout(vecT);
+  slideRec = null; imgs = new Set(); freeMedia(); loadMedia(); showMat();
   aiRes = null; aiJob = null; undo = null; sel = null;
   ads = readSegs(store.get(sk('adlib'))); adRes = null; tape.reset();  // adJob은 둔다: 앞 대본의 애드리브라 adSet이 맞추지 않는다
   showTab(); updEst(); updAlt(); renderAds(); showEmpty(); unstay(); renderVerSide(); updPrepState();
@@ -2532,7 +2648,7 @@ function openHome() {
 }
 // 홈에서 발표를 고른다: 대본이 없으면 [대본], 있으면 [연습]
 function pick(id) {
-  if (id !== lib.cur) { if (tab === 'qa' && !okClose()) return; lib.cur = id; saveLib(); loadScript(); }
+  if (id !== lib.cur) { lib.cur = id; saveLib(); loadScript(); }
   closeHome();
   goTab($('text').value.trim() ? 'practice' : 'script');
 }
@@ -2630,9 +2746,8 @@ $('ttl').onclick = () => {
 $('mDel').onclick = $('eDel').onclick = () => {
   const e = entry();
   if (!confirm(`'${e.name}' 대본과 버전, 질문, 연습 기록, 녹음을 모두 지울까요? 되돌릴 수 없어요.`)) return;
-  segDel(e.id + ':');
+  segDel(e.id + ':'); mediaDel(e.id + ':');
   for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink', 'adlib', 'runs', 'says', 'sugIgnore', 'must', 'hardIgnore']) store.del(sk(k));
-  try { sessionStorage.removeItem('ls.draft.' + e.id); } catch {}  // 저장하지 않은 질문 수정도 같이 지운다
   lib.list = lib.list.filter(x => x !== e);
   if (!lib.list.length) lib.list.push({ id: Date.now().toString(36), name: '대본 1', src: '' });
   lib.cur = lib.list[0].id;
@@ -3108,6 +3223,7 @@ async function takeSlides(file) {
     if (!slides.some(s => s.body || !/^슬라이드 \d+$/.test(s.title))) throw new Error('읽을 수 있는 글이 없어요. 그림만 있는 자료는 개요를 직접 적어 주세요.');
     upSlides = { name: file.name, kind, slides };
     setInfo('outline', outlineLines(slides));
+    keepSlides(file, kind, slides);
     if (!gInfo('topic').value.trim()) setInfo('topic', topicOf(slides, file.name));
     showUp();
     genMsg(`슬라이드 ${slides.length}장을 읽어 개요 칸에 넣었어요. 고칠 곳이 있으면 고쳐 주세요.`);

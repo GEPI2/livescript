@@ -171,27 +171,39 @@ t('발표: 남은 시간 1분 전부터 알림 칩이 나오고 목표가 지나
   assert.deepEqual(p.errors, []);
 });
 
-// ---- 질문 답변: 핵심 키워드, 관련 대본 구간 ----
+// ---- 질문 답변: Q&A를 켜면 누를 것 없이 답 카드, 답하는 동안 잠금, 관련 대본 구간 ----
+// 질문을 따라 말한다(중간 결과 뒤 확정). Q&A가 꺼져 있으면 켠다(켜면 마이크도 켜진다)
 const askQ = async (p, q) => {
-  await p.click('#qaBtn'); await p.waitForTimeout(300);
-  await p.click('#ask'); await p.waitForTimeout(200);
-  await p.evaluate(t => window.__say(t, false), q); await p.waitForTimeout(300);
-  await p.click('#ask'); await p.waitForSelector('#chips .chip');
+  if (!await p.evaluate(() => document.body.classList.contains('qa'))) { await p.click('#qaBtn'); await p.waitForTimeout(300); }
+  await p.evaluate(t => window.__say(t, false), q.slice(0, Math.ceil(q.length / 2))); await p.waitForTimeout(100);
+  await p.evaluate(t => window.__fin(t), q); await p.waitForTimeout(300);
 };
-t('질문: 질문 듣기 → 후보 → 카드에 핵심 키워드와 순위가 나온다', async () => {
+t('질문: Q&A를 켜고 질문을 따라 말하면 답 카드가 바로 뜨고, 답하는 동안은 잠겼다가 새 질문에 바뀐다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await present(p);
-  await askQ(p, '무료로 쓸 수 있나요');
-  assert.match(await p.textContent('#live'), /^“무료로 쓸 수 있나요”/);
-  assert.equal(await p.getAttribute('#live', 'data-src'), '음성으로 받음');
-  assert.equal(await p.locator('#chips .chip').count(), 4, '후보 3개 + 해당 없음');
-  await p.locator('#chips .chip').first().click();
-  assert.equal(await p.locator('#card').isVisible(), true);
+  await p.click('#qaBtn'); await p.waitForTimeout(300);
+  assert.equal(await p.textContent('#mic'), '정지', 'Q&A를 켜면 듣기 시작한다');
+  assert.equal(await p.locator('#ask').isHidden(), true);
+  await p.evaluate(() => window.__say('무료로 쓸 수', false)); await p.waitForTimeout(100);
+  assert.equal(await p.locator('#card').isVisible(), true, '말하는 동안에도 카드');
+  assert.match(await p.textContent('#cardHeard'), /^듣는 중/);
+  await p.evaluate(() => window.__fin('무료로 쓸 수 있나요')); await p.waitForTimeout(300);
+  assert.equal(await p.textContent('#cardHeard'), '가장 비슷한 질문');
   assert.equal(await p.textContent('#cardRank'), '1순위');
   assert.deepEqual(await p.locator('#cardKeys span').allTextContents(), ['설치 없이 무료', '무료 오픈소스 모델', '키 없이 챗봇']);
-  assert.equal(await p.locator('#cardMore .chip .n').first().textContent(), '2');
-  assert.equal(await p.textContent('#ask'), '다음 질문 듣기');
+  assert.match(await p.textContent('#qaTime'), /글자 비교로 골랐어요 · \d+ms$/);
+  assert.equal(await p.locator('#ask').isVisible(), true, '잠기면 다음 질문 단추');
+  const q1 = await p.textContent('#cardQ');
+  // 답하는 말에는 카드가 바뀌지 않는다
+  await p.evaluate(() => window.__fin('네 설치 없이 브라우저에서 무료로 쓸 수 있습니다 안드로이드 크롬에서도 됩니다')); await p.waitForTimeout(300);
+  assert.equal(await p.textContent('#cardQ'), q1, '답하는 동안 잠금');
+  // 묻는 말끝이면 새 질문
+  await p.evaluate(() => window.__fin('아이폰이나 안드로이드에서도 되나요')); await p.waitForTimeout(300);
+  assert.match(await p.textContent('#cardQ'), /아이폰/);
   await p.screenshot({ path: OUT + '/qa-card.png' });
+  // 다음 질문을 누르면 카드를 비우고 다시 듣는다
+  await p.click('#ask');
+  assert.equal(await p.locator('#card').isHidden(), true);
   assert.deepEqual(p.errors, []);
 });
 t('질문: 채팅으로 받은 질문은 받은 길이 다르다', async () => {
@@ -199,15 +211,15 @@ t('질문: 채팅으로 받은 질문은 받은 길이 다르다', async () => {
   await p.uncheck('#shrinkOn'); await present(p);
   await p.click('#qaBtn');
   await p.fill('#qaText', '아이폰에서도 되나요?'); await p.press('#qaText', 'Enter');
-  await p.waitForSelector('#chips .chip');
+  await p.waitForSelector('#card:not([hidden])');
   assert.equal(await p.getAttribute('#live', 'data-src'), '채팅으로 받음');
-  assert.match(await p.textContent('#chips .chip'), /아이폰/);
+  assert.match(await p.textContent('#cardQ'), /아이폰/);
 });
 t('질문: 해당 없음을 누르면 관련 대본 구간이 나오고, 누르면 그 문장으로 돌아간다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await present(p);
   await askQ(p, '대본 밖에서 한 말은 어떻게 되나요');
-  await p.locator('#chips .chip.none').click();
+  await p.locator('.chip.none:visible').first().click();
   await p.waitForSelector('#hits:not([hidden]) #hitList .chip');
   const n = await p.locator('#hitList .chip').count();
   assert.ok(n >= 1 && n <= 3, `관련 문장 ${n}개`);
@@ -220,18 +232,78 @@ t('질문: 해당 없음을 누르면 관련 대본 구간이 나오고, 누르�
   assert.ok(cur && cur.replace(/\s+/g, ' ').startsWith(first.replace(/…$/, '').slice(0, 20)), `지금 문장 ${cur?.slice(0, 30)} / 고른 문장 ${first.slice(0, 30)}`);
   assert.deepEqual(p.errors, []);
 });
-t('질문: 질문 준비 창에서 핵심 키워드를 고치고 저장하면 카드에 반영된다', async () => {
+t('질문: [Q&A] 탭에서 분류로 묶인 질문을 펼쳐 핵심 키워드를 고치면 바로 저장되고 카드에 반영된다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.uncheck('#shrinkOn');
   await p.click('[data-tab="qa"]'); await p.waitForSelector('#qList .qitem');
-  const f = p.locator('#qList .qitem').first().locator('input').nth(1);
+  assert.deepEqual(await p.locator('#qList h3').evaluateAll(hs => hs.map(h => h.firstChild.textContent)), ['내용', '근거·숫자', '한계·위험', '활용·계획'], '분류 차례로 묶는다');
+  assert.equal(await p.locator('#qList .qitem[open]').count(), 0, '처음엔 접혀 있다');
+  const it = p.locator('#qList .qitem', { hasText: '무료로 쓸 수 있나요' });
+  await it.locator('summary').click();
+  const f = it.locator('input').nth(1);
   assert.equal(await f.inputValue(), '설치 없이 무료, 무료 오픈소스 모델, 키 없이 챗봇');
-  await f.fill('설치 없이 무료, 새 키워드'); await f.dispatchEvent('input'); await f.dispatchEvent('change');
-  await p.click('#savePack'); await p.waitForTimeout(500);
+  await f.fill('설치 없이 무료, 새 키워드');
+  const saved = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.pack.')))).questions.find(q => q.q.startsWith('무료')));
+  assert.deepEqual([saved.keys, saved.mine], [['설치 없이 무료', '새 키워드'], true], '바로 저장되고 고친 질문으로 표시');
+  await p.fill('#qFind', '아이폰');
+  assert.equal(await p.locator('#qList .qitem').count(), 1, '찾기');
   await present(p);
   await askQ(p, '무료로 쓸 수 있나요');
-  await p.locator('#chips .chip').first().click();
   assert.deepEqual(await p.locator('#cardKeys span').allTextContents(), ['설치 없이 무료', '새 키워드']);
+});
+t('질문: 키가 있으면 질문 만들기 한 번으로 분류된 목록이 생기고, 다시 만들어도 고친 질문은 남고, 더 만들기는 겹치지 않게 보탠다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  const pack = (n, w) => ({ version: 1, questions: Array.from({ length: n }, (_, i) => ({ id: 'q0' + i, q: `${w} 질문 ${i}`, alts: ['다른 말 ' + i], answer: ['답'], keys: ['키'], source: '', check: false, cat: i ? '비교' : '내용', slide: 0 })) });
+  const sent = [];
+  await mockAi(p, b => { sent.push(b.messages[0].content); return pack(sent.length === 1 ? 3 : 2, ['', '첫', '둘째', '셋째'][sent.length]); });
+  await p.evaluate(() => sessionStorage.setItem('ls.key', 'sk-ant-test'));
+  await p.click('[data-tab="qa"]'); await p.waitForSelector('#qList .qitem');
+  assert.equal(await p.textContent('#gen'), '질문 다시 만들기');
+  await p.click('#gen'); await p.waitForFunction(() => /질문 3개를 넣었어요/.test(document.getElementById('prepMsg').textContent));
+  assert.equal(await p.locator('#qList .qitem').count(), 3, '예시 질문 8개 대신 새 질문 3개');
+  assert.deepEqual(await p.locator('#qList h3').evaluateAll(hs => hs.map(h => h.firstChild.textContent)), ['내용', '비교']);
+  assert.ok(sent[0].includes('<대본>') && sent[0].includes('주제: 말랑 소개'), '대본과 발표 정보를 보낸다');
+  const first = p.locator('#qList .qitem').first();
+  await first.locator('summary').click(); await first.locator('input').first().fill('내가 고친 질문');
+  await p.click('#gen'); await p.waitForFunction(() => /직접 고친 질문 1개는 그대로/.test(document.getElementById('prepMsg').textContent));
+  assert.deepEqual((await p.locator('#qList .qitem .qt').allTextContents()).sort(), ['내가 고친 질문', '둘째 질문 0', '둘째 질문 1'].sort(), '고친 질문은 남고 나머지는 새 질문');
+  await p.click('#genMore'); await p.waitForFunction(() => /더 만든 질문 2개를 넣었어요/.test(document.getElementById('prepMsg').textContent));
+  assert.equal(await p.locator('#qList .qitem').count(), 5);
+  assert.ok(sent[2].includes('<이미있는질문>\n- 내가 고친 질문'), '있는 질문과 겹치지 않게');
+  assert.equal(JSON.parse(await p.evaluate(() => localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.pack.'))))).questions.length, 5, '바로 저장');
+  assert.deepEqual(p.errors, []);
+});
+
+t('질문: 발표 자료를 올리면 질문마다 슬라이드를 고르고, 그림을 붙이면 답 카드에 함께 보인다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn');
+  await p.click('[data-tab="qa"]'); await p.waitForSelector('#qList .qitem');
+  await p.setInputFiles('#qaFile', { name: '발표.pdf', mimeType: 'application/pdf', buffer: await pdf(browser) });
+  await p.waitForFunction(() => /^발표 자료: 발표\.pdf · 4장/.test(document.getElementById('qaMatT').textContent), null, { timeout: 20000 });
+  const keys = () => p.evaluate(() => new Promise(ok => { const q = indexedDB.open('livescript-rec'); q.onsuccess = () => { const r = q.result.transaction('media').objectStore('media').getAllKeys(); r.onsuccess = () => ok(r.result.map(String)); }; }));
+  for (let i = 0; i < 100 && !(await keys()).some(k => k.endsWith(':thumb:4')); i++) await p.waitForTimeout(100);
+  assert.ok((await keys()).some(k => k.endsWith(':thumb:2')), 'PDF 쪽 그림을 이 기기에 둔다');
+  const outline = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.qaInfo.')))).outline);
+  assert.equal(outline.split('\n').length, 4, '질문을 만들 때 보낼 슬라이드 개요');
+  // 무료 질문에 2번 슬라이드, 아이폰 질문에 그림
+  const it = p.locator('#qList .qitem', { hasText: '무료로 쓸 수 있나요' });
+  await it.locator('summary').click();
+  await it.locator('select').nth(1).selectOption('2');
+  assert.match(await p.locator('#qList .qitem', { hasText: '무료로 쓸 수 있나요' }).locator('summary').textContent(), /슬라이드 2/);
+  const ip = p.locator('#qList .qitem', { hasText: '아이폰이나' });
+  await ip.locator('summary').click();
+  const png = Buffer.from(await p.evaluate(() => new Promise(ok => { const c = document.createElement('canvas'); c.width = 40; c.height = 30; c.getContext('2d').fillRect(0, 0, 20, 15); c.toBlob(b => b.arrayBuffer().then(a => ok([...new Uint8Array(a)])), 'image/png'); })));
+  await ip.locator('input[type=file]').setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: png });
+  await p.waitForSelector('#qList .qitem img.qimg');
+  assert.match(await p.locator('#qList .qitem', { hasText: '아이폰이나' }).locator('summary').textContent(), /그림/);
+  await present(p);
+  await askQ(p, '무료로 쓸 수 있나요');
+  await p.waitForSelector('#cardMat img');
+  assert.equal(await p.getAttribute('#cardMat img', 'alt'), '슬라이드 2: 문제');
+  assert.equal(await p.textContent('#cardMat .ms'), '슬라이드 2');
+  await askQ(p, '아이폰이나 안드로이드에서도 되나요');
+  await p.waitForFunction(() => document.querySelector('#cardMat img')?.alt === '답에 붙인 그림');
+  assert.deepEqual(p.errors, []);
 });
 
 // ---- 연습 결과: 대본과 실제로 한 말, 수정 제안, 회차별 시간 ----
@@ -801,13 +873,13 @@ t('발표: Tab으로 단추에 간 뒤 스페이스는 그 단추를 누르고, 
   const p = await page(browser); await open(p); await sample(p); await present(p);
   const before = await p.textContent('#mic');
   await p.evaluate(() => document.activeElement?.blur());
-  for (let i = 0; i < 14 && await p.evaluate(() => document.activeElement?.id) !== 'qaBtn'; i++) await p.keyboard.press('Tab');
-  assert.equal(await p.evaluate(() => document.activeElement?.id), 'qaBtn', 'Tab으로 가 단추에 닿는다');
+  for (let i = 0; i < 14 && await p.evaluate(() => document.activeElement?.id) !== 'fbBtn'; i++) await p.keyboard.press('Tab');
+  assert.equal(await p.evaluate(() => document.activeElement?.id), 'fbBtn', 'Tab으로 가 단추에 닿는다');
   await p.keyboard.press('Space'); await p.waitForTimeout(300);
-  assert.equal(await p.evaluate(() => document.body.classList.contains('qa')), true, 'Q&A가 열린다');
+  assert.equal(await p.getAttribute('#fbBtn', 'aria-pressed'), 'true', '피드백이 켜진다');
   assert.equal(await p.textContent('#mic'), before, '마이크는 켜지 않는다');
   // 마우스로 누른 단추에 포커스가 남아도 스페이스는 마이크를 켠다
-  await p.click('#qaBtn'); await p.waitForTimeout(200);
+  await p.click('#fbBtn'); await p.waitForTimeout(200);
   await p.keyboard.press('Space'); await p.waitForTimeout(300);
   assert.notEqual(await p.textContent('#mic'), before, '마우스를 쓴 뒤 스페이스는 마이크를 켠다');
   assert.deepEqual(p.errors, []);

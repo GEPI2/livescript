@@ -278,8 +278,6 @@
   #hRuns:empty { display: none; }
   #hRunsAll:empty::before { content: '아직 연습 기록이 없어요. [연습]에서 연습하면 여기에 쌓여요.'; display: block; padding: var(--space-24); color: var(--ink-muted); }
   body.home #text, body.home #create, body.home #cards, body.home #prep { visibility: hidden; }
-  .hdata { margin-top: var(--space-16); }
-  .hdata summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
 
   /* 발표 화면 대본: 읽은 곳은 흐리게(ink-read), 지금 읽는 줄 왼쪽에 accent 막대, 지금 단어는 굵게+밑줄 */
   #prompt { max-width: var(--w); margin: 0 auto; padding: calc(100dvh / 3) 16px 70vh; font-size: var(--fs); line-height: 1.6; letter-spacing: -0.01em; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
@@ -687,12 +685,6 @@
         <button id="hsInstall" hidden><span>앱으로 설치</span><span>›</span></button>
         <a class="btn" id="hsGuide" href="guide/" target="_blank" rel="noopener"><span>사용 안내서</span><span>›</span></a>
       </div>
-      <details class="hdata">
-        <summary>데이터가 가는 곳</summary>
-        <p class="small">말소리는 글자로 바꾸려고 Google(Chrome)이나 Apple(Safari)로 가요. 대본, 발표 정보, 평가 기준, 애드리브는 AI를 쓸 때만 Anthropic으로 가요. Q&amp;A 질문은 이 기기 안에서 골라요. 질문 찾기 모델은 Hugging Face에서 기기마다 한 번 받아요.</p>
-        <p class="small">목소리 분석과 연습 녹음은 이 기기 안에서만 해요. 녹음은 이 기기(브라우저)에만 남고, 주변 사람 목소리도 녹음될 수 있어요. AI 코칭은 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요. 연습 기록과 녹음은 파일로 내보내기에 들어가지 않아요. 공용 컴퓨터에서는 연습 결과의 '기록 모두 지우기'를 눌러 주세요.</p>
-        <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터를 지울 수 있어요. 대본은 '파일로 내보내기'로 따로 보관해 두세요.</p>
-      </details>
     </div>
   </div>
 </main>

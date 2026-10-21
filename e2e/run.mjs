@@ -206,15 +206,6 @@ t('질문: Q&A를 켜고 질문을 따라 말하면 답 카드가 바로 뜨고,
   assert.equal(await p.locator('#card').isHidden(), true);
   assert.deepEqual(p.errors, []);
 });
-t('질문: 채팅으로 받은 질문은 받은 길이 다르다', async () => {
-  const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await present(p);
-  await p.click('#qaBtn');
-  await p.fill('#qaText', '아이폰에서도 되나요?'); await p.press('#qaText', 'Enter');
-  await p.waitForSelector('#card:not([hidden])');
-  assert.equal(await p.getAttribute('#live', 'data-src'), '채팅으로 받음');
-  assert.match(await p.textContent('#cardQ'), /아이폰/);
-});
 t('질문: 해당 없음을 누르면 관련 대본 구간이 나오고, 누르면 그 문장으로 돌아간다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await present(p);

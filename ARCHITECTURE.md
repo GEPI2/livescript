@@ -64,7 +64,7 @@
 ## 4. 저장과 배포
 
 - 저장: 서버 없이 `localStorage`(보관함·버전·설정·질문 팩), `sessionStorage`(AI 키 기본값, 모드), Cache Storage(앱 파일, 모델), IndexedDB `livescript-rec`(`segs`: 연습 녹음 조각. 시작~정지마다 WebM 하나, 기록에서 빠진 발표의 녹음은 지운다. `media`: 올린 슬라이드 글, PDF 쪽 그림, 답에 붙인 그림).
-- 배포: `?v=18`을 모든 모듈 주소에 붙여 캐시를 갈아끼운다. `sw.js`가 같은 번호로 캐시 이름을 만든다. 모델 파일(`vendor/`)은 따로 캐시한다.
+- 배포: `?v=19`를 모든 모듈 주소에 붙여 캐시를 갈아끼운다. `sw.js`가 같은 번호로 캐시 이름을 만든다. 모델 파일(`vendor/`)은 따로 캐시한다.
 - 오프라인: 앱 파일과 받아 둔 모델은 오프라인에서도 돈다. 음성 인식과 Claude 호출은 인터넷이 필요하다.
 - 순수 계산 모듈(`lib`, `match`, `shrink`, `check`, `adlib`, `qa`, `jev`, `claude`, `slides`, `compare`)은 `node 파일.js`로 자체 확인이 돈다. 화면 시험은 `e2e/run.mjs`(Playwright, 흉내 낸 음성 인식), 전체는 `./test.sh`.
 - 글꼴: `fonts/`의 IBM Plex Sans KR(OFL) 조각을 `fonts/plex.css`가 글자 범위별로 불러온다. 서비스 워커가 `livescript-fonts-1`에 따로 캐시한다.

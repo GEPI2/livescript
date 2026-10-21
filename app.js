@@ -1,16 +1,16 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=18';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun, rubOf } from './claude.js?v=18';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=18';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=18';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=18';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=18';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=18';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=18';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=19';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun, rubOf } from './claude.js?v=19';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=19';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=19';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=19';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=19';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=19';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=19';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
-  newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS } from './check.js?v=18';
+  newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS } from './check.js?v=19';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -2038,12 +2038,12 @@ $('qaRetry').onclick = () => getModel(t => t && ($('qaGetMsg').textContent = t))
 // 확실하면 카드를 잠근다. 잠긴 동안 발표자가 답하는 말에는 카드가 바뀌지 않고, 묻는 말끝이나 다른 질문과 확실히 맞는 말이 들리면 새 질문으로 본다.
 // ponytail: 묻는 말끝은 어림이다(답에 '…해 주세요'가 나오면 새 질문으로 본다). 틀리면 '다음 질문'을 누른다
 let qaMode = false, qSeg = null, qLock = null, qaIdx = -1;  // qSeg: 지금 질문으로 모으는 말 { from: 인식 결과 번호, done, cur }, qLock: 잠근 카드의 질문 id('none': 해당 없음), qaIdx: 마지막 인식 결과 번호
-let asked = '', askedBy = 'voice';  // 마지막으로 판정한 질문과 받은 길('voice', 'chat'). 전체 목록에서 고른 카드에도 보여 준다.
+let asked = '';  // 마지막으로 판정한 질문. 전체 목록에서 고른 카드에도 보여 준다.
 const ASK = /(까요|나요|니까|가요|죠|뭐예요|뭔가요|어때요|는지요|은지요|궁금(합니다|해요|한데요)|알고\s*싶(어요|습니다)|주세요|주시겠어요|주실\s*수\s*있나요)\s*[?？]?$/;
 const isAsk = t => ASK.test(t.trim()) || /[?？]\s*$/.test(t);
 // 왼쪽 '들은 질문' 칸: 안내 글은 작게, 들은 질문은 크게
 function liveMsg(t) { const l = $('live'); l.textContent = t; l.className = ''; delete l.dataset.src; }
-function liveQ(t, by) { if (!t) return liveMsg(''); const l = $('live'); l.textContent = '“' + t + '”'; l.className = 'q'; l.dataset.src = by === 'chat' ? '채팅으로 받음' : '음성으로 받음'; }
+function liveQ(t) { if (!t) return liveMsg(''); const l = $('live'); l.textContent = '“' + t + '”'; l.className = 'q'; }
 let judgeN = 0;  // 판정 번호. 새 질문을 시작하면 늘려서 늦게 끝난 판정을 버린다.
 // 새 질문을 받을 준비: 카드·후보를 지우고 다음 인식 결과부터 모은다
 function freshQ() {
@@ -2061,7 +2061,7 @@ function setQa(on) {
   if (on) {
     qaIdx = listening ? resFinal - 1 : -1; freshQ();
     scrollTo(0, 0); showModel(); renderAll();
-    liveMsg(!pack ? '' : SR ? '질문을 따라 말하면 답 카드가 바로 떠요. 채팅 질문은 아래 칸에 붙여넣어 주세요.' : NO_SR);
+    liveMsg(!pack ? '' : SR ? '질문을 따라 말하면 답 카드가 바로 떠요.' : NO_SR);
     if (SR && !listening && pack) start();  // Q&A를 누른 것이 시작이다(누를 것을 줄인다)
   }
   else { qSeg = null; qLock = null; jump(cur); }  // 질의응답 중에 들은 말에 커서가 끌려가지 않게
@@ -2091,7 +2091,7 @@ function onQuestion(q, fin, last, idx) {
   qSeg.cur = q;
   const text = (qSeg.done + q).replace(/\s+/g, ' ').trim();
   if (!text) return;
-  liveQ(text.slice(-80), 'voice');
+  liveQ(text.slice(-80));
   if (fin) return judge(text);
   const top = rank(pack, qsents, text).slice(0, 3);
   if (top[0]?.b > 0) openCard(top[0].q, top, text, 'live', 0);
@@ -2112,12 +2112,11 @@ async function newAsk(t, idx) {
   judge(t);
 }
 
-// 두 번째 탭이나 입력칸 Enter: e5 + 음절 비교로 판정. JEV 모드면 Kev가 e5 후보 5개와 '해당 없음' 가운데 다시 고른다.
-// 자동 열기를 켰으면 e5 1등이 확실할 때(JEV가 있으면 JEV도 같은 1등일 때)만 카드를 바로 연다. 판정마다 기록에 남긴다.
-async function judge(text, by = 'voice') {
+// 확정된 질문을 e5 + 음절 비교로 판정. JEV 모드면 Kev가 e5 후보 5개와 '해당 없음' 가운데 다시 고른다.
+async function judge(text) {
   if (!pack) return;
   const n = ++judgeN, t = performance.now();
-  asked = text; askedBy = by;
+  asked = text;
   let qv = null;
   try { if (pipe && V) qv = await embed(pipe, [text]); } catch (e) { modelBroke(e); }
   if (n !== judgeN) return;
@@ -2127,7 +2126,7 @@ async function judge(text, by = 'voice') {
     const t1 = performance.now(), five = all.slice(0, 5);
     try {
       const late = new Promise((_, no) => setTimeout(() => no(new Error('timeout')), JEV_TIMEOUT));
-      // 질문은 끝 300자까지만 (붙여넣은 긴 채팅 글로 입력이 수천 토큰이 되지 않게)
+      // 질문은 끝 300자까지만 (길게 이어 말해도 입력이 수천 토큰이 되지 않게)
       jv = { ...rerank(five, await Promise.race([jev(text.slice(-300), five.map(r => r.q.q)), late])), ms: Math.round(performance.now() - t1) };
       top = jv.chips;
     } catch (e) {
@@ -2142,7 +2141,7 @@ async function judge(text, by = 'voice') {
   // 확실하면 카드를 열고 잠근다: 모델이 있으면 '확신 낮음'이 아닐 때, 없으면 글자 비교 0.3 이상. 아니면 후보 칩과 '잘 모르겠어요'(같은 질문을 이어 모은다)
   const c = qv ? confidence(all) : null, best = jv?.noneFirst ? null : top[0], ok = !!best && (qv ? !c.low : best.b >= 0.3);
   $('qaTime').textContent = (qv ? '이 기기 안에서 골랐어요' : '글자 비교로 골랐어요') + ` · ${ms + (jv?.ms ?? 0)}ms` + jmsg;
-  liveQ(text, by);  // 들은 질문은 카드를 열어도 왼쪽에 남는다
+  liveQ(text);  // 들은 질문은 카드를 열어도 왼쪽에 남는다
   if (ok) openCard(best.q, top, text, 'auto', 0);
   else { $('card').hidden = true; chips(top, text, true, jv?.noneFirst, !!qv); askBtn(); }
   $('qaLow').hidden = ok;
@@ -2177,7 +2176,7 @@ function chips(top, text, final, noneFirst = false, sim = false) {
 // how: 어떻게 열었나('chip', 'live' 말하는 중의 칩, 'more' 카드 아래 칩, 'list' 전체 목록, 'auto' 자동). rank: 후보 중 몇째(0부터)
 function openCard(q, top = [], text = '', how = '', rank = -1) {
   if (how !== 'live') { qLock = q.id; qSeg = { from: qaIdx + 1, done: '', cur: '' }; }  // 다음 말은 답이거나 새 질문
-  $('chips').textContent = ''; $('hits').hidden = true; if (how !== 'live') liveQ(text, askedBy); $('qaLow').hidden = true;
+  $('chips').textContent = ''; $('hits').hidden = true; if (how !== 'live') liveQ(text); $('qaLow').hidden = true;
   $('cardHeard').textContent = how === 'live' ? '듣는 중 · 가장 비슷한 질문' : rank < 0 ? '고른 질문' : rank ? '비슷한 질문' : '가장 비슷한 질문';
   $('cardRank').hidden = rank < 0;
   $('cardRank').textContent = (rank + 1) + '순위';
@@ -2243,15 +2242,8 @@ function renderAll() {
       box.append(chip(q.q, () => { $('all').open = false; openCard(q, [], asked, 'list'); }));
 }
 $('allQ').oninput = renderAll;
-// 브라우저 기본 지우기(×)는 너무 작아서 칸을 텍스트로 두고, 누르면 전체를 골라 붙여넣기가 바로 바꾸게 한다
-for (const id of ['qaText', 'allQ']) $(id).onfocus = e => setTimeout(() => e.target.select());
-
-$('qaText').onkeydown = e => {
-  const v = e.target.value.trim();
-  if (e.key !== 'Enter' || e.isComposing || !v) return;
-  freshQ(); askBtn();
-  judge(v, 'chat');
-};
+// 브라우저 기본 지우기(×)는 너무 작아서 칸을 텍스트로 두고, 누르면 전체를 골라 새로 치면 바로 바뀌게 한다
+$('allQ').onfocus = e => setTimeout(() => e.target.select());
 
 // ---- Q&A 준비 ([Q&A] 탭) ----
 // draft: 화면의 질문 목록(빈 질문도 둔다). 고칠 때마다 빈 질문을 뺀 팩으로 바로 저장한다(qa.js cleanPack). 질문 벡터는 고치기를 멈춘 뒤 다시 계산한다.
@@ -2771,7 +2763,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=18').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=19').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다

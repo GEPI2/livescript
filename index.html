@@ -334,7 +334,6 @@
   #live { margin: 0 0 var(--space-16); padding: var(--space-20); border-radius: var(--radius-xl); background: var(--surface); color: var(--ink-muted); line-height: 1.55; }
   #live:empty { display: none; }
   #live.q { color: var(--ink); font-size: 22px; font-weight: 600; line-height: 1.5; }
-  #live[data-src]::after { content: attr(data-src); display: block; margin-top: 14px; padding-left: 16px; background: radial-gradient(circle 4px at 4px 50%, var(--success) 96%, transparent) no-repeat; color: var(--ink-muted); font-size: 14px; font-weight: 400; }
   #ask { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: var(--control-xl); margin: 0; padding: 0 var(--space-16); border: 2px solid var(--accent); border-radius: 14px; background: transparent; font-size: 16px; }
   #ask::before, body.qa #qaBtn::before { content: ''; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }  /* 선 아이콘(굵기 1.8, 끝 둥글게) */
   #ask::before { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='5.5' y='1.5' width='5' height='8' rx='2.5'/%3E%3Cpath d='M3 8a5 5 0 0 0 10 0M8 13v2'/%3E%3C/svg%3E"); }
@@ -706,8 +705,6 @@
     <h2 class="lbl">들은 질문</h2>
     <p id="live"></p>
     <button id="ask" hidden>다음 질문</button>
-    <label class="lbl" for="qaText">채팅으로 들어온 질문</label>
-    <input id="qaText" type="text" enterkeyhint="search" autocomplete="off" placeholder="붙여넣고 Enter를 눌러 주세요">
   </div>
   <div id="qaR">
     <h2 class="lbl" id="qaH">준비한 답변</h2>
@@ -993,7 +990,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=18"></script>
-<script type="module" src="app.js?v=18"></script>
+<script src="match.js?v=19"></script>
+<script type="module" src="app.js?v=19"></script>
 </body>
 </html>

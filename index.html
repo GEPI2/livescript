@@ -136,6 +136,8 @@
   /* 넓은 화면: 아래 줄(목표·예상·자동 줄이기)과 '시간이 모자랄 때'·'버전 기록'이 오른쪽 카드 줄이 된다(시안). 대본 종이는 그 왼쪽에 카드로 둔다. 좁으면 aside는 없는 것과 같고 아래 줄만 막대로 남는다 */
   #edAside { display: contents; }
   .side { display: none; }
+  #prepCard label { display: block; margin: 8px 0; }
+  #prepCard textarea { display: block; width: 100%; min-height: 64px; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; resize: vertical; field-sizing: content; }
   /* 좁은 화면에서는 오른쪽 카드(발표 준비·시간이 모자랄 때·버전 기록)를 문단 카드 아래에 둔다 */
   @media (max-width: 1099px) {
     body.cards.editing #cards { padding-bottom: var(--space-16); }
@@ -553,7 +555,7 @@
   #checkMsg:not(:empty), #coachMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); color: var(--ink); }
   .sec { margin: 14px 0; }
   .sec .sh { display: flex; flex-wrap: wrap; gap: 0 8px; margin: 0; }
-  .sec .sh span { flex: 1 1 8em; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .sec .sh > span { flex: 1 1 8em; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .sec .sh b { flex: none; font-weight: 400; color: var(--ink-muted); }
   /* 시안의 ml-timebar: 걸린 시간 막대는 기대 띠 안이면 연보라(chart-within), 넘으면 주황(chart-over). 연한 띠는 기대 시간, 검은 세로선은 목표 */
   .cbar { position: relative; height: 18px; margin: 8px 0 6px; border-radius: 4px; background: var(--surface-muted); }
@@ -991,7 +993,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=17"></script>
-<script type="module" src="app.js?v=17"></script>
+<script src="match.js?v=18"></script>
+<script type="module" src="app.js?v=18"></script>
 </body>
 </html>

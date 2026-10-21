@@ -58,7 +58,7 @@ export const W_SPEECH = 2, W_REC = 3, W_HEARD = 6, W_AUD = 2, W_ZERO = 2, BLOCK_
 // 인식기 굶음은 1초 칸이 8개 찬 뒤에만 본다. 시작하자마자 말하고 첫 결과가 네트워크 때문에 늦게 오면(3~5초) 충돌로 보고 막힘을 적었다(흉내로 확인)
 export const W_WIN = 8;
 // 기록
-export const RUN_TALK = 20, RUNS = 5, REC_MAX = 12000;  // 말한 시간 20초 미만은 잘못 누른 시작, 대본마다 최근 5회, 하나 12000자 미만(핵심 문장·AI 고칠 점이 들어도 30구간이 남게)
+export const RUN_TALK = 20, RUNS = 20, REC_MAX = 12000;  // 말한 시간 20초 미만은 잘못 누른 시작, 대본마다 최근 20회(회차 그래프), 하나 12000자 미만(핵심 문장·AI 고칠 점이 들어도 30구간이 남게)
 // ponytail: 98% 넘게 읽었으면 끝까지 간 것으로 본다(마지막 문장을 인식하지 못했거나 확정 결과가 정지 뒤에 옴). 20% 미만이면 끝까지 걸릴 시간을 어림하지 않는다
 export const DONE_P = 98, PROJ_P = 20;
 
@@ -508,13 +508,18 @@ const opt = (x, f) => x == null ? null : f(x);
 const str = (x, n) => typeof x === 'string' ? x.slice(0, n) : '';
 const lvl = x => [1, 2].includes(x) ? x : 0;
 const sg = x => Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;  // 음수일 수 있는 값(강조 차이, 원 dB)
-// AI 코칭 결과 { summary, tips: [{ sec, what, how }], edits?: 대본 고칠 점 [{ sec, what, how }] } 검사(claude.js cleanCoach와 저장값이 같이 쓴다).
+// AI 코칭 결과 { summary, tips: [{ sec, what, how }], edits?: 대본 고칠 점 [{ sec, why, from?, to?, how? }] } 검사(claude.js cleanCoach와 저장값이 같이 쓴다).
+// 고칠 점은 대본 글 from을 to로 바꾸자는 것이다(why: 까닭). 옛 기록은 { what, how }(AI로 고치기 지시)라서 what을 why로 받는다.
 // tips 3개, edits 2개까지. walls(구간마다 걸린 시간)를 주면 읽지 않은 구간의 고칠 점은 버린다. 팁도 고칠 점도 없으면 null. 고칠 점이 없으면 edits 키를 두지 않는다(옛 모양)
 export function cleanAiCoach(o, k, walls = null) {
   const line = (s, n) => typeof s === 'string' ? s.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, n) : '';
   const items = (v, n) => (Array.isArray(v) ? v : []).map(t => ({ sec: Number.isInteger(t?.sec) && t.sec >= 0 && t.sec <= k ? t.sec : 0, what: line(t?.what, 300), how: line(t?.how, 300) }))
     .filter(t => t.what && t.how).slice(0, n);
-  const tips = items(o?.tips, 3), edits = items(o?.edits, 4).filter(t => !walls || !t.sec || walls[t.sec - 1] > 0).slice(0, 2);
+  const sec = v => Number.isInteger(v) && v >= 0 && v <= k ? v : 0;
+  const edits = (Array.isArray(o?.edits) ? o.edits : []).map(t => ({ sec: sec(t?.sec), why: line(t?.why ?? t?.what, 120), from: line(t?.from, 200), to: line(t?.to, 300), how: line(t?.how, 300) }))
+    .filter(t => t.why && ((t.from && t.to && t.from !== t.to) || t.how)).filter(t => !walls || !t.sec || walls[t.sec - 1] > 0).slice(0, 2)
+    .map(t => Object.fromEntries(Object.entries(t).filter(([, v]) => v !== '')));  // 빈 칸은 저장하지 않는다
+  const tips = items(o?.tips, 3);
   return tips.length || edits.length ? { summary: line(o.summary, 200), tips, ...(edits.length && { edits }) } : null;
 }
 // 저장할 때는 구간을 배열로 줄인다(키 이름을 빼면 30구간 기록이 8000자 안에 넉넉히 든다). 대본마다 sk('runs')에 저장하고 readRuns로 읽는다.
@@ -716,36 +721,47 @@ export function tips(run, goal, n = 3) {
   const full = finished(run), all = fullTime(run) ?? run.wall;
   if (goal && all > goal + OK_HI) {
     const d = mmss(all - goal), o = S.map((s, i) => s.wall - E[i].hi), w = o.indexOf(Math.max(...o));
-    out.push({ k: 'over', text: rateOf(run) > PACE_FAST ? `빠르게 읽었는데도 ${full ? d + ' 넘었어요' : '끝까지 가면 ' + d + ' 넘어요'}. 대본을 줄이거나 자동 줄이기를 켜 보세요.`
+    out.push({ k: 'over', s: [], text: rateOf(run) > PACE_FAST ? `빠르게 읽었는데도 ${full ? d + ' 넘었어요' : '끝까지 가면 ' + d + ' 넘어요'}. 대본을 줄이거나 자동 줄이기를 켜 보세요.`
       : `${full ? '' : '이 빠르기면 끝까지 '}목표보다 ${d} 길어요.` + (o[w] > 0 ? ` ${w + 1}번 구간이 가장 많이 넘었어요.` : '') });
   }
   const fast = at(s => rateOf(s) > PACE_FAST), flat = at(s => s.st && s.st[1] - s.st[0] < NARROW), rd = at(s => s.rd > 0);
-  if (fast.length) out.push({ k: 'fast', text: `${secsOf(fast, S)}이 빨랐어요. 문장 끝에서 한 박자 쉬어 보세요.` });
+  if (fast.length) out.push({ k: 'fast', s: fast, text: `${secsOf(fast, S)}이 빨랐어요. 문장 끝에서 한 박자 쉬어 보세요.` });
   const K = keyStates(run), meas = K.filter(x => x.v === 'ok' || x.v === 'weak'), weak = meas.filter(x => x.v === 'weak'), skip = K.filter(x => x.v === 'skip');
-  if (skip.length) out.push({ k: 'key-skip', text: `${nos([...new Set(skip.map(x => x.s))])}번 구간에서 꼭 말할 문장을 빼먹은 것 같아요. 그 문장은 꼭 읽어 주세요.` });
+  if (skip.length) out.push({ k: 'key-skip', s: [...new Set(skip.map(x => x.s))], text: `${nos([...new Set(skip.map(x => x.s))])}번 구간에서 꼭 말할 문장을 빼먹은 것 같아요. 그 문장은 꼭 읽어 주세요.` });
   // 문장 하나의 판정은 틀릴 수 있어서, 잰 문장이 셋 넘고 절반 넘게 약할 때만 하나로 묶어 말한다
   if (meas.length >= 3 && weak.length * 2 >= meas.length) {
     const m = CUES.map(c => [c, weak.filter(x => x.miss.includes(c)).length]).sort((a, b) => b[1] - a[1])[0][0];
-    out.push({ k: 'key-weak', text: `꼭 말할 문장 ${meas.length}개 가운데 ${weak.length}개를 다른 문장과 비슷하게 말했어요. ${TODO[m]}` });
+    out.push({ k: 'key-weak', s: [], text: `꼭 말할 문장 ${meas.length}개 가운데 ${weak.length}개를 다른 문장과 비슷하게 말했어요. ${TODO[m]}` });
   }
   const rates = S.map(rateOf).filter(r => r != null), mid = rates.length >= 3 ? median(rates) : null;
   const jump = mid ? at(s => rateOf(s) > JUMP * mid).filter(i => !fast.includes(i)) : [];
-  if (jump.length) out.push({ k: 'jump', text: `${secsOf(jump, S)}에서 다른 구간보다 갑자기 빨라졌어요. 구간이 바뀔 때 한 박자 쉬고 시작해 보세요.` });
+  if (jump.length) out.push({ k: 'jump', s: jump, text: `${secsOf(jump, S)}에서 다른 구간보다 갑자기 빨라졌어요. 구간이 바뀔 때 한 박자 쉬고 시작해 보세요.` });
   const ends = S.reduce((x, s) => x + (s.ends ?? 0), 0), fell = S.reduce((x, s) => x + (s.fall ?? 0), 0);
-  if (fell >= 3 && fell >= FALL_P * ends) out.push({ k: 'fall', text: `문장 끝 ${ends}번 가운데 ${fell}번 소리가 작아졌어요(${secsOf(at(s => s.fall > 0), S)}). 마지막 낱말까지 또렷하게 말해 보세요.` });
+  if (fell >= 3 && fell >= FALL_P * ends) out.push({ k: 'fall', s: at(s => s.fall > 0), text: `문장 끝 ${ends}번 가운데 ${fell}번 소리가 작아졌어요(${secsOf(at(s => s.fall > 0), S)}). 마지막 낱말까지 또렷하게 말해 보세요.` });
   const vm = volMid(S), quiet = vm == null ? [] : at(s => s.vol != null && s.vol < vm - QUIET_DB);
-  if (vm != null && vm < LOW_VOL) out.push({ k: 'low', text: '목소리가 주변 소리보다 크게 들리지 않았어요. 마이크에 가까이 가거나 조금 더 크게 말해 보세요.' });
-  else if (quiet.length) out.push({ k: 'quiet', text: `${secsOf(quiet, S)}은 다른 구간보다 목소리가 작아졌어요. 처음과 같은 크기로 말해 보세요.` });
+  if (vm != null && vm < LOW_VOL) out.push({ k: 'low', s: [], text: '목소리가 주변 소리보다 크게 들리지 않았어요. 마이크에 가까이 가거나 조금 더 크게 말해 보세요.' });
+  else if (quiet.length) out.push({ k: 'quiet', s: quiet, text: `${secsOf(quiet, S)}은 다른 구간보다 목소리가 작아졌어요. 처음과 같은 크기로 말해 보세요.` });
   const EN = energy(S, run.nodb), more = at((s, i) => flowGap(s.pe, EN[i]) === 'more'), less = at((s, i) => flowGap(s.pe, EN[i]) === 'less');
-  if (more.length) out.push({ k: 'tone', text: `${secsOf(more, S)}은 힘 있게 말할 곳인데 다른 구간보다 차분하게 들렸어요. 조금 더 크고 높게 말해 보세요.` });
-  else if (less.length) out.push({ k: 'tone', text: `${secsOf(less, S)}은 차분하게 말할 곳인데 다른 구간보다 힘 있게 들렸어요. 조금 낮추고 차분하게 말해 보세요.` });
-  if (!K.length && run.emph && run.emph.db < EMPH_DB && run.emph.st < EMPH_ST) out.push({ k: 'emph', text: '꼭 말할 문장을 다른 문장과 비슷한 크기와 높이로 말했어요. 그 문장 앞에서 한 박자 쉬고 조금 크고 높게 말해 보세요.' });
-  if (flat.length) out.push({ k: 'flat', text: `${secsOf(flat, S)}은 높낮이 폭이 좁았어요. 강조할 낱말을 조금 높게 말해 보세요.` });
+  if (more.length) out.push({ k: 'tone', s: more, text: `${secsOf(more, S)}은 힘 있게 말할 곳인데 다른 구간보다 차분하게 들렸어요. 조금 더 크고 높게 말해 보세요.` });
+  else if (less.length) out.push({ k: 'tone', s: less, text: `${secsOf(less, S)}은 차분하게 말할 곳인데 다른 구간보다 힘 있게 들렸어요. 조금 낮추고 차분하게 말해 보세요.` });
+  if (!K.length && run.emph && run.emph.db < EMPH_DB && run.emph.st < EMPH_ST) out.push({ k: 'emph', s: [], text: '꼭 말할 문장을 다른 문장과 비슷한 크기와 높이로 말했어요. 그 문장 앞에서 한 박자 쉬고 조금 크고 높게 말해 보세요.' });
+  if (flat.length) out.push({ k: 'flat', s: flat, text: `${secsOf(flat, S)}은 높낮이 폭이 좁았어요. 강조할 낱말을 조금 높게 말해 보세요.` });
   const L = S.reduce((b, s, i) => (s.run ?? 0) > (S[b].run ?? 0) ? i : b, 0);
-  if (S[L]?.run > LONG_RUN) out.push({ k: 'run', text: `${L + 1}번 구간에서 ${Math.round(S[L].run)}초 동안 쉬지 않았어요. 쉼표에서 쉬어 보세요.` });
-  if (rd.length) out.push({ k: 'read', text: `${secsOf(rd, S)}은 대본 그대로, 고른 높낮이로 읽었어요. 한두 문장은 대본을 보지 않고 말해 보세요.` });
-  if (goal && full && run.wall < OK_LO * goal) out.push({ k: 'short', text: `목표보다 ${mmss(goal - run.wall)} 짧아요. 천천히 읽거나 설명을 더해 보세요.` });
+  if (S[L]?.run > LONG_RUN) out.push({ k: 'run', s: [L], text: `${L + 1}번 구간에서 ${Math.round(S[L].run)}초 동안 쉬지 않았어요. 쉼표에서 쉬어 보세요.` });
+  if (rd.length) out.push({ k: 'read', s: rd, text: `${secsOf(rd, S)}은 대본 그대로, 고른 높낮이로 읽었어요. 한두 문장은 대본을 보지 않고 말해 보세요.` });
+  if (goal && full && run.wall < OK_LO * goal) out.push({ k: 'short', s: [], text: `목표보다 ${mmss(goal - run.wall)} 짧아요. 천천히 읽거나 설명을 더해 보세요.` });
   return out.slice(0, n);
+}
+// 지난 연습의 고칠 점(화면에 보인 3개)이 이번에 나아졌나: [{ k, text: 지난번 글, v: 'done' 고쳤어요 | 'still' 아직이에요 | 'unread' 이번에 그 구간을 읽지 않음 }].
+// 같은 종류의 팁이 이번에도 같은 구간(발표 전체 팁이면 그냥)에 나왔으면 아직이다. 대본 구간 수가 달라졌으면 종류만 본다
+export function fixedTips(run, prev, goal) {
+  if (!prev) return [];
+  const now = tips(run, goal, 99), same = prev.secs.length === run.secs.length;
+  return tips(prev, goal).map(t => {
+    const n = now.find(x => x.k === t.k), read = !same || !t.s.length || t.s.some(i => run.secs[i]?.wall > 0);
+    const still = !!n && (!same || !t.s.length || !n.s.length || n.s.some(i => t.s.includes(i)));
+    return { k: t.k, text: t.text, v: still ? 'still' : read ? 'done' : 'unread' };
+  });
 }
 
 // node check.js 로 실행하면 확인
@@ -1158,7 +1174,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const base = { v: 1, t0: 1760245500000, kind: 'practice', h: 'abc123', target: 180, r0: 4.83, el: 250, wall: 242.3, talk: 230, off: 12, chars: 1200, heard: 1250, anch: 1, gaps: 4, pct: 100, lv: null, re: false, audio: { off: null, at: null }, secs: [s0], cues: [['fast', 61.5]], read: 0, ai: null };
   const c = cleanRun({ ...base, wall: '242', off: -3, chars: NaN, kind: 'abc', extra: 1, secs: [{ ...s0, w: s0.w + '더 긴 글', wall: '1', x: 2 }], cues: [['fast', 3], ['boo', 4], 5] });
   assert.deepEqual([c.wall, c.off, c.chars, c.kind, c.extra, c.secs[0].w.length, c.secs[0].wall, c.secs[0].x, c.cues], [0, 0, 0, 'live', undefined, 20, 0, undefined, [['fast', 3]]], '숫자·kind·모르는 키');
-  assert.deepEqual(readRuns(JSON.stringify(Array.from({ length: 7 }, (_, i) => ({ ...base, t0: i })))).map(r => r.t0), [2, 3, 4, 5, 6], '7개 → 마지막 5개');
+  assert.deepEqual(readRuns(JSON.stringify(Array.from({ length: 22 }, (_, i) => ({ ...base, t0: i })))).map(r => r.t0), Array.from({ length: 20 }, (_, i) => i + 2), '22개 → 마지막 20개');
   let runs = upsertRun([], base);
   runs = upsertRun(runs, { ...base, t0: 2 });
   runs = upsertRun(runs, { ...base, wall: 99 });
@@ -1254,6 +1270,13 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.match(tk([{}], { emph: { db: 0.4, st: -0.3, n: 80 } }).emph, /^꼭 말할 문장을 다른 문장과 비슷한/);
   assert.equal(tk([{}], { emph: { db: 3, st: 0, n: 80 } }).emph, undefined, '크게 말했으면 강조한 것');
   assert.equal(tips(tr([{ st: [1, 2] }, { st: [1, 2] }, { run: 20 }, { rd: 1 }], { wall: 300, talk: 100, heard: 600 }), 180, 9).length, 4, 'AI에는 3개 넘게');
+  // 지난번 고칠 점: 같은 구간에 같은 팁이 또 나오면 아직, 없어졌으면 고쳤어요, 그 구간을 읽지 않았으면 모름
+  const qk = { wall: 30, talk: 20, heard: 120 }, ok3 = { wall: 30, talk: 20, heard: 60 }, fA = tr([qk, ok3, ok3]);
+  assert.deepEqual(fixedTips(tr([ok3, ok3, ok3]), fA, 0).map(x => [x.k, x.v]), [['fast', 'done']]);
+  assert.deepEqual(fixedTips(fA, fA, 0).map(x => [x.k, x.v]), [['fast', 'still']]);
+  assert.deepEqual(fixedTips(tr([ok3, qk, ok3]), fA, 0).map(x => [x.k, x.v]), [['fast', 'done']], '다른 구간이 빨라진 것은 이 팁을 고친 것으로 본다');
+  assert.deepEqual(fixedTips(tr([{ wall: 0 }, ok3, ok3], { pct: 60 }), fA, 0).map(x => [x.k, x.v]), [['fast', 'unread']]);
+  assert.deepEqual(fixedTips(fA, null, 0), []);
   const vr = secRows(tr([{ vol: 40, ends: 3, fall: 2 }, { vol: 41 }, { vol: 30.4 }]), null, 0);
   assert.match(vr[0].words, /끝 흐림 2번/); assert.match(vr[2].words, /목소리 작아짐/); assert.doesNotMatch(vr[0].words, /목소리 작아짐/);
   assert.ok(vr[2].nums.includes('목소리 크기: 주변 소리보다 30dB 큼') && vr[0].nums.includes('문장 끝 3번 가운데 2번 작아짐'));
@@ -1346,12 +1369,14 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(['keys', 'nodb', 'pzm', 'ph', 'rh', 'rec'].map(k => k in cleanRun(base)), [false, false, false, false, false, false], '없으면 키를 두지 않는다');
   assert.equal(cleanRun({ ...base, rec: true }).rec, true); assert.equal(cleanRun({ ...base, rec: 1 }).rec, undefined);
   assert.deepEqual(cleanRun({ ...base, secs: [{ ...s0, pm: 17.25, rv: -23.46, pe: 3 }] }).secs[0], { ...cleanRun(base).secs[0], pm: 17.3, rv: -23.5, pe: 3 }, '원 dB는 음수');
-  assert.deepEqual(cleanAiCoach({ summary: 's', tips: [], edits: [{ sec: 2, what: 'a', how: 'b' }, { sec: 1, what: 'c', how: 'd' }, { sec: 0, what: 'e', how: 'f' }, { sec: 0, what: 'g', how: 'h' }] }, 3, [10, 0, 5]).edits.map(x => x.what), ['c', 'e'], '읽지 않은 구간은 버리고 2개까지');
+  assert.deepEqual(cleanAiCoach({ summary: 's', tips: [], edits: [{ sec: 2, what: 'a', how: 'b' }, { sec: 1, what: 'c', how: 'd' }, { sec: 0, what: 'e', how: 'f' }, { sec: 0, what: 'g', how: 'h' }] }, 3, [10, 0, 5]).edits.map(x => x.why), ['c', 'e'], '읽지 않은 구간은 버리고 2개까지(옛 모양은 what이 까닭)');
+  assert.deepEqual(cleanAiCoach({ summary: 's', tips: [], edits: [{ sec: 1, why: '길어요', from: ' 가 나 ', to: '가나' }, { sec: 1, why: '같아요', from: '가', to: '가' }, { sec: 1, why: '', from: '가', to: '나' }] }, 3).edits,
+    [{ sec: 1, why: '길어요', from: '가 나', to: '가나' }], '바꿀 글이 같거나 까닭이 없으면 버린다');
   assert.deepEqual(cleanAiCoach({ summary: 's', tips: [{ sec: 1, what: 'a', how: 'b' }] }, 3), { summary: 's', tips: [{ sec: 1, what: 'a', how: 'b' }] }, '고칠 점이 없으면 옛 모양');
   assert.equal(cleanAiCoach({ summary: 's', tips: [], edits: [] }, 3), null);
   const full = cleanRun({ ...big, secs: big.secs.map(s => ({ ...s, vol: 46.5, ends: 99, fall: 99, pm: 33.25, rv: -23.5, pe: 3 })), nodb: true, pzm: 0.5, ph: 1760245500000, rh: 'abcdef12',
     keys: Array.from({ length: 30 }, (_, i) => ({ sid: 100 + i, s: i, w: '가나다라마바사아자차카타파하가나다라마바', db: -12.3, st: 12.5, n: 1234, pre: 1.2, dw: 1.23, sd: 0.88, r: 9 })),
-    ai: { ...big.ai, edits: Array.from({ length: 2 }, () => ({ sec: 30, what: '라'.repeat(300), how: '마'.repeat(300) })) } });
+    ai: { ...big.ai, edits: Array.from({ length: 2 }, () => ({ sec: 30, why: '라'.repeat(120), from: '마'.repeat(200), to: '바'.repeat(300) })) } });
   assert.equal(full.keys.length, KEYS, '꼭 말할 문장 20개까지');
   assert.ok(saveRuns([full]).length - 2 < REC_MAX && fitRun(full) === full, `값이 다 찬 30구간 기록 ${saveRuns([full]).length - 2}자, 빼는 것 없음`);
   // 결과 글

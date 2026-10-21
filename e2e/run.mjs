@@ -253,6 +253,14 @@ async function practiceRun(p, mutate = (i, x) => x, first = true, warm = 300) {
   await p.click('#mic'); await p.waitForSelector('#checkDlg[open]'); await p.waitForTimeout(600);
 }
 const swapNae = (i, x) => x.replace('소리 내어', '소리 내서');
+const mockAi = (p, f) => {
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' };
+  const sse = o => [{ type: 'message_start', message: { id: 'm', content: [] } }, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(o) } }, { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }, { type: 'message_stop' }].map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+  return p.route('https://api.anthropic.com/**', r => r.request().method() === 'OPTIONS' ? r.fulfill({ status: 204, headers: cors })
+    : r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'text/event-stream' }, body: sse(f(JSON.parse(r.request().postData()))) }));
+};
 t('결과: 대본과 다르게 말한 곳을 빼먹음·더함·바꿔 말함으로 보여 준다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
@@ -275,9 +283,9 @@ t('결과: 두 번 이어 바꿔 말하면 대본 수정을 제안하고 바꾸�
   assert.equal(await p.locator('#cSug .sug').count(), 0, '한 번만으로는 제안하지 않는다');
   await practiceRun(p, swapNae, false);
   assert.equal(await p.locator('#cSug .sug').count(), 1);
-  assert.equal(await p.textContent('#cSug h3'), '대본을 이렇게 바꿀까요?');
-  assert.match(await p.textContent('#cSug p'), /^연습 2번 연속 '내어' 대신 '내서'라고 말했어요\.$/);
-  assert.equal(await p.textContent('#cStats .stat:nth-child(4) .note'), '대본 수정 제안 1개');
+  assert.equal(await p.textContent('#cSug .why'), '연습 2번 연속 이렇게 말했어요');
+  assert.deepEqual([await p.textContent('#cSug .chg del'), await p.textContent('#cSug .chg ins')], ['내어', '내서']);
+  assert.equal(await p.textContent('#cStats .stat:nth-child(4) .note'), '대본 고칠 점 1개');
   const before = await p.inputValue('#text');
   await p.click('#cSug .go'); await p.waitForTimeout(400);
   const after = await p.inputValue('#text');
@@ -341,6 +349,12 @@ t('결과: 회차별 시간 막대와 구간부터 연습 단추', async () => {
   await practiceRun(p); await practiceRun(p, (i, x) => x, false);
   assert.equal(await p.locator('#cHist div').count(), 2);
   assert.equal(await p.locator('#cHist .now').count(), 1);
+  await p.click('#cHistM [data-m="rate"]');
+  assert.match(await p.textContent('#cHist div span'), /^\d+$/, '말 빠르기로 바꿔 본다');
+  // 지난번 고칠 점: 같은 연습을 되풀이했으니 목표를 넘은 것은 아직이다
+  assert.equal(await p.locator('#cFixed').isVisible(), true);
+  assert.equal(await p.getAttribute('#cFixedList li', 'class'), 'still');
+  assert.match(await p.textContent('#cFixedList li'), /^아직이에요.*\d+:\d\d (넘었어요|길어요)\.$/);
   assert.match(await p.textContent('#cRepeat'), /^\d+번 구간부터 연습$/);
   const k = +(await p.textContent('#cRepeat')).match(/\d+/)[0];
   await p.click('#cRepeat'); await p.waitForTimeout(600);
@@ -407,6 +421,11 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   const at = await p.evaluate(() => { const a = document.getElementById('cAudio'); return [+a.dataset.to, a.currentTime, a.paused]; });
   assert.ok(at[0] > at[1] - 0.5 && at[1] > 1 && !at[2], `둘째 구간부터 듣고, 그 구간 끝에서 멈출 자리를 둔다 ${at}`);
   await p.screenshot({ path: OUT + '/rec-result.png' });
+  // 녹음 아래 구간 띠: 누르면 그 자리부터 듣고, 듣는 구간 줄에 불이 들어온다
+  assert.ok(await p.locator('#cMarks button').count() >= 2, '구간 띠');
+  await p.locator('#cMarks button').nth(1).click(); await p.waitForTimeout(800);
+  assert.equal(await p.locator('#cSecs .sec.now').count(), 1, '듣는 구간 줄');
+  assert.equal(await p.locator('#cMarks button.now').count(), 1);
   // 닫은 결과 창은 '결과'로 다시 연다. 기록을 지우면 녹음도 지운다
   await p.click('#checkClose'); await p.click('#resBtn'); await p.waitForSelector('#checkDlg[open]');
   p.once('dialog', d => d.accept());
@@ -465,10 +484,12 @@ t('준비: 평가 기준을 적고 붙여넣은 답으로 흐름, 핵심 문장 
   assert.equal(await p.getAttribute('#cList .pc:nth-child(2) mark.must', 'title'), '문제 제기 · 평가 기준: 문제를 분명히 말했나');
   assert.deepEqual(p.errors, []);
 });
-t('결과: AI 코칭의 대본 고칠 점은 카드로 보이고, 누르면 그 구간을 고른 채 지시로 고치기를 연다', async () => {
+t('결과: AI 코칭의 대본 고칠 점은 까닭과 바뀌는 곳을 보이고 바로 바꾼다. 옛 모양(지시)은 그 구간을 고른 채 AI로 고치기를 연다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
-  const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }], edits: [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '둘째 구간의 긴 문장을 둘로 나눠 주세요.' }] };
+  const from = '크롬은 구글 서버로, 사파리는 애플 서버로 보냅니다.', to = '크롬은 구글 서버로 보냅니다. 사파리는 애플 서버로 보냅니다.';
+  const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }],
+    edits: [{ sec: 2, why: '한 문장이 길어 숨이 차요.', from, to }, { sec: 2, what: '둘째 구간 문장이 길어요.', how: '둘째 구간의 긴 문장을 둘로 나눠 주세요.' }] };
   const sse = [{ type: 'message_start', message: { id: 'm', content: [] } }, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
     { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(coach) } }, { type: 'content_block_stop', index: 0 },
     { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }, { type: 'message_stop' }].map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
@@ -477,14 +498,36 @@ t('결과: AI 코칭의 대본 고칠 점은 카드로 보이고, 누르면 그 
   await p.evaluate(() => sessionStorage.setItem('ls.key', 'sk-ant-test'));
   await practiceRun(p);
   for (let i = 0; i < 50 && await p.textContent('#cTipsH') !== 'AI 코칭'; i++) await p.waitForTimeout(100);
-  assert.equal(await p.textContent('#cSug .sug h3'), '대본을 이렇게 고쳐 볼까요?');
-  assert.match(await p.textContent('#cSug .sug'), /2번 구간: 둘째 구간 문장이 길어요\./);
+  assert.deepEqual(await p.locator('#cSug .why').allTextContents(), ['2번 구간 · 한 문장이 길어 숨이 차요.', '2번 구간 · 둘째 구간 문장이 길어요.']);
+  assert.equal(await p.textContent('#cSug .sug .chg del'), from);
+  await p.locator('#cSug .sug .go').first().click(); await p.waitForTimeout(400);
+  assert.ok((await textOf(p)).includes(to) && !(await textOf(p)).includes(from), '대본에서 바로 바꿨다');
+  assert.match(await p.textContent('#checkMsg'), /^바꿨어요/);
+  assert.equal(await p.locator('#cSug .sug').count(), 1, '바꾼 고칠 점은 사라진다');
   await p.evaluate(() => sessionStorage.removeItem('ls.key'));  // 열기만 보고 바로 고치지는 않게
+  assert.equal(await p.textContent('#cSug .sug .go'), '2번 구간 고치기');
   await p.click('#cSug .sug .go'); await p.waitForTimeout(400);
   assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
   assert.equal(await p.evaluate(() => document.body.classList.contains('editing')), true, '편집 화면으로');
   assert.equal(await p.inputValue('#instr'), '둘째 구간의 긴 문장을 둘로 나눠 주세요.');
   assert.equal(await p.isChecked('#onlySel'), true, '그 구간만');
+  assert.deepEqual(p.errors, []);
+});
+
+t('결과: 연습 때 대본에 없던 말은 AI가 정리해 넣을 만한 것을 결과에 보이고, 누르면 대본에 넣는다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  const AD = '여기서 잠깐 제 경험을 말씀드리면 저는 발표할 때마다 대본을 자주 놓쳐서 곤란했던 적이 많았어요', add = '저도 발표할 때마다 읽던 곳을 자주 놓쳤어요.';
+  await mockAi(p, b => b.system.includes('애드리브') ? { items: [{ n: 1, title: '발표자의 경험', points: ['대본을 자주 놓쳤다'], worth: true, add: [add] }] }
+    : { summary: '좋아요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }] });
+  await p.evaluate(() => sessionStorage.setItem('ls.key', 'sk-ant-test'));
+  await practiceRun(p, (i, x) => i === 3 ? x + ' ' + AD : x);
+  await p.waitForSelector('#cAds:not([hidden]) .adw', { timeout: 10000 });
+  assert.match(await p.textContent('#cAdSum'), /가운데 1개를 대본에 넣을 만해요\.$/);
+  assert.equal(await p.textContent('#cAdList .adw .t'), '발표자의 경험');
+  await p.click('#cAdList .adw button'); await p.waitForSelector('#adDlg[open]');
+  await p.click('#adApply'); await p.waitForTimeout(300);
+  assert.ok((await textOf(p)).includes(add), '대본에 들어갔다');
   assert.deepEqual(p.errors, []);
 });
 

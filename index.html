@@ -446,13 +446,40 @@
   .seg button { flex: 1; min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-muted); font-weight: 400; }
   .seg [aria-pressed=true] { background: var(--surface); box-shadow: var(--shadow-raised); color: var(--ink); font-weight: 600; }  /* 전역 [aria-pressed]는 .seg button보다 약해서 흰 칸을 여기서 준다 */
 
-  /* 발표 점검 결과 창: 표 대신 구간마다 세 줄 블록이라 320px부터 같은 모양 */
-  #checkDlg { word-break: keep-all; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  /* 연습 결과: 화면 전체를 쓰는 창. 넓으면 두 칸(왼쪽 숫자·녹음·구간, 오른쪽 고칠 점·애드리브·회차). 좁으면 한 칸 */
+  #checkDlg { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg); word-break: keep-all; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  #checkDlg .rtop { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px max(16px, calc((100% - 1200px) / 2)); background: var(--surface); box-shadow: 0 1px 0 var(--border); }
+  #checkDlg .rtop h2 { margin: 0 8px 0 0; font-size: 20px; }
+  #checkDlg #cRun { width: auto; max-width: min(320px, 100%); }
+  #checkBody { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .rgrid { display: grid; gap: var(--space-16); }
+  @media (min-width: 1000px) { .rgrid { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; } }
+  .rmain > section, .rmain > details, .raside > section { margin: 0 0 var(--space-16); padding: var(--space-16) var(--space-20); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+  .raside h3, .rmain h3 { margin: 0 0 8px; font-size: 16px; }
+  #checkDlg .rfoot { max-width: 1200px; margin: 0 auto; padding: 0 16px 32px; }
+  #cDiffBox > summary { font-size: 16px; color: var(--ink); }
+  /* 녹음 아래 구간 띠: 칸마다 구간, 고칠 점이 있는 구간은 주황. 재생 중인 구간은 테두리 */
+  #cMarks { position: relative; height: 16px; margin: 8px 0 2px; overflow: hidden; border-radius: 4px; background: var(--surface-muted); }
+  #cMarks:empty { display: none; }
+  #cMarks button { position: absolute; top: 0; bottom: 0; min-width: 0; min-height: 0; padding: 0; border: 0; border-right: 2px solid var(--surface); border-radius: 0; background: var(--chart-within); }
+  #cMarks button.bad { background: var(--chart-over); }
+  #cMarks button.now { box-shadow: inset 0 0 0 2px var(--ink); }
+  .sec.now { margin-left: -12px; padding-left: 8px; border-left: 4px solid var(--accent); }
+  /* 지난번 고칠 점: 고쳤어요(초록)·아직이에요(주황) */
+  #checkDlg #cFixedList { margin: 0; padding: 0; list-style: none; }
+  #cFixedList li { display: flex; align-items: baseline; gap: 8px; margin: 6px 0; }
+  #cFixedList .fv { flex: none; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink-muted); font-size: 13px; font-weight: 600; }
+  #cFixedList .done .fv { background: var(--success-tint); color: var(--success); }
+  #cFixedList .still .fv { background: var(--warning-tint); color: var(--warning); }
+  #coachMore summary, #cAds button, #cHistM { margin-top: 8px; }
+  #coachMore summary { min-height: 40px; padding: 8px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+  .adw { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius-lg); background: var(--accent-tint); }
+  .adw p { margin: 0 0 6px; }
+  .adw .t { font-weight: 600; }
   #checkDlg summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
   #checkDlg p { margin: 6px 0; }
   #checkDlg ol, #checkDlg ul { margin: 6px 0; padding-left: 1.4em; }
   #checkDlg li { margin: 4px 0; }
-  #cTarget { width: 6em; }
   /* 숫자 카드(시안의 ml-stat): 이름 → 숫자 → 한 줄 해석. 넘쳤을 때만 해석이 주황 */
   #cStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-12); margin: var(--space-12) 0; }
   .stat { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
@@ -460,23 +487,21 @@
   .stat .v { font-size: 28px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
   .stat .note.over { color: var(--warning); font-weight: 600; }
   .stat .v small { margin-left: 2px; font-size: 15px; font-weight: 400; color: var(--ink-muted); }
-  /* 대본 수정 제안(시안): 연보라 카드에 바꾸기 / 그대로 두기 */
-  #cSug .sug { margin: var(--space-12) 0; padding: var(--space-20); border-radius: var(--radius-xl); background: var(--accent-tint); }
-  #cSug h3 { margin: 0 0 8px; color: var(--accent-strong); font-size: 16px; }
-  #cSug p { margin: 0 0 12px; }
+  /* 대본 고칠 점: 까닭 한 줄, 바뀌는 곳(지울 말 → 더할 말), 바꾸기 / 그대로 두기 */
+  #cSug .sug { margin: var(--space-8) 0 0; padding: var(--space-16); border-radius: var(--radius-lg); background: var(--accent-tint); }
+  #cSug .why { font-weight: 600; color: var(--accent-strong); }
+  #cSug p { margin: 0 0 10px; }
   #cSug .row { margin: 0 0 8px; }
   #cSug .row button { flex: 1; min-height: 44px; }
   #cSug .row .go { background: var(--accent); border-color: transparent; color: var(--on-accent); }
   #cSug .small { margin: 0; }
   #cRepeat { width: 100%; margin-top: var(--space-12); }
-  #cDiffBox { margin-top: var(--space-24); padding: var(--space-20); border: 1px solid var(--border); border-radius: var(--radius-xl); }
-  #cDiffBox .lg { margin: 0 0 var(--space-12); }
+  #cDiffBox .lg { margin: 4px 0 var(--space-12); }
   #cDiffTxt { margin: var(--space-12) 0 0; font-size: 17px; line-height: 1.85; word-break: keep-all; }
   #cDiffTxt u.chg { text-decoration: underline 2px var(--accent); text-underline-offset: 4px; }
   #cDiffBox .chips { margin: 0; }
   #cDiffBox .chips button { min-height: 36px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 400; }
-  #cHistBox { margin-top: var(--space-24); }
-  #cHist { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 72px); gap: 10px; align-items: end; height: 120px; }
+  #cHist { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 48px); gap: 6px; align-items: end; height: 130px; margin-top: 12px; overflow-x: auto; }
   #cHist div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; font-size: 12px; color: var(--ink-muted); }
   #cHist i { display: block; width: 100%; border-radius: 6px 6px 0 0; background: var(--chart-past); }
   #cHist .now { color: var(--ink); font-weight: 600; }
@@ -510,7 +535,6 @@
   button.play { min-height: 40px; padding: 0 12px; gap: 4px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 400; }
   .sec .sh button.play { flex: none; }
   /* 꼭 말할 문장: 판정 칩 + 구간·첫 글 + 기준 + 듣기 */
-  #cKeys { margin-top: var(--space-24); }
   #cKeys h3 { margin: 0 0 4px; font-size: 16px; }
   #cKeys h4 { margin: var(--space-16) 0 4px; font-size: 14px; }
   .krow { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -853,61 +877,70 @@
 
 
 <dialog id="checkDlg" aria-labelledby="checkTitle">
-  <h2 id="checkTitle" tabindex="-1" autofocus>발표 점검</h2>
-  <p id="checkNoSr" hidden>이 브라우저는 음성 인식이 안 돼서 점검할 수 없어요. Chrome을 쓰세요.</p>
-  <div id="checkBody">
-    <p id="checkMsg" role="status"></p>
-    <p class="small" id="cEmpty">아직 기록이 없어요. [연습]에서 20초 넘게 읽고 정지하면 여기에 결과가 나와요.</p>
-    <label id="cRunRow">기록 <select id="cRun"></select></label>
-    <div id="cTake" hidden><audio id="cAudio" controls preload="metadata" aria-label="이번 연습 녹음"></audio><p class="small" id="cTakeMsg" role="status"></p></div>
-    <div class="row"><label for="cTarget">목표</label><input id="cTarget" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음" aria-label="목표 시간(분)"> 분</div>
-    <div id="cRunBox">
-      <div id="cStats"></div>
-      <div id="cSug"></div>
-      <div id="cSum"></div>
-      <p class="small">목소리로 감정을 알아내지는 못해요. 같은 연습 안에서 구간끼리 소리 크기·높이·높낮이 폭을 견줘 힘 있게 들렸는지 어림해요. 사투리나 억양은 재지 않아요.</p>
-      <div id="cTone"></div>
-      <section id="cKeys" hidden></section>
-      <h3 id="cTipsH" tabindex="-1">다음에 해 볼 것</h3>
-      <p id="cAiSum"></p>
-      <ol id="cTips"></ol>
-      <button id="cRepeat" hidden></button>
-      <button id="cAd" hidden></button>
-      <details id="cRule" hidden><summary>규칙으로 찾은 것</summary><ol id="cRuleList"></ol></details>
-      <div class="row">
-        <button id="coachAi">AI 코칭</button>
-        <button id="coachPrompt">프롬프트 복사</button>
-        <button id="coachPaste">결과 붙여넣기</button>
-      </div>
-      <p class="small">AI에는 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요. 연습으로 하면 정지할 때 AI 키가 있으면 바로 받아요.</p>
-      <p class="small" id="coachKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn5">AI 키 넣기</button></p>
-      <p id="coachMsg" role="status"></p>
-      <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
-      <div id="coachPasteBox" hidden>
-        <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-        <div class="row"><button id="coachPasteApply">적용</button></div>
-      </div>
-      <div class="lg"><h3>구간별 시간</h3><span class="key"><u></u>목표</span><span class="key"><b class="ok"></b>시간 안</span><span class="key"><b class="over"></b>초과</span></div>
-      <p class="small">구간은 문단이고, 짧은 문단은 다음과 묶어요. 연보라 띠는 기대 시간이에요.<span id="cSemi"> 반음은 피아노 건반 한 칸이에요.</span></p>
-      <p class="small" id="cNoGoal">목표 시간을 넣으면 목표에 맞춘 기대 시간으로 바뀌어요.</p>
-      <div id="cSecs"></div>
-      <section id="cDiffBox" hidden>
-        <div class="lg"><h3 id="cDiffH">대본과 실제로 한 말</h3><span class="key"><del>빼먹음</del></span><span class="key"><ins>더함</ins></span><span class="key"><u class="chg">바꿔 말함</u></span></div>
-        <div class="chips" id="cDiffSec" role="group" aria-label="구간 고르기"></div>
-        <p id="cDiffTxt"></p>
-      </section>
-      <section id="cHistBox" hidden>
-        <div class="lg"><h3>회차별 시간</h3></div>
-        <div id="cHist"></div>
-      </section>
-    </div>
-  </div>
-  <div class="row bottom">
-    <button id="cDel">기록 모두 지우기</button>
+  <div class="rtop">
+    <h2 id="checkTitle" tabindex="-1" autofocus>연습 결과</h2>
+    <select id="cRun" aria-label="기록 고르기"></select>
     <span class="grow"></span>
-    <button id="cPractice">다시 연습</button>
+    <button id="cPractice" class="cta">다시 연습</button>
     <button id="checkClose">닫기</button>
   </div>
+  <div id="checkBody">
+    <p id="checkNoSr" hidden>이 브라우저는 음성 인식이 안 돼서 점검할 수 없어요. Chrome을 쓰세요.</p>
+    <p id="checkMsg" role="status"></p>
+    <p class="small" id="cEmpty">아직 기록이 없어요. [연습]에서 20초 넘게 읽고 정지하면 여기에 결과가 나와요.</p>
+    <div id="cRunBox" class="rgrid">
+      <div class="rmain">
+        <div id="cStats"></div>
+        <section id="cTake" hidden>
+          <audio id="cAudio" controls preload="metadata" aria-label="이번 연습 녹음"></audio>
+          <div id="cMarks" aria-hidden="true"></div>
+          <p class="small" id="cTakeMsg" role="status"></p>
+        </section>
+        <section>
+          <div class="lg"><h3>구간별</h3><span class="key"><u></u>목표</span><span class="key"><b class="ok"></b>시간 안</span><span class="key"><b class="over"></b>초과</span></div>
+          <div id="cSecs"></div>
+        </section>
+        <details id="cDiffBox" hidden>
+          <summary id="cDiffH">대본과 실제로 한 말</summary>
+          <div class="lg"><span class="key"><del>빼먹음</del></span><span class="key"><ins>더함</ins></span><span class="key"><u class="chg">바꿔 말함</u></span></div>
+          <div class="chips" id="cDiffSec" role="group" aria-label="구간 고르기"></div>
+          <p id="cDiffTxt"></p>
+        </details>
+        <div id="cSum"></div>
+        <div id="cTone"></div>
+      </div>
+      <div class="raside">
+        <section id="cFixed" hidden><h3>지난번 고칠 점</h3><ul id="cFixedList"></ul></section>
+        <section>
+          <h3 id="cTipsH" tabindex="-1">다음에 해 볼 것</h3>
+          <p id="cAiSum"></p>
+          <ol id="cTips"></ol>
+          <button id="cRepeat" hidden></button>
+          <details id="cRule" hidden><summary>규칙으로 찾은 것</summary><ol id="cRuleList"></ol></details>
+          <p id="coachMsg" role="status"></p>
+          <details id="coachMore">
+            <summary>AI 코칭 받기</summary>
+            <div class="row"><button id="coachAi">AI 코칭</button><button id="coachPrompt">프롬프트 복사</button><button id="coachPaste">결과 붙여넣기</button></div>
+            <p class="small" id="coachKeyHint">키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣어 주세요. <button id="keyBtn5">AI 키 넣기</button></p>
+            <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
+            <div id="coachPasteBox" hidden>
+              <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
+              <div class="row"><button id="coachPasteApply">적용</button></div>
+            </div>
+          </details>
+        </section>
+        <section id="cSugBox" hidden><h3>대본 고칠 점</h3><div id="cSug"></div></section>
+        <section id="cKeys" hidden></section>
+        <section id="cAds" hidden><h3>애드리브</h3><p class="small" id="cAdSum"></p><div id="cAdList"></div><button id="cAd">모두 보기</button></section>
+        <section id="cHistBox" hidden>
+          <h3>회차별</h3>
+          <div class="row seg" id="cHistM" role="group" aria-label="회차별로 볼 값"><button data-m="wall">걸린 시간</button><button data-m="rate">말 빠르기</button><button data-m="keys">꼭 말할 문장</button></div>
+          <div id="cHist"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <div class="row rfoot"><button id="cDel">기록 모두 지우기</button></div>
 </dialog>
 
 <dialog id="keyDlg" aria-labelledby="keyTitle">

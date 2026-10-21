@@ -420,19 +420,31 @@ const TIP = {
     additionalProperties: false,
   },
 };
+// 대본 고칠 점: from(대본 글 그대로)을 to로 바꾼다. why는 까닭 한 줄. 앱이 대본에서 from을 찾아 바로 바꾼다
+const EDIT = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: { sec: { type: 'integer' }, why: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' } },
+    required: ['sec', 'why', 'from', 'to'],
+    additionalProperties: false,
+  },
+};
 export const COACH_SCHEMA = {
   type: 'object',
-  properties: { summary: { type: 'string' }, tips: TIP, edits: TIP },
+  properties: { summary: { type: 'string' }, tips: TIP, edits: EDIT },
   required: ['summary', 'tips', 'edits'],
   additionalProperties: false,
 };
 
 // run: check.js 기록, prev: 고른 기록 바로 앞 기록(없으면 null), tips: check.js tips()의 [{ text }](구간 번호와 숫자만 담김),
 // goal: 지금 목표 초(결과 창에서 바꿀 수 있다, 기본은 기록의 목표), says: compare.js 연습 기록 { secs: [{ s: 보인 대본, x: 들은 말 }] } | null,
-// crit: 그 연습의 평가 기준 [{ name, kind, secs: 다루는 구간 번호(1부터) | null(대본이 바뀌어 모름) }] | null
+// crit: 그 연습의 평가 기준 [{ name, kind, secs: 다루는 구간 번호(1부터) | null(대본이 바뀌어 모름) }] | null,
+// fixed: 지난 연습의 고칠 점이 이번에 나아졌나(check.js fixedTips) [{ text, v: 'done' | 'still' | 'unread' }]
 const KV = { ok: '단서 2개 이상', weak: '단서 1개 이하', skip: '빼먹은 듯', na: '못 잼', unread: '읽지 않음', said: '말함(분석 없음)' };
 const LVW = { high: '힘 있음', mid: '보통', low: '차분' };
-export function coachPrompt(run, prev, tips = [], goal = run.target, says = null, crit = null) {
+const FV = { done: '고쳤어요', still: '아직이에요', unread: '이번엔 그 구간을 읽지 않음' };
+export function coachPrompt(run, prev, tips = [], goal = run.target, says = null, crit = null, fixed = []) {
   const k = run.secs.length, E = bands(run.secs.map(s => s.n), goal, run.r0), n = x => x == null ? '-' : Math.round(x), EN = energy(run.secs, run.nodb), KS = keyStates(run);
   const d1 = x => x == null ? '-' : (x > 0 ? '+' : '') + Math.round(x * 10) / 10, flow = run.secs.some(s => s.pe) || EN.some(Boolean), cr = crit?.length ? crit : null;
   const where = i => i < k / 3 ? '처음' : i < 2 * k / 3 ? '중간' : '끝';
@@ -467,9 +479,9 @@ ${talk.length ? `
 대본과 한 말
 - 한 말은 음성 인식이 받아 적은 글이다. 문장부호가 없고, '어·음' 같은 군말은 빠졌을 수 있고, 잘못 받아 적은 낱말도 있다. 낱말 하나가 다르다고 발음을 탓하지 않는다.
 - 내용에 대해서도 쓴다: 빼먹은 핵심 내용과 되풀이한 말버릇(예: '그러니까', '약간')은 tips에, 대본보다 자연스럽게 바꿔 말한 곳은 edits에 쓴다(대본에 반영하라고 권한다).
-- 대본이나 한 말을 옮길 때는 20자 안쪽으로 짧게 따온다.
-- edits는 대본 글을 고칠 점이고 2개까지다. sec는 <대본과한말>에 있는 구간 번호이고, 대본 전체면 0이다. what은 무엇이 문제인지,
-  how는 'AI로 고치기'에 그대로 넣을 지시 한 문장이다(예: 「설문 결과…」 문장을 두 문장으로 나눠 주세요). 새 숫자나 사실을 넣으라고 하지 않는다.
+- tips에서 대본이나 한 말을 옮길 때는 20자 안쪽으로 짧게 따온다.
+- edits는 대본 글을 고칠 점이고 2개까지다. sec는 <대본과한말>에 있는 구간 번호다. from은 그 구간 대본에서 바꿀 부분을 글자 하나 바꾸지 않고 그대로 옮긴 것이고(한 문장 안, 60자 안쪽),
+  to는 그 자리에 넣을 새 글이다. why는 왜 바꾸는지 한 줄(40자 안쪽, 예: 연습 때 '내서'라고 말했어요, 한 문장이 길어 숨이 차요)이다. 새 숫자나 사실을 넣지 않는다.
 - tips에는 말하는 방법(빠르기, 쉼, 크기, 강조, 톤)과 빼먹은 내용·말버릇을, edits에는 대본 글을 바꿀 점만 쓴다. 같은 내용을 둘 다에 쓰지 않는다.
 ` : ''}
 규칙
@@ -477,7 +489,8 @@ ${talk.length ? `
 - edits는 빈 배열로 둔다(대본 글을 받지 않았다).`}
 - 받은 숫자 밖의 숫자를 지어내지 않는다. 감정이나 성격을 판단하지 않는다. 사투리나 억양은 재지 않으므로 말하지 않는다.
 - what에는 숫자로 본 점을, how에는 다음 연습에서 할 행동 하나를 쓴다. 모두 해요체 한국어로 쓴다.
-- summary는 한 문장이다.
+- summary는 한 문장이다.${fixed.length ? `
+- <지난연습고칠점>에서 '고쳤어요'인 것은 summary에서 짧게 알려 주고, '아직이에요'인 것은 tips에서 먼저 다룬다.` : ''}
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
 {"summary":"...","tips":[{"sec":2,"what":"...","how":"..."}],"edits":[]}`;
@@ -507,7 +520,10 @@ ${keyRows.join('\n')}
 </꼭말할문장>` : ''}${cr ? `
 <평가기준>
 ${cr.map((c, i) => `${i + 1}. ${c.name} (${c.kind}${c.kind === '내용' ? ', 다루는 구간: ' + (c.secs == null ? '모름(대본이 바뀜)' : c.secs.length ? c.secs.join(', ') : '없음') : ''})`).join('\n')}
-</평가기준>` : ''}
+</평가기준>` : ''}${fixed.length ? `
+<지난연습고칠점>
+${fixed.map(f => `- ${FV[f.v]}: ${f.text}`).join('\n')}
+</지난연습고칠점>` : ''}
 <규칙으로찾은것>
 ${tips.length ? tips.map(t => '- ' + (t.text ?? t)).join('\n') : '(없음)'}
 </규칙으로찾은것>
@@ -525,8 +541,8 @@ export function cleanCoach(o, k, walls = null) {
 export const parseCoach = (text, k, walls) => parseJson(text, o => cleanCoach(o, k, walls), '발표 코칭');
 
 // 짧은 답이라 생각은 적게(effort low). 모델은 기본(MODEL)이고 대체 모델도 그대로 쓴다. opts.goal: 지금 목표 초, opts.crit: 평가 기준
-export async function coachRun(run, prev, tips, { goal, says, crit, ...opts } = {}) {
-  const p = coachPrompt(run, prev, tips, goal ?? run.target, says, crit);
+export async function coachRun(run, prev, tips, { goal, says, crit, fixed, ...opts } = {}) {
+  const p = coachPrompt(run, prev, tips, goal ?? run.target, says, crit, fixed);
   return parseCoach(await callClaude({ ...opts, system: p.system, user: p.user, schema: COACH_SCHEMA, effort: 'low' }), run.secs.length, run.secs.map(s => s.wall));
 }
 
@@ -866,6 +882,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const pt = coachPrompt(part, prev, [], 180, says).user;
   assert.ok(pt.includes(secText[1]) && !secText.slice(2).some(s => pt.includes(s)), '읽지 않은 구간(3번부터)의 대본은 보내지 않는다');
   assert.equal(coachPrompt(cr, prev, ct, 180, { secs: [] }).text, cp.text, '들은 말이 없으면 숫자만');
+  assert.ok(tp.system.includes('글자 하나 바꾸지 않고 그대로 옮긴 것') && !tp.system.includes('지난연습고칠점'), '고칠 점은 from·to·why');
+  const fx = coachPrompt(cr, prev, ct, 180, says, null, [{ text: '1번 구간이 빨랐어요.', v: 'done' }, { text: '2번 구간 목소리가 작아졌어요.', v: 'still' }]);
+  assert.ok(fx.user.includes('<지난연습고칠점>\n- 고쳤어요: 1번 구간이 빨랐어요.\n- 아직이에요: 2번 구간 목소리가 작아졌어요.\n</지난연습고칠점>') && fx.system.includes("'고쳤어요'인 것은 summary에서"), '지난 연습 고칠 점');
   assert.ok(!/undefined|NaN|null/.test(tp.text));
   mock(ok(JSON.stringify(coach)));
   await coachRun(cr, prev, ct, { key: 'k', goal: 180, says });
@@ -886,9 +905,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(coachPrompt({ ...fr, nodb: true }, null, [], 180).user.includes('| - | -0.2 |'), 'dB를 믿지 못하면 소리 차를 보내지 않는다');
   assert.ok(coachPrompt(fr, null, [], 180).user.includes('\n3 | - | 0.3 |'), '평가 기준을 보내지 않으면 기준 번호도 보내지 않는다');
   assert.ok(coachPrompt(fr, null, [], 180, null, [{ name: '근거', kind: '내용', secs: null }]).user.includes('1. 근거 (내용, 다루는 구간: 모름(대본이 바뀜))'));
-  mock(ok(JSON.stringify({ ...coach, edits: [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '그 문장을 둘로 나눠 주세요.' }, { sec: 8, what: '읽지 않은 구간', how: 'x' }] })));
+  mock(ok(JSON.stringify({ ...coach, edits: [{ sec: 2, why: '한 문장이 길어요.', from: '가 나 다', to: '가 나. 다' }, { sec: 8, why: '읽지 않은 구간', from: 'x', to: 'y' }] })));
   const ce = await coachRun(part, prev, [], { key: 'k', goal: 180, says });
-  assert.deepEqual(ce.edits, [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '그 문장을 둘로 나눠 주세요.' }], '읽지 않은 구간(8)의 고칠 점은 버린다');
+  assert.deepEqual(ce.edits, [{ sec: 2, why: '한 문장이 길어요.', from: '가 나 다', to: '가 나. 다' }], '읽지 않은 구간(8)의 고칠 점은 버린다');
 
   console.log('claude.js ok');
 }

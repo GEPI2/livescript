@@ -9,7 +9,7 @@ import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_
 import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=17';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME,
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS } from './check.js?v=17';
 
 const $ = id => document.getElementById(id);
@@ -520,12 +520,11 @@ setInterval(() => {
 function setTarget(v) {
   target = Math.max(0, +v) || 0;
   target ? store.set(sk('target'), target) : store.del(sk('target'));
-  for (const id of ['target', 'gMin', 'cTarget']) if (document.activeElement !== $(id)) $(id).value = target || '';
+  for (const id of ['target', 'gMin']) if (document.activeElement !== $(id)) $(id).value = target || '';
   updEst(); syncChips();
 }
 $('target').oninput = () => setTarget($('target').value);
 $('gMin').oninput = () => setTarget($('gMin').value);
-$('cTarget').oninput = () => { setTarget($('cTarget').value); renderCheck(); };  // 발표 점검 결과 창: 기대 시간을 새 목표로 다시 그린다
 
 // 편집창 아래 '예상 7:40 / 목표 8:00'. 30분 대본이면 정규화에 휴대폰에서 수 ms가 걸려서 타자를 멈출 때 센다.
 function updEst() {
@@ -1007,7 +1006,41 @@ async function renderTake(force = false) {
   el.hidden = !segs.length;
   if (segs.length && el.dataset.t0 !== String(run.t0)) { el.src = urlOf(segs[0]); el.dataset.seg = 0; }
   el.dataset.t0 = segs.length ? run.t0 : '';
+  renderMarks();
 }
+// 녹음 아래 구간 띠: 지금 조각에서 같은 구간이 이어진 자리마다 칸 하나. 누르면 그 자리부터 듣고, 재생하면 지금 구간 칸과 구간 줄에 불이 들어온다.
+// 화면 위치가 말보다 약 1초 늦어서(clip과 같은 값) 문장 표시보다 1초 앞을 그 구간으로 본다
+const LAG_S = 1;
+function segSpans(g) {
+  const out = [];
+  for (const [ms, , sec] of g?.marks ?? []) {
+    const last = out.at(-1);
+    if (last && last.to == null && last.sec === sec) continue;
+    if (last && last.to == null) last.to = ms;
+    if (sec != null) out.push({ sec, from: ms, to: null });
+  }
+  if (out.at(-1)?.to == null && out.length) out.at(-1).to = g.ms;
+  return out.map(x => ({ sec: x.sec, from: Math.max(0, x.from / 1000 - LAG_S), to: Math.max(0, x.to / 1000 - LAG_S) }));
+}
+function renderMarks() {
+  const [run] = runPair(), el = $('cAudio'), g = takeSegs[+el.dataset.seg || 0], box = $('cMarks');
+  if (!run?.rec || !g?.ms) return box.replaceChildren();
+  const bad = new Set(tips(run, Math.round(target * 60), 9).flatMap(x => x.s)), T = g.ms / 1000;
+  box.replaceChildren(...segSpans(g).filter(x => x.to > x.from).map(x => {
+    const b = mk('button', '', bad.has(x.sec) ? 'bad' : '');
+    b.tabIndex = -1; b.dataset.i = x.sec; b.title = `${x.sec + 1}번 구간`;
+    b.style.left = x.from / T * 100 + '%'; b.style.width = (x.to - x.from) / T * 100 + '%';
+    b.onclick = () => { delete el.dataset.to; el.currentTime = x.from; el.play().catch(() => {}); };
+    return b;
+  }));
+}
+function markNow() {
+  const el = $('cAudio'), t = el.currentTime, sp = segSpans(takeSegs[+el.dataset.seg || 0]).find(x => t >= x.from && t < x.to), i = el.paused && !t ? -1 : sp?.sec ?? -1;
+  for (const d of $('cSecs').children) d.classList.toggle('now', +d.dataset.i === i);
+  for (const b of $('cMarks').children) b.classList.toggle('now', +b.dataset.i === i);
+}
+$('cAudio').addEventListener('timeupdate', markNow);
+$('cAudio').addEventListener('loadedmetadata', renderMarks);
 $('cAudio').addEventListener('ended', () => {
   const el = $('cAudio'), i = +el.dataset.seg + 1;
   if (el.dataset.to) { delete el.dataset.to; return; }  // 구간·문장 듣기가 조각 끝에서 끝났다. 다음 조각으로 넘어가지 않는다
@@ -1093,7 +1126,6 @@ function openCheck(t) {
   $('coachOut').hidden = $('coachPasteBox').hidden = true;
   $('checkMsg').textContent = runFull ? FULL : '';
   runFull = false;
-  $('cTarget').value = target || '';
   showKey(); renderCheck();
   if (!$('checkDlg').open) $('checkDlg').showModal();
 }
@@ -1116,29 +1148,15 @@ function renderCompare(run) {
   const worst = sec.map((r, i) => [r.bar.wall - r.bar.hi, i]).sort((a, b) => b[0] - a[0])[0];
   $('cRepeat').hidden = !(worst && worst[0] > 0 && run.secs.length > 1);
   if (!$('cRepeat').hidden) { $('cRepeat').textContent = `${worst[1] + 1}번 구간부터 연습`; $('cRepeat').onclick = () => startFromSection(worst[1]); }
-  // 회차별 시간: 남은 연습 기록(최대 5회). 지금 보는 연습만 진한 보라
-  const mx = Math.max(...runs.map(r => r.wall), 1);
-  $('cHistBox').hidden = runs.length < 2;
-  $('cHist').replaceChildren(...runs.map((r, i) => {
-    const d = mk('div', '', r === run ? 'now' : ''), bar = mk('i');
-    bar.style.height = Math.max(6, Math.round(r.wall / mx * 80)) + 'px';
-    d.append(mk('span', mmss(r.wall)), bar, mk('span', `${i + 1}회`));
-    return d;
-  }));
+  renderHist(run);
   if (!c) return;
   // 4번째 숫자 카드와 제안
   const sg = suggest(c.per, ignored()), n = c.cmp.reduce((x, y) => x + y.n, 0);
   const card = mk('div', '', 'stat');
-  card.append(mk('div', '대본과 다르게 말한 곳', 'k'), mk('div', String(n), 'v'), mk('div', sg.length ? `대본 수정 제안 ${sg.length}개` : '대본 수정 제안 없음', 'note'));
+  card.append(mk('div', '대본과 다르게 말한 곳', 'k'), mk('div', String(n), 'v'), mk('div', sg.length ? `대본 고칠 점 ${sg.length}개` : '대본 고칠 점 없음', 'note'));
   $('cStats').append(card);
-  $('cSug').replaceChildren(...sg.map(g => {
-    const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), go = mk('button', '바꾸기', 'go'), no = mk('button', '그대로 두기');
-    go.onclick = () => applySuggest(g, run);
-    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), g.k])); renderCheck(); $('checkTitle').focus(); };
-    row.append(go, no);
-    d.append(mk('h3', '대본을 이렇게 바꿀까요?'), mk('p', g.runs >= 2 ? `연습 ${g.runs}번 연속 '${g.from}' 대신 '${g.to}'라고 말했어요.` : `이번 연습에서 '${g.from}' 대신 '${g.to}'라고 ${g.n}번 말했어요.`), row, mk('p', '바꾸면 새 버전으로 저장돼요', 'small'));
-    return d;
-  }));
+  $('cSug').replaceChildren(...sg.map(g => sugCard(g.runs >= 2 ? `연습 ${g.runs}번 연속 이렇게 말했어요` : `이번 연습에서 ${g.n}번 이렇게 말했어요`, g.from, g.to,
+    () => applySuggest(g, run), () => ignoreSug(g.k))));
   // 비교할 구간: 다르게 말한 곳이 있는 구간. 고르지 않았으면 가장 많은 구간
   const has = c.cmp.map((x, i) => [x.n, i]).filter(x => x[0] > 0);
   if (!has.length) { $('cDiffSec').replaceChildren(); $('cDiffTxt').textContent = '대본과 다르게 말한 곳이 없어요.'; return; }
@@ -1159,6 +1177,17 @@ function renderCompare(run) {
   }
   $('cDiffTxt').replaceChildren(...out);
 }
+// 대본 고칠 점 카드: 까닭 한 줄, 바뀌는 곳(from → to, 없으면 생략), 바꾸기 / 그대로 두기
+function sugCard(why, from, to, go, no, goLabel = '바꾸기') {
+  const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), g = mk('button', goLabel, 'go'), n = mk('button', '그대로 두기');
+  g.onclick = go; n.onclick = no;
+  row.append(g, n);
+  d.append(mk('p', why, 'why'));
+  if (from) { const c = mk('p', '', 'chg'); c.append(mk('del', from), ' → ', mk('ins', to)); d.append(c); }
+  d.append(row);
+  return d;
+}
+const ignoreSug = k => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), k])); renderCheck(); $('checkTitle').focus(); };
 // 제안 반영: 지금 대본에서 모두 바꾸고 새 버전으로 남긴다. 대본에서 못 찾으면(그사이 고쳤으면) 알린다
 function applySuggest(g, run) {
   const [t, n] = applyReplace($('text').value, g.from, g.to);
@@ -1180,16 +1209,16 @@ function startFromSection(i) {
 
 function renderCheck() {
   $('checkNoSr').hidden = !!SR;
-  $('checkBody').hidden = $('cDel').hidden = !SR;
+  $('cRunBox').hidden = $('cDel').hidden = !SR;
   const [run, prev] = runPair(), goal = Math.round(target * 60);
   $('cEmpty').hidden = !!run;
-  $('cRunBox').hidden = $('cRunRow').hidden = !run;
+  $('cRunBox').hidden = $('cRun').hidden = !run;
   $('cDel').disabled = !runs.length && !runRec;  // 기록이 아직 없어도(20초 미만) 녹음은 지울 수 있게
   if (!SR || !run) { $('cTake').hidden = true; return; }
   runSel = run.t0;
   $('cRun').replaceChildren(...[...runs].reverse().map(r => new Option(runLabel(r), r.t0, false, r === run)));
   const sum = sumLines(run, prev, goal);
-  if (!run.audio) sum.push(devKind() === 'desktop' ? '목소리 분석 없이 쟀어요. 높낮이·쉼·목소리 크기는 연습에서 재요.'
+  if (!run.audio) sum.push(devKind() === 'desktop' ? (run.kind === 'live' ? '실전은 목소리 분석 없이 재요.' : '목소리 분석 없이 쟀어요. 홈 › 설정에서 켜면 높낮이·쉼·목소리 크기도 봐요.')
     : '이 브라우저에서는 높낮이·쉼·목소리 크기를 재지 않아요. PC Chrome에서 연습하면 볼 수 있어요.');
   $('cStats').replaceChildren(...statCards(run, prev, goal).map(c => {
     const box = mk('div', '', 'stat'), n = mk('div', c.note, c.over ? 'note over' : 'note');
@@ -1200,6 +1229,9 @@ function renderCheck() {
   }));
   renderCompare(run);
   renderEdits(run);
+  $('cSugBox').hidden = !$('cSug').children.length;
+  renderFixed(run, prev, goal);
+  renderAdBox(run);
   renderTake();
   // 걸린 시간·평균 빠르기·대본 밖은 위 숫자 카드에 있으므로 글에서는 뺀다
   $('cSum').replaceChildren(...sum.slice(1).filter(t => !/^(평균 빠르기|대본 밖) /.test(t)).map(t => mk('p', t)));
@@ -1208,8 +1240,6 @@ function renderCheck() {
   const tone = toneLines(run);
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
   renderKeys(run);
-  $('cAd').hidden = !ads.length;
-  $('cAd').textContent = `애드리브 ${ads.length}개 정리`;
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
   const rule = tips(run, goal).map(x => {
     const li = mk('li', x.text);
@@ -1224,11 +1254,10 @@ function renderCheck() {
   $('cRule').hidden = !at || !rule.length;
   $('cRuleList').replaceChildren(...(at ? rule : []));
   // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(연보라 띠 기대 시간, 진한 보라 걸린 시간), 정도 낱말, 숫자 보기
-  $('cNoGoal').hidden = !!goal;
-  $('cSemi').hidden = !run.secs.some(s => s.st);  // 범례의 '반음은 피아노 건반 한 칸'은 높낮이를 잰 기록에만
   const pc = x => `${Math.max(0, Math.min(100, x * 100))}%`;
   $('cSecs').replaceChildren(...secRows(run, prev, goal).map((r, i) => {
     const box = mk('div', '', 'sec'), h = mk('p', '', 'sh'), bar = mk('div', '', 'cbar'), band = mk('i'), w = mk('b'), m = r.bar.max || 1;
+    box.dataset.i = i;
     h.append(mk('span', r.head), mk('b', r.time));
     if (run.rec && run.secs[i].wall) h.append(listenBtn(`${i + 1}번 구간 듣기`, () => playClip(run.t0, x => x[2] === i)));
     band.style.left = pc(r.bar.lo / m); band.style.width = pc((r.bar.hi - r.bar.lo) / m);
@@ -1248,7 +1277,50 @@ function renderCheck() {
     }
     return box;
   }));
+  markNow();
 }
+// 지난번 고칠 점: 바로 앞 기록의 팁(화면에 보인 3개)이 이번에 나아졌나(check.js fixedTips). 팁은 첫 문장만
+const FIXV = { done: '고쳤어요', still: '아직이에요', unread: '이번엔 못 봤어요' };
+function renderFixed(run, prev, goal) {
+  const f = fixedTips(run, prev, goal);
+  $('cFixed').hidden = !f.length;
+  $('cFixedList').replaceChildren(...f.map(x => { const li = mk('li', '', x.v); li.append(mk('span', FIXV[x.v], 'fv'), mk('span', x.text.split(/(?<=[.?!])\s/)[0])); return li; }));
+}
+// 애드리브(가장 최근 연습만): AI가 정리했으면 대본에 넣을 만한 것을 보이고 바로 넣는다. '모두 보기'는 애드리브 정리 창
+function renderAdBox(run) {
+  const n = run === runs.at(-1) ? ads.length : 0, worth = ads.filter(g => g.ai?.worth);
+  $('cAds').hidden = !n;
+  if (!n) return;
+  $('cAdSum').textContent = adCtl ? `대본에 없던 말 ${n}개를 AI가 정리하는 중이에요…` : ads.some(g => g.ai) ? `대본에 없던 말 ${n}개 가운데 ${worth.length}개를 대본에 넣을 만해요.` : `대본에 없던 말 ${n}개를 모았어요.`;
+  $('cAdList').replaceChildren(...worth.slice(0, 3).map(g => {
+    const d = mk('div', '', 'adw'), b = mk('button', '대본에 넣기');
+    b.onclick = () => { openAd(); adInsert(g); };
+    d.append(mk('p', g.ai.title || g.text.slice(0, 40), 't'), ...(g.ai.add.length ? [mk('p', g.ai.add.join(' '), 'small')] : []), b);
+    return d;
+  }));
+  $('cAd').textContent = worth.length ? '모두 보기' : '살펴보기';
+}
+// 회차별: 걸린 시간 · 말 빠르기 · 꼭 말할 문장(살린 수 / 표시한 수). 지금 보는 연습만 진한 보라. 값이 없는 회차는 빈 막대
+let histM = 'wall';
+const HIST = {
+  wall: { f: r => r.wall, t: v => mmss(v) },
+  rate: { f: r => r.talk >= 20 ? r.heard / r.talk * 60 : null, t: v => String(Math.round(v)) },
+  keys: { f: r => { const K = keyStates(r); return K.length ? K.filter(k => k.v === 'ok' || k.v === 'said').length / K.length : null; }, t: (v, r) => { const K = keyStates(r); return `${K.filter(k => k.v === 'ok' || k.v === 'said').length}/${K.length}`; } },
+};
+function renderHist(run) {
+  $('cHistBox').hidden = runs.length < 2;
+  const has = m => runs.some(r => HIST[m].f(r) != null);
+  for (const b of $('cHistM').children) { b.hidden = !has(b.dataset.m); b.setAttribute('aria-pressed', b.dataset.m === histM); }
+  if (!has(histM)) histM = 'wall';
+  const h = HIST[histM], vs = runs.map(h.f), mx = Math.max(...vs.filter(v => v != null), histM === 'keys' ? 1 : 0.001);
+  $('cHist').replaceChildren(...runs.map((r, i) => {
+    const d = mk('div', '', r === run ? 'now' : ''), bar = mk('i'), v = vs[i];
+    bar.style.height = v == null ? '2px' : Math.max(6, Math.round(v / mx * 80)) + 'px';
+    d.append(mk('span', v == null ? '-' : h.t(v, r)), bar, mk('span', `${i + 1}회`));
+    return d;
+  }));
+}
+$('cHistM').onclick = e => { const b = e.target.closest('[data-m]'); if (b) { histM = b.dataset.m; renderHist(runPair()[0]); } };
 $('cRun').onchange = () => { runSel = +$('cRun').value; coachMsg(''); renderCheck(); };
 $('checkClose').onclick = () => $('checkDlg').close();
 $('checkDlg').addEventListener('close', () => { const a = $('cAudio'); a.pause(); a.removeAttribute('src'); a.load(); a.dataset.t0 = ''; edAudio.pause(); edAudio.removeAttribute('src'); freeUrls(); });
@@ -1303,22 +1375,32 @@ function renderKeys(run) {
     });
     box.append(rb);
   }
-  box.append(mk('p', run.audio ? '단서는 앞 쉼, 천천히, 크게, 높게예요. 2개 이상이면 살려 말한 것으로 봐요. ' + (run.rec ? '어림이라 틀릴 수 있으니 들어 보고 확인하세요.' : '어림이라 틀릴 수 있어요.')
-    : devKind() === 'desktop' ? '목소리 분석 없이 재서 말했는지만 봐요.' : '이 브라우저에서는 강조 단서를 재지 않아 말했는지만 봐요.', 'small'));
+  box.append(mk('p', run.audio ? '단서: 앞 쉼·천천히·크게·높게. 2개 이상이면 살려 말한 것으로 봐요.' : '목소리 분석 없이 재서 말했는지만 봐요.', 'small'));
 }
 // AI 코칭의 '대본 고칠 점'(2개까지)을 대본 제안 카드 모양으로. '그대로 두기'는 그 기록에서 다시 보이지 않는다
 function renderEdits(run) {
   const ign = ignored();
   for (const e of run.ai?.edits ?? []) {
-    const k = `ai:${run.t0}:${hashText(`${e.sec}|${e.what}|${e.how}`)}`;  // 차례가 아니라 내용으로(다시 받은 코칭의 다른 고칠 점을 숨기지 않게)
+    const k = `ai:${run.t0}:${hashText(`${e.sec}|${e.why}|${e.from ?? ''}|${e.to ?? e.how}`)}`;  // 차례가 아니라 내용으로(다시 받은 코칭의 다른 고칠 점을 숨기지 않게)
     if (ign.includes(k)) continue;
-    const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), go = mk('button', e.sec ? `${e.sec}번 구간 고치기` : '대본 고치기', 'go'), no = mk('button', '그대로 두기');
-    go.onclick = () => fixWith(e.sec && run.h === hashText($('text').value) ? SU[e.sec - 1] : null, e.how);
-    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), k])); renderCheck(); $('checkTitle').focus(); };
-    row.append(go, no);
-    d.append(mk('h3', '대본을 이렇게 고쳐 볼까요?'), mk('p', (e.sec ? `${e.sec}번 구간: ` : '') + e.what), mk('p', e.how, 'small'), row, mk('p', '적용하기 전에 바뀌는 곳을 보여 줘요', 'small'));
-    $('cSug').append(d);
+    // 구간 자리: 대본이 그대로이거나, 고쳤어도 구간 수가 같으면(앞 고칠 점을 바꾼 뒤) 그 구간
+    const why = (e.sec ? `${e.sec}번 구간 · ` : '') + e.why, u = () => e.sec && (run.h === hashText($('text').value) || SU.length === run.secs.length) ? SU[e.sec - 1] : null;
+    $('cSug').append(e.from ? sugCard(why, e.from, e.to, () => applyEdit(e, k, u()), () => ignoreSug(k))
+      : sugCard(why, '', '', () => fixWith(u(), e.how), () => ignoreSug(k), e.sec ? `${e.sec}번 구간 고치기` : '대본 고치기'));
   }
+}
+// AI 고칠 점 바꾸기: 대본에서 from을 찾아(띄어쓰기는 느슨하게) 한 곳만 바꾼다. 그 구간 안에 있으면 그것을. 못 찾으면 AI로 고치기 창을 연다
+function applyEdit(e, k, u) {
+  const text = $('text').value, re = new RegExp(e.from.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g');
+  const [a, b] = u ? [u.s[0].a, u.s.at(-1).b] : [0, text.length];
+  let m, hit = null;
+  while ((m = re.exec(text))) { hit ??= m; if (m.index >= a && m.index < b) { hit = m; break; } }
+  if (!hit) return fixWith(u, `「${e.from}」을(를) 「${e.to}」(으)로 바꿔 주세요. 까닭: ${e.why}`);
+  if (!snapshot('AI 고칠 점 반영 전')) { $('checkMsg').textContent = NOKEEP; return; }
+  setText(text.slice(0, hit.index) + e.to + text.slice(hit.index + hit[0].length), 'AI 고칠 점');
+  store.set(sk('sugIgnore'), JSON.stringify([...ignored(), k]));
+  renderCheck();
+  $('checkMsg').textContent = `바꿨어요: '${e.from}' → '${e.to}'. 바꾸기 전 대본은 버전 기록에 있어요.`;
 }
 // 고칠 지시(how)로 'AI 도구 › 지시로 고치기'를 연다. u(구간)나 문단 자리 { a, b }를 주면 그 글만 고른다. 키가 있으면 바로 시작(적용 전 비교·버전 저장은 그대로)
 function fixWith(u, how) {
@@ -1348,7 +1430,7 @@ $('cPractice').onclick = () => {
   if (qaMode) setQa(false);
   if (goTab('practice')) jump(0);
 };
-$('cAd').onclick = () => { $('checkDlg').close(); openAd(); };
+$('cAd').onclick = () => { openAd(); if (keyStore.get() && !adCtl && ads.some(g => !g.ai)) $('adAi').click(); };
 function shrinkFromCheck() {
   $('shrinkOn').checked = true;
   $('shrinkOn').onchange();
@@ -1372,7 +1454,7 @@ function setCoachAi(t, ai) {
   if (!save(sk('runs'), saveRuns(runs))) $('checkMsg').textContent = FULL;
   runSel = t;
   renderCheck();
-  coachMsg("AI 코칭을 받았어요. 위 'AI 코칭'에서 볼 수 있어요.");
+  coachMsg('');
   return true;
 }
 async function askCoach() {
@@ -1381,12 +1463,12 @@ async function askCoach() {
   if (!run) return;
   const goal = Math.round(target * 60), ctl = coachCtl = new AbortController();
   $('coachAi').textContent = '멈추기';
-  coachMsg('AI에 보내는 중…');
+  coachMsg('AI 코칭을 받는 중…');
   $('coachMsg').setAttribute('aria-busy', 'true');  // 받는 동안 바뀌는 글자 수를 화면 읽기가 하나하나 읽지 않게
   try {
     const ai = await coachRun(run, prev, ruleTips(run, goal), {
-      key: keyStore.get(), signal: ctl.signal, goal, says: compareOf(run)?.says, crit: critFor(run),
-      onProgress: x => coachMsg(x.chars ? `AI가 쓰는 중… ${x.chars}자` : 'AI가 생각하는 중…'),
+      key: keyStore.get(), signal: ctl.signal, goal, says: compareOf(run)?.says, crit: critFor(run), fixed: fixedTips(run, prev, goal),
+      onProgress: () => coachMsg('AI 코칭을 받는 중…'),
     });
     setCoachAi(run.t0, ai);
   } catch (e) {
@@ -1403,7 +1485,7 @@ $('coachPrompt').onclick = () => {
   if (!run) return;
   const goal = Math.round(target * 60);
   coachJob = run.t0;
-  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal, compareOf(run)?.says, critFor(run)).text, coachMsg, '답');
+  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal, compareOf(run)?.says, critFor(run), fixedTips(run, prev, goal)).text, coachMsg, '답');
   $('coachPasteBox').hidden = false;
 };
 $('coachPaste').onclick = () => { $('coachPasteBox').hidden = false; $('coachPasteIn').focus(); };
@@ -1545,6 +1627,15 @@ $('adAi').onclick = async () => {
     renderAds();
   }
 };
+// 연습을 정지하면 키가 있을 때 애드리브도 정리해 둔다(결과 창 '애드리브'에 넣을 만한 것이 보인다)
+async function autoAd() {
+  if (adCtl || !keyStore.get() || !ads.length || ads.every(g => g.ai)) return;
+  const segs = [...ads], ctl = adCtl = new AbortController();
+  if ($('checkDlg').open) renderAdBox(runPair()[0]);
+  try { adSet(segs, await summarizeAdlib(segs, { key: keyStore.get(), signal: ctl.signal })); }
+  catch (e) { if (e.name !== 'AbortError') console.warn('애드리브 정리', e); }
+  finally { if (adCtl === ctl) adCtl = null; renderAds(); if ($('checkDlg').open) renderAdBox(runPair()[0]); }
+}
 $('adPrompt').onclick = () => {
   if (!ads.length) return;
   adJob = [...ads];
@@ -1674,6 +1765,7 @@ $('mic').onclick = () => {
     else if (r && coach !== 'live' && !document.querySelector('dialog[open]')) {
       openCheck(r.t0);
       if (keyStore.get() && !coachCtl) askCoach();  // AI 키가 있으면 코칭을 바로 받는다
+      autoAd();
     } else if (r) tell("방금 발표의 결과는 위 '결과'에서 볼 수 있어요." + (audioNote(r) && ' ' + audioNote(r)));
     return;
   }

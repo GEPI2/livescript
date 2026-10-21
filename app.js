@@ -353,6 +353,7 @@ function stop() {
   showCue(null);
   const r = was ? saveRun() : null;
   showCoach();  // 저장한 뒤에 '결과' 단추를 보인다
+  if (r && !editing()) renderFb();  // 방금 연습이 다음 연습의 피드백이 된다
   return r;
 }
 // 듣지 않을 때 마이크 버튼: 모드 글자('● 연습')와 화면 읽기용 이름('연습으로 시작'). 준비 중이면 그 글자 그대로
@@ -488,17 +489,20 @@ setInterval(() => {
     const k = listening || cur ? (onSec + 30) / (matched + r0 * 30) : 1 / rate();
     d = Math.round(sec + (S.s.length - cur) * k - target * 60);
   }
-  const wide = document.createElement('span');  // 좁은 화면에서는 '예상'을 뺀다
-  wide.className = 'wide'; wide.textContent = '예상 ';
+  const wide = document.createElement('span');  // 좁은 화면에서는 '이 빠르기면'을 뺀다
+  wide.className = 'wide'; wide.textContent = '이 빠르기면 ';
   let badge = [];
+  const left = Math.round(target * 60) - sec, run = goal && started;
   if (goal) {
-    late = !pre && d > 0;
-    badge = pre ? [`예상 ${d > 0 ? '+' : '-'}${mmss(Math.abs(d))}`] : d > 0 ? ['초과 ', wide, mmss(d)] : ['여유 ' + mmss(-d)];
+    late = !pre && (d > 0 || left < 0);
+    badge = pre ? [`예상 ${d > 0 ? '+' : '-'}${mmss(Math.abs(d))}`] : d > 0 && left >= 0 ? [wide, '예상 +' + mmss(d)] : [];
     cls = pre ? 'pre' : late ? 'late' : '';
   }
-  // 상태줄: 지난 시간을 크게, 목표가 있으면 '/ 목표'와 목표 대비 배지. 질의응답에서는 '질문 답변'과 멈춘 발표 경과.
-  $('stSec').textContent = qaMode ? `발표 ${mmss(sec)} 경과` : mmss(sec);
-  $('stOf').textContent = goal && !qaMode ? ' / ' + mmss(Math.round(target * 60)) : '';
+  // 상태줄: 시작했고 목표가 있으면 남은 시간을 크게('남은 2:18', 넘으면 '0:12 넘음'), 늦을 것 같으면 배지. 아니면 지난 시간과 '/ 목표'.
+  // 질의응답에서는 '질문 답변'과 멈춘 발표 경과.
+  $('stSec').textContent = qaMode ? `발표 ${mmss(sec)} 경과` : run ? (left >= 0 ? `남은 ${mmss(left)}` : `${mmss(-left)} 넘음`) : mmss(sec);
+  $('stSec').classList.toggle('late', !qaMode && run && left < 0);
+  $('stOf').textContent = goal && !qaMode && !run ? ' / ' + mmss(Math.round(target * 60)) : '';
   $('stMain').replaceChildren(...(qaMode ? ['질문 답변'] : badge));
   $('stMain').className = 'main ' + (qaMode ? '' : cls);
   // 진행 막대: 채운 폭은 진행률, 흰 눈금은 목표에 맞추려면 지금 있어야 할 곳(목표가 있고 발표를 시작했을 때만)
@@ -599,7 +603,41 @@ function show() {
   peOf = peFor(text);
   sents.forEach((x, i) => x.el.classList.toggle('key', !!keyOf[i]));  // 연습 모드에서 꼭 말할 문장에 밑줄(body.keymark)
   if (acc?.length !== SU.length) newRun(true);
+  renderFb();
 }
+// 지난 연습 피드백을 대본 옆에: 문단(구간)마다 칩 하나(지난 기록에서 그 구간을 가리킨 첫 팁, 없으면 시간을 넘었는지), 지난번 빼먹은 꼭 말할 문장은 진한 밑줄(.miss).
+// 연습은 늘, 실전은 '피드백'을 켰을 때 빼먹은 문장과 시간을 넘은 구간만. 그 구간의 첫 글이 지난 기록과 다르면(고쳤으면) 그 구간은 보이지 않는다
+const FB = { fast: '지난번 빨랐어요', jump: '지난번 갑자기 빨라졌어요', fall: '지난번 끝이 흐려졌어요', quiet: '지난번 목소리가 작아졌어요', tone: '지난번 힘이 계획과 달랐어요',
+  flat: '지난번 높낮이가 좁았어요', run: '지난번 쉬지 않고 이어 말했어요', read: '지난번 대본만 보고 읽었어요', 'key-skip': '지난번 꼭 말할 문장을 빼먹었어요' };
+let liveFb = store.get('ls.liveFb') === '1';
+const fbOn = () => coach === 'practice' || liveFb;
+function renderFb() {
+  for (const x of $('prompt').querySelectorAll('.fb')) x.remove();
+  for (const x of sents) x.el.classList.remove('miss');
+  const run = runs.at(-1);
+  if (!fbOn() || !run || run.secs.length !== SU.length) return;
+  const text = $('text').value, goal = Math.round(target * 60), T = coach === 'practice' ? tips(run, goal, 9) : [], rows = secRows(run, null, goal);
+  const same = SU.map((u, i) => run.secs[i].w === text.slice(u.s[0].a, u.s[0].a + 40).replace(/\s+/g, ' ').slice(0, 20));
+  const miss = keyStates(run).filter(k => k.v === 'skip' && same[k.s]).map(k => k.w);
+  const first = new Map();
+  sents.forEach((x, i) => {
+    if (!first.has(secOf[i])) first.set(secOf[i], i);
+    if (keyOf[i] && miss.some(w => x.el.textContent.replace(/\s+/g, ' ').startsWith(w))) x.el.classList.add('miss');
+  });
+  for (const [k, i] of first) {
+    if (!same[k] || !run.secs[k].wall) continue;
+    const tip = T.find(x => x.s.includes(k) && FB[x.k]), t = tip ? FB[tip.k] : rows[k].bar.over ? '지난번 시간을 넘었어요' : '';
+    if (!t) continue;
+    const c = mk('div', t, 'fb');
+    c.setAttribute('aria-hidden', 'true');  // 화면 읽기가 읽으면 마이크에 들어간다
+    sents[i].el.before(c);
+  }
+}
+$('fbBtn').onclick = () => {
+  liveFb = !liveFb;
+  liveFb ? store.set('ls.liveFb', '1') : store.del('ls.liveFb');
+  showCoach(); renderFb();
+};
 // 구간마다 발표 준비의 계획 힘(check.js secPe). 발표 준비가 지금 대본에 맞지 않으면 null
 function peFor(text) {
   const p = loadPrep(), fit = prepFits(p, text);
@@ -789,7 +827,7 @@ function coachTick(now, dt, sec, off, late, d) {
   }
   // 인식기가 다시 켜지는 짧은 틈('연결 중')에는 두고(판정은 paceHold가 멈춤), '다시 듣기'(4초)나 대본 끝이면 지운다
   const hide = off || qaMode || !listening || stuck() || !!end;
-  showCue(cueStep(cst, { mode: coach, on: true, pace, quiet, read: readNow, late, shrinkOn: shr.auto && !!U, hold, hide }, now), sec);
+  showCue(cueStep(cst, { mode: coach, on: fbOn(), pace, quiet, read: readNow, late, shrinkOn: shr.auto && !!U, hold, hide }, now), sec);
 }
 // 상태줄 작은 칸의 힌트. 바뀔 때만 고치고, 켤 때 결과용으로 남긴다.
 function showCue(c, sec = 0) {
@@ -804,12 +842,15 @@ function showCue(c, sec = 0) {
 
 // 발표 점검 모드: [연습] 탭은 연습, [실전] 탭은 실전(탭이 정한다)
 function setCoach(m) {
+  const was = coach;
   coach = modeOf(m);
   try { sessionStorage.setItem('ls.coach', coach); } catch {}
   showCoach();
+  if (was !== coach && !editing()) renderFb();  // 연습 ↔ 실전: 보이는 피드백이 다르다
 }
 function showCoach() {
-  document.body.classList.toggle('keymark', coach === 'practice');  // 발표 화면의 꼭 말할 문장 밑줄
+  document.body.classList.toggle('keymark', fbOn());  // 발표 화면의 꼭 말할 문장 밑줄(실전은 '피드백'을 켰을 때)
+  $('fbBtn').setAttribute('aria-pressed', liveFb);
   $('resBtn').hidden = listening || qaMode || !runs.length;  // 지난 결과는 정지한 동안에만
   if (!listening) micRest();
 }

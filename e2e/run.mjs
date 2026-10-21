@@ -239,10 +239,10 @@ const SAMPLE = JSON.parse(fs.readFileSync(new URL('../sample.livescript.json', i
 const SENTS = SAMPLE.text.split(/\n+/).flatMap(par => par.split(/(?<=[.?!])\s+/)).filter(Boolean);
 // 연습 한 번: 문장마다 확정 결과로 읽는다. mutate(문장 번호, 문장) → 실제로 말한 글
 // warm: 마이크를 켠 뒤 기다릴 실제 ms(가짜 마이크와 녹음이 켜지기까지. 시험의 연습은 실제로 몇 초 만에 끝난다)
-async function practiceRun(p, mutate = (i, x) => x, first = true, warm = 300) {
+async function practiceRun(p, mutate = (i, x) => x, first = true, warm = 300, total = 200000) {
   await p.click(first ? '[data-tab="practice"]' : '#cPractice'); await p.waitForTimeout(500);
   await p.click('#mic'); await p.waitForTimeout(warm);
-  const dt = 200000 / SENTS.length;
+  const dt = total / SENTS.length;
   // 실제 인식처럼 낱말마다 중간 결과를 보내고, 문장이 끝나면 확정한다
   for (const [i, x] of SENTS.entries()) {
     const m = mutate(i, x), w = m.split(' ');
@@ -666,6 +666,31 @@ t('카드: 연습에서 두 번 바꿔 말한 낱말에 점선 밑줄이 생기�
   const after = await textOf(p);
   assert.equal(after.split('내어').length - 1, before.split('내어').length - 2, '누른 자리 하나만 바뀐다');
   assert.equal(after.split('내서').length - 1, 1);
+  assert.deepEqual(p.errors, []);
+});
+
+// ---- 읽는 화면 ----
+t('읽는 화면: 연습은 문단 위에 지난 피드백, 실전은 피드백을 켰을 때만 보이고, 시작하면 남은 시간을 크게 보인다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await practiceRun(p, (i, x) => x, true, 300, 300000);  // 3분 목표를 5분에 읽어 모든 문단이 시간을 넘는다
+  await p.click('#checkClose');
+  assert.ok(await p.locator('#prompt .fb').count() >= 1, '연습은 문단 위에 지난 피드백');
+  await p.click('[data-tab="live"]'); await p.waitForTimeout(400);
+  assert.equal(await p.locator('#prompt .fb').count(), 0, '실전은 처음엔 대본만');
+  assert.equal(await p.evaluate(() => document.body.classList.contains('keymark')), false);
+  await p.click('#fbBtn');
+  assert.equal(await p.getAttribute('#fbBtn', 'aria-pressed'), 'true');
+  assert.ok(await p.locator('#prompt .fb').count() >= 1);
+  assert.equal(await p.textContent('#prompt .fb'), '지난번 시간을 넘었어요', '실전은 시간을 넘은 문단만');
+  await p.click('#fbBtn');
+  assert.equal(await p.locator('#prompt .fb').count(), 0);
+  // 남은 시간: 대본 끝이라 처음부터 할지 묻는다
+  p.once('dialog', d => d.accept());
+  await p.click('#mic'); await p.waitForTimeout(200);
+  await p.evaluate(t => window.__fin(t), SENTS[0]); await p.clock.runFor(10000); await p.waitForTimeout(200);
+  assert.match(await p.textContent('#stSec'), /^남은 2:[45]\d$/);
+  assert.equal(await p.locator('#fbBtn').isHidden(), true, '듣는 동안에는 바꾸지 않는다');
   assert.deepEqual(p.errors, []);
 });
 

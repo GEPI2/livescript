@@ -1,7 +1,7 @@
 // 오프라인에서도 열리게 하는 서비스 워커. 범위는 이 폴더(./)뿐이다.
 // gepi2.github.io는 같은 계정의 다른 Pages 사이트와 캐시 저장소를 같이 쓴다. 그래서 'livescript-'로 시작하는 캐시만 만들고 지우고,
 // transformers-cache(받아 둔 판정 모델)와 다른 사이트의 캐시는 건드리지 않는다.
-const Q = '?v=16';  // 배포 때 ?v=를 올리는 sed가 이것도 같이 바꾼다
+const Q = '?v=17';  // 배포 때 ?v=를 올리는 sed가 이것도 같이 바꾼다
 const CACHE = 'livescript-v' + Q.slice(3);
 const FONTS = 'livescript-fonts-1';  // fonts/ 글꼴 조각. 글꼴을 바꾸면 올린다
 const VENDOR = 'livescript-vendor-1';  // vendor/ 파일을 바꾸면 올린다 (VERSIONS.txt). 배포마다 wasm 27MB를 다시 받지 않게 따로 둔다

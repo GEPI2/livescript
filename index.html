@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:; media-src 'self' blob:">
 <title>말랑</title>
 <meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="manifest.webmanifest">
@@ -492,6 +492,34 @@
   .cbar b.over { background: var(--chart-over); }
   .cbar u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
   .sec details { font-size: 14px; color: var(--ink-muted); }
+  /* 연습 녹음 듣기: 결과 창 맨 위 재생 막대, 구간·문장 줄의 작은 '듣기' 단추(선 아이콘) */
+  #cTake { margin: var(--space-12) 0; }
+  #cTake audio { display: block; width: 100%; height: 40px; }
+  #cTake p { margin: 4px 0 0; }
+  button.play { min-height: 40px; padding: 0 12px; gap: 4px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 400; }
+  .sec .sh button.play { flex: none; }
+  /* 꼭 말할 문장: 판정 칩 + 구간·첫 글 + 기준 + 듣기 */
+  #cKeys { margin-top: var(--space-24); }
+  #cKeys h3 { margin: 0 0 4px; font-size: 16px; }
+  #cKeys h4 { margin: var(--space-16) 0 4px; font-size: 14px; }
+  .krow { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .krow .kh { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; }
+  .krow .kt { flex: 1 1 10em; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .krow .kv { flex: none; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-muted); font-size: 13px; font-weight: 600; }
+  .krow.ok .kv { background: var(--accent-tint); color: var(--accent-strong); }
+  .krow .kb { flex: none; font-size: 12px; color: var(--ink-muted); }
+  .krow p.small { margin: 4px 0 0; }
+  /* 편집 카드: 역할 칩(발표 준비), 열린 카드의 '지난 연습' 줄 */
+  .pc .prole { flex: none; margin-right: auto; padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-muted); font-size: 12px; }
+  .pfb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: var(--space-12); font-size: 13px; color: var(--ink-muted); }
+  .pfb .k { font-weight: 600; color: var(--ink); }
+  .pc .pplan { margin: 0 0 8px; }
+  #prepFlow .sug { margin: var(--space-12) 0; padding: var(--space-16); border-radius: var(--radius-xl); background: var(--accent-tint); }
+  #prepFlow h3 { margin: 0 0 8px; color: var(--accent-strong); font-size: 15px; }
+  #prepFlow ul { margin: 0 0 8px; padding-left: 1.2em; font-size: 14px; }
+  #prepFlow .go { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+  /* 연습 모드 발표 화면: 꼭 말할 문장에 옅은 밑줄(미리 보이게) */
+  body.keymark #prompt .s.key:not(.approx) { text-decoration: underline 2px color-mix(in srgb, var(--accent) 75%, transparent); text-underline-offset: min(8px, .25em); }  /* 어두운 바탕에서 3:1 넘게 */
 </style>
 </head>
 <body class="editing">
@@ -725,8 +753,11 @@
     <label id="onlySelBox"><input type="checkbox" id="onlySel" checked> <span id="selInfo"></span></label>
   </div>
   <div data-pane="prep">
-    <p class="small">대본을 다 쓴 뒤 한 번 해 두세요. 늦어질 때 뺄 문장과, 키워드를 다르게 말해도 따라가도록 비슷한 말을 정해 둬요. 발표 중에는 AI를 부르지 않아요.</p>
+    <p class="small">대본을 다 쓴 뒤 한 번 해 두세요. 문단마다 흐름과 말할 힘, 핵심 문장을 골라 줘요. 늦어질 때 뺄 문장과, 키워드를 다르게 말해도 따라가도록 비슷한 말도 정해 둬요. 발표 중에는 AI를 부르지 않아요.</p>
+    <label>평가 기준 <span class="small">(선택)</span> <textarea data-info="rubric" rows="3" placeholder="한 줄에 하나씩 적어 주세요&#10;예: 문제를 분명히 말했나&#10;예: 근거가 구체적인가"></textarea></label>
+    <p class="small">평가 기준을 적으면 기준마다 다루는 문단을 찾고, 연습 결과에서 그 부분을 살려 말했는지 같이 봐요.</p>
     <p id="prepState"></p>
+    <div id="prepFlow"></div>
     <p class="small drop" id="prepCap" hidden><del>흐린 글</del> = 늦으면 뺄 문장</p>
     <div class="diff drop" id="prepDiff" hidden></div>
   </div>
@@ -796,8 +827,8 @@
   </div>
   <details>
     <summary>데이터가 가는 곳</summary>
-    <p class="small">말소리는 글자로 바꾸려고 Google(Chrome)이나 Apple(Safari)로 가요. 대본과 발표 정보는 AI 기능을 쓸 때만 Anthropic으로 가요. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 가요. Q&A 질문은 이 기기 안에서 골라서 밖으로 나가지 않아요. 질문 찾기 모델은 Hugging Face에서 기기마다 한 번 받아요.</p>
-    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 하고 소리를 저장하지 않아요. 발표 점검의 AI 코칭은 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요. 연습 기록은 이 기기에만 남고 파일로 내보내기에는 들어가지 않아요. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 눌러 주세요.</p>
+    <p class="small">말소리는 글자로 바꾸려고 Google(Chrome)이나 Apple(Safari)로 가요. 대본, 발표 정보, 평가 기준은 AI 기능을 쓸 때만 Anthropic으로 가요. 애드리브로 한 말은 '애드리브 정리'에서 'AI 정리'를 누를 때만 Anthropic으로 가요. Q&A 질문은 이 기기 안에서 골라서 밖으로 나가지 않아요. 질문 찾기 모델은 Hugging Face에서 기기마다 한 번 받아요.</p>
+    <p class="small">발표 점검의 목소리 분석은 이 기기 안에서만 해요. '연습 녹음'을 켜 두면 리딩·연습 소리를 이 기기(브라우저)에만 남기고, 기록을 지우면 같이 지워져요. 주변 사람 목소리도 녹음될 수 있어요. 발표 점검의 AI 코칭은 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요. 연습 기록과 녹음은 이 기기에만 남고 파일로 내보내기에는 들어가지 않아요. 공용 컴퓨터에서는 연습이 끝나면 ⋯ > '발표 점검' > '기록 모두 지우기'를 눌러 주세요.</p>
     <p class="small">iPhone·iPad Safari는 7일 동안 열지 않은 사이트의 저장 데이터(대본, 받아 둔 모델)를 지울 수 있어요. 발표 전날 한 번 열어 두고, 대본은 '파일로 내보내기'로 따로 보관하세요.</p>
   </details>
   <button id="mDel">대본 삭제</button>
@@ -874,6 +905,7 @@
     <p class="small" id="modeHelp"></p>
     <label><input type="checkbox" id="cueOn"> 실시간 힌트 보기</label>
     <label id="audioRow"><input type="checkbox" id="audioOn"> <span>목소리 분석(높낮이·쉼·크기) <span class="small">감정은 재지 않아요</span></span></label>
+    <label id="recRow"><input type="checkbox" id="recOn"> <span>연습 녹음 <span class="small">이 기기에만 남아요. 결과에서 구간·문장마다 다시 들어요</span></span></label>
     <div class="row"><button id="checkOpen" aria-haspopup="dialog">점검 결과</button></div>
   </div>
   </div></div>
@@ -889,13 +921,15 @@
     <p id="checkMsg" role="status"></p>
     <p class="small" id="cEmpty">아직 기록이 없어요. 리딩이나 연습으로 시작해 20초 넘게 읽고 정지하면 여기에 결과가 나와요.</p>
     <label id="cRunRow">기록 <select id="cRun"></select></label>
+    <div id="cTake" hidden><audio id="cAudio" controls preload="metadata" aria-label="이번 연습 녹음"></audio><p class="small" id="cTakeMsg" role="status"></p></div>
     <div class="row"><label for="cTarget">목표</label><input id="cTarget" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음" aria-label="목표 시간(분)"> 분</div>
     <div id="cRunBox">
       <div id="cStats"></div>
       <div id="cSug"></div>
       <div id="cSum"></div>
-      <p class="small">목소리로 감정을 알아내지는 못해요. 높낮이 폭, 쉼, 빠르기가 어땠는지만 봐요.</p>
+      <p class="small">목소리로 감정을 알아내지는 못해요. 같은 연습 안에서 구간끼리 소리 크기·높이·높낮이 폭을 견줘 힘 있게 들렸는지 어림해요. 사투리나 억양은 재지 않아요.</p>
       <div id="cTone"></div>
+      <section id="cKeys" hidden></section>
       <h3 id="cTipsH" tabindex="-1">다음에 해 볼 것</h3>
       <p id="cAiSum"></p>
       <ol id="cTips"></ol>
@@ -906,7 +940,7 @@
         <button id="coachPrompt">프롬프트 복사</button>
         <button id="coachPaste">결과 붙여넣기</button>
       </div>
-      <p class="small">AI에는 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요. 연습으로 하면 정지할 때 AI 키가 있으면 바로 받아요.</p>
+      <p class="small">AI에는 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요. 연습으로 하면 정지할 때 AI 키가 있으면 바로 받아요.</p>
       <p class="small" id="coachKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn5">AI 키 넣기</button></p>
       <p id="coachMsg" role="status"></p>
       <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
@@ -938,7 +972,7 @@
 
 <dialog id="keyDlg" aria-labelledby="keyTitle">
   <h2 id="keyTitle">AI 키</h2>
-  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 잰 숫자와 읽은 구간의 대본, 받아 적은 말을 보내요. 목소리는 보내지 않아요.</p>
+  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보(평가 기준 포함)가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요.</p>
   <p class="small" id="keyState"></p>
   <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
   <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워져요)</label>
@@ -951,7 +985,7 @@
   </div>
 </dialog>
 
-<script src="match.js?v=16"></script>
-<script type="module" src="app.js?v=16"></script>
+<script src="match.js?v=17"></script>
+<script type="module" src="app.js?v=17"></script>
 </body>
 </html>

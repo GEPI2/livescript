@@ -182,7 +182,7 @@ export function cleanScript(t) {
 // 앱이 내보낸 파일 { app: 'livescript', kind: 'script', name, text, target, info, pack, prep }이나 글 파일(.txt)을 읽는다. 파일은 믿지 않는다.
 // 반환 { name, text, target, info, pack, prep }. pack은 앱이 qa.js cleanPack으로 검사하고, prep은 모양만 맞춘다(앱 loadPrep이 읽을 때마다 검사).
 // prep.n(문단마다 문장 수)은 정수 배열일 때만 넘긴다.
-const INFO = ['topic', 'audience', 'goal', 'tone', 'outline', 'refs', 'n'];
+const INFO = ['topic', 'audience', 'goal', 'tone', 'outline', 'refs', 'n', 'rubric'];  // rubric: 발표 준비의 평가 기준 글칸
 export function readScript(raw, fname = '') {
   raw = String(raw).replace(/^\uFEFF/, '');
   const json = /\.json$/i.test(fname) || /^\s*\{/.test(raw);
@@ -197,8 +197,10 @@ export function readScript(raw, fname = '') {
     target: Math.min(600, Math.max(0, +d.target || 0)),
     info: Object.fromEntries(INFO.filter(k => typeof d.info?.[k] === 'string').map(k => [k, d.info[k].slice(0, 2000)])),
     pack: d.pack ?? null,
+    // 흐름·핵심 문장·평가 기준(keys, crit, rub)은 모양만 보고 넘긴다. 앱의 loadPrep가 한 번 더 검사한다
     prep: p && typeof p === 'object' && Array.isArray(p.paras) ? { h: String(p.h ?? ''), t: +p.t || 0, paras: p.paras, kw: p.kw && typeof p.kw === 'object' ? p.kw : {},
-      n: Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null } : null,
+      n: Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null,
+      ...Object.fromEntries(['keys', 'crit', 'rub'].filter(k => Array.isArray(p[k])).map(k => [k, p[k]])) } : null,
     must: Array.isArray(d.must) ? d.must.filter(x => typeof x === 'string').slice(0, 200) : [],  // 꼭 말할 문장(대본 글 그대로)
   };
 }
@@ -320,6 +322,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(readScript(JSON.stringify({ ...file, must: ['가.', 3, '나.'] })).must, ['가.', '나.'], '꼭 말할 문장은 글만');
   assert.deepEqual(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, 2] } })).prep.n, [3, 2], '문단마다 문장 수');
   assert.equal(readScript(JSON.stringify({ ...file, prep: { paras: [], n: [3, '2'] } })).prep.n, null, '깨진 문장 수는 버린다');
+  const fx = readScript(JSON.stringify({ ...file, info: { rubric: '근거\n전달' }, prep: { paras: [], keys: [{ p: 1 }], crit: [], rub: ['근거'], extra: 1 } }));
+  assert.deepEqual([fx.info.rubric, fx.prep.keys, fx.prep.crit, fx.prep.rub, fx.prep.extra], ['근거\n전달', [{ p: 1 }], [], ['근거'], undefined], '평가 기준과 흐름도 함께 온다');
 
   // 모든 ?v= 파일이 sw.js의 미리 받기 목록에 같은 버전으로 있어야 오프라인에서 열린다
   const fs = await import('node:fs'), dir = new URL('.', import.meta.url), src = f => fs.readFileSync(new URL(f, dir), 'utf8');

@@ -1,15 +1,16 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=16';
-import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun } from './claude.js?v=16';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=16';
-import { slidesFrom, outlineLines, topicOf } from './slides.js?v=16';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey } from './compare.js?v=16';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=16';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=16';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=16';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, norm as plain } from './qa.js?v=17';
+import { keyStore, keyOk, qaPrompt, generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, adlibPrompt, parseAdlib, summarizeAdlib, coachPrompt, parseCoach, coachRun, rubOf } from './claude.js?v=17';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript } from './lib.js?v=17';
+import { slidesFrom, outlineLines, topicOf } from './slides.js?v=17';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=17';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=17';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=17';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=17';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, mRow, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
-  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME } from './check.js?v=16';
+  buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, toneLines, NAME,
+  newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS } from './check.js?v=17';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -135,6 +136,7 @@ function setCur(n, by) {
   if (by) begin();  // 질의응답 화면에서 켠 마이크로 손으로만 넘겨도 발표 시간을 잰다
   if (by) note({ from: cur, to: n, by });
   cur = n; lastBy = by;  // 발표 점검 구간(secNow)이 누가 옮겼는지 본다
+  markSent();
   render();
 }
 
@@ -313,6 +315,7 @@ function start() {
   else if (Date.now() - seen > 30 * 6e4) { const g = Date.now() - seen; t0 += g; if (end) end += g; }
   runKind = mixKind(runKind, coach);  // 발표 점검: 같은 발표를 다른 모드로 이어 하면 'mixed'
   if (t0) note({ run: coach });
+  markSent();
   // 기록의 위치는 보이는 대본 기준이라 시작할 때마다 단계를 남긴다 (새로고침 뒤 이어 할 때도 기록만으로 위치를 읽을 수 있게)
   if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
   lastMove = Date.now(); recOff = Date.now(); lastTick = Date.now();
@@ -334,6 +337,7 @@ function begin() {
   saveTalk(); keepLog();
   note({ run: coach });
   if (shr.on && U) note({ shrink: shr.lv, why: 'start', at: cur });
+  markSent();
 }
 
 // 반환: 듣고 있었으면 저장한 발표 점검 기록(말한 시간 20초 미만이면 null)
@@ -347,6 +351,7 @@ function stop() {
     a.wall = Math.max(a.talk, a.wall - idle);  // 마지막 타이머 뒤 시간까지 빼므로 말한 시간 아래로는 내리지 않는다
   }
   listening = false;
+  markSent();  // 정지한 동안은 어느 문장에도 들지 않는다
   tape.close(null);  // 정지 직전까지 한 말 (확정 결과는 정지 뒤에 온다)
   rec?.stop();
   stopAudio('stop');
@@ -369,7 +374,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- 화면 ----
 function setMode(editing) {
-  stopHear();
+  stopHear(); edAudio.pause();  // 편집 카드에서 듣던 연습 녹음도(새 연습의 분석·녹음에 섞이지 않게)
   if (editing && qaMode) setQa(false);
   document.body.classList.toggle('editing', editing);
   document.querySelector('meta[name=theme-color]').content = editing ? '#FFFFFF' : '#0F1115';  // 주소창·제목줄 색을 화면(밝은 편집, 어두운 발표)에 맞춘다
@@ -435,7 +440,7 @@ const R0 = 5;  // 처음 기본 말 속도(초당 정규화 글자). 한국어 �
 let r0 = R0;  // 이번 발표의 처음 말 속도: 발표를 시작할 때 잰 속도 rate() (편집창 예상과 같은 값에서 출발)
 const saveTalk = () => {
   store.set(sk('talk'), JSON.stringify({ t0, onSec, matched, seen: seen = Date.now(), end, endQa, r0,  // seen: 마지막으로 들은 때
-    acc: acc && packAcc(acc), hs, rt: runT, kind: runKind, rd, tx, cues, aud: runAud, re }));  // 발표 점검 (아래 '발표 점검' 참고)
+    acc: acc && packAcc(acc), hs, rt: runT, kind: runKind, rd, tx, cues, aud: runAud, re, rc: runRec, ag: runAgc }));  // 발표 점검 (아래 '발표 점검' 참고)
   // 말 속도는 사람마다 다르므로 대본과 따로 마지막으로 잰 값을 둔다 (편집 화면의 예상 시간, AI 대본 길이)
   // ponytail: 1분 넘게 말한 마지막 발표 하나로 잰다. 리허설 여러 번을 합치려면 시간 가중 평균으로.
   if (onSec >= 60) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
@@ -462,6 +467,7 @@ setInterval(() => {
     if (t0 && !end && done) { end = Date.now(); endQa = !atEnd; }
     // 질의응답 때문에 멈췄으면 그동안의 시간은 발표 경과에서 뺀다 (대본 끝에서 갔다 왔으면 멈춘 값 그대로)
     else if (end && !done) { if (endQa) t0 += Date.now() - end; end = 0; endQa = false; }
+    markSent();  // 질의응답에 들어가거나 대본 끝에 닿았으면 null
     saveTalk();
     // 마이크 버튼: 들리면 채운 원, 조용하면 빈 원, 크롬이 인식을 끝내고 다시 켜는 틈이 길면 '연결 중'.
     // 4초가 넘으면 혼자 다시 켜지 못한 것으로 보고 '다시 듣기' (iOS Safari는 누르는 동작 없이 다시 켜기가 실패하기도 한다)
@@ -608,7 +614,21 @@ function show() {
   secOf = secMap(SU, shr.on && U ? shr.lv : null);
   const ms = new Set(must()), lv = shr.on && U ? shr.lv : null;
   keyOf = SU.flatMap((u, i) => u.s.filter(x => !lv || x.top >= lv[i]).map(x => ms.has(text.slice(x.a, x.b))));  // 보이는 문장 → 꼭 말할 문장인가(강조를 잰다)
+  let g = 0;
+  sidOf = SU.flatMap((u, i) => u.s.flatMap(x => { const id = g++; return !lv || x.top >= lv[i] ? [id] : []; }));  // 보이는 문장 → 문장 번호(숨긴 문장도 센다)
+  peOf = peFor(text);
+  sents.forEach((x, i) => x.el.classList.toggle('key', !!keyOf[i]));  // 연습 모드에서 꼭 말할 문장에 밑줄(body.keymark)
   if (acc?.length !== SU.length) newRun(true);
+}
+// 구간마다 발표 준비의 계획 힘(check.js secPe). 발표 준비가 지금 대본에 맞지 않으면 null
+function peFor(text) {
+  const p = loadPrep(), fit = prepFits(p, text);
+  return SU.map(u => {
+    if (!fit) return null;
+    const by = new Map();
+    for (const x of u.s) by.set(x.p, (by.get(x.p) ?? 0) + x.n);
+    return secPe([...by].map(([q, n]) => ({ n, e: p.paras[q]?.e })));
+  });
 }
 
 // 지금 단위가 바뀔 때만 다시 계산한다. 말 속도는 상태줄의 예상 종료와 같은 값(목소리로 따라간 글자 ÷ 대본 위에서 말한 시간).
@@ -751,8 +771,12 @@ let cueOn = store.get('ls.cue') !== '0';  // 실시간 힌트 보기 (기기마�
 // runT: 기록 번호(처음 시작한 때). t0는 질의응답 시간이나 긴 쉼만큼 뒤로 밀리므로 따로 둔다
 let tx = [];  // 구간마다 그때 들은 확정 말(연습 결과의 '대본과 실제로 한 말'). acc와 같은 때 새로 시작한다
 let SU = [], secOf = [], keyOf = [], acc = null, hs = newHear(), runKind = null, rd = [], cues = [], runAud = null, re = false, runT = 0;
+// sidOf: 보이는 문장 → 문장 번호(sid: SU.flatMap(u => u.s) 순번, 숨긴 문장도 센다), peOf: 구간마다 계획 힘(1~3 | null)
+// sentEv: 이번 발표에서 지금 문장이 바뀐 차례 [[performance.now(), sid | null(정지·질의응답·대본 끝), 옮긴 것]]. 머문 시간, 문장 앞 쉼, 녹음 듣기 자리에 쓴다(메모리만)
+// runRec: 이번 발표를 녹음했나, runAgc: 자동 음량 조절이 꺼지지 않은 마이크로 쟀나(그러면 dB 비교를 하지 않는다)
+let sidOf = [], peOf = [], sentEv = [], lastSid, runRec = false, runAgc = false;
 // 메모리만: 말 빠르기 창(5초마다 한 줄), 판정 상태, 보이는 힌트, 높낮이·쉼 프레임(F), 켜진 분석(au)
-let ring = [], ringT = 0, rdT = 0, pst = newPace(), pace = null, readNow = false, flatW = null, cst = newCue(), cueK = null, F = null, au = null;
+let ring = [], ringT = 0, rdT = 0, pst = newPace(), pace = null, readNow = false, flatW = null, cst = newCue(), cueK = null, F = null, au = null, qst = newQuiet(), quiet = false;
 let lastTick = Date.now(), resN = 0, recProbe = 0;  // resN: 받은 인식 결과 수(감시용), recProbe: 인식기 굶음으로 분석을 끈 때
 let runs = [], runFull = false, liveNote = null;  // runs: 이 대본의 최근 5회 기록, runFull: 저장 공간이 모자라 저장하지 못함(정지 뒤 알림), liveNote: 편집 화면에서 알릴 실전 기록
 // keep: 구간 수만 바뀌었으면(show) 발표 정보는 두고 구간 값만 새로
@@ -761,6 +785,7 @@ function newRun(keep = false) {
   if (keep) return;
   hs = newHear(); hs.base = -sessionNorm.length;  // 이번 인식 세션에서 이미 들은 말은 세지 않는다
   runT = t0; runKind = null; cues = []; runAud = null; re = false; ring = []; ringT = 0; rdT = 0; pst = newPace(); pace = null; readNow = false; cst = newCue();
+  qst = newQuiet(); quiet = false; sentEv = []; lastSid = undefined; runRec = false; runAgc = false;
 }
 // 지금 구간: 목소리로 왔으면 마지막으로 읽기 시작한 어절의 문장(문단 끝까지 읽고 하는 대본 밖 말은 그 구간), 손이나 키워드로 옮겼으면
 // 옮겨 간 어절의 문장(구간 첫 어절로 옮기고 읽기 전까지가 건너뛴 앞 구간에 들지 않게). 40ms마다 부르므로 위치와 대본이 그대로면 다시 찾지 않는다.
@@ -768,11 +793,22 @@ let secMemo = null, lastBy = null;  // lastBy: 마지막으로 커서를 옮긴 
 function secNow() {
   if (secMemo?.cur !== cur || secMemo.words !== words || secMemo.by !== lastBy) {
     const i = sentAt(words, cur + (lastBy === 'voice' ? 0 : 1));
-    secMemo = { cur, words, by: lastBy, s: Math.max(0, Math.min(secOf[i] ?? 0, SU.length - 1)), key: !!keyOf[i] };
+    secMemo = { cur, words, by: lastBy, s: Math.max(0, Math.min(secOf[i] ?? 0, SU.length - 1)), key: !!keyOf[i], sid: sidOf[i] ?? null };
   }
   return secMemo.s;
 }
 const keyNow = () => (secNow(), secMemo.key);  // 지금 문장이 꼭 말할 문장인가
+const nodbNow = () => runAgc || (F?.drift() ?? 0) > DRIFT;  // dB 비교를 믿지 못함: 자동 음량 조절이 켜졌거나 잡음 바닥이 6dB 넘게 움직였다
+const sidNow = () => (secNow(), secMemo.sid);
+const offNow = () => lastHeard - Math.max(lastMatch, lastAnchor, lastResume, lastMove) > 3000;  // 대본 밖(500ms 타이머의 off와 같은 기준)
+// 지금 문장이 바뀌었으면 sentEv에 남긴다. 듣지 않거나 질의응답·대본 끝이면 null(그동안은 어느 문장에도 들지 않는다)
+function markSent(stop = false) {
+  const s = !stop && listening && t0 && !qaMode && !end && SU.length ? sidNow() : null;
+  if (s === lastSid) return;
+  lastSid = s;
+  sentEv.push([performance.now(), s, lastBy]);
+  if (sentEv.length > 20000) sentEv.shift();
+}
 const wallSum = () => acc ? acc.reduce((x, a) => x + a.wall, 0) : elapsed();  // 결과 창 총 시간과 같은 기준(구간 걸린 시간 합)
 // 발표 중 지금 구간의 누적. 시작 전, 질의응답 중, 대본 끝에 닿은 뒤(맺음말, 정지 뒤에 오는 확정 결과)면 없음 (걸린 시간을 더하는 coachTick과 같은 조건)
 const accAt = () => listening && t0 && !qaMode && !end && acc?.[secNow()];
@@ -790,13 +826,14 @@ function coachTick(now, dt, sec, off, late, d) {
     const r = speechRate(ring), lv = au && F ? F.live(performance.now()) : null;
     flatW = lv?.flat ?? null;
     pace = paceStep(pst, r, now, { hold, goal: target * 60, sec, rest, d });
+    quiet = coach === 'practice' && quietStep(qst, lv, now, { hold, nodb: nodbNow(), calm: peOf[secNow()] === 1 });  // '크게'는 연습에서만
     readNow = coach !== 'read' && readSignal(ring, flatW, !!au);  // 리딩은 읽는 것이 목적이라 말투 신호를 세지 않는다
     if (readNow && now - rdT >= 60000) { rdT = now; rd[secNow()]++; }  // 결과 창에는 60초에 많아야 한 번 센다
     note({ m: mRow(r, flatW, lv?.run ?? null) });
   }
   // 인식기가 다시 켜지는 짧은 틈('연결 중')에는 두고(판정은 paceHold가 멈춤), '다시 듣기'(4초)나 대본 끝이면 지운다
   const hide = off || qaMode || !listening || stuck() || !!end;
-  showCue(cueStep(cst, { mode: coach, on: cueOn, pace, read: readNow, late, shrinkOn: shr.auto && !!U, hold, hide }, now), sec);
+  showCue(cueStep(cst, { mode: coach, on: cueOn, pace, quiet, read: readNow, late, shrinkOn: shr.auto && !!U, hold, hide }, now), sec);
 }
 // 상태줄 작은 칸의 힌트. 바뀔 때만 고치고, 켜고 끌 때 기록에 남긴다.
 function showCue(c, sec = 0) {
@@ -825,16 +862,21 @@ function showCoach() {
   // '말하듯이'는 목소리 분석이 있어야 나오므로 분석이 꺼져 있으면(휴대폰, Safari, 끔) 말하지 않는다
   $('modeHelp').textContent = listening ? '정지한 뒤 바꿀 수 있어요.' : {
     read: '힌트 없이 재기만 해요. 끝나면 결과를 보여 줘요.',
-    practice: (audioWant() ? '빠르기와 말투' : '빠르기') + ' 힌트를 위에 하나씩 보여 줘요. 끝나면 결과를 보여 주고, AI 키가 있으면 AI 코칭도 바로 받아요.',
-    live: "'천천히'만 흐리게 보여 줘요. 결과는 정지한 뒤 아래 '점검 결과'에서 봐요." + (desk ? " 목소리 분석을 켜면 '말하듯이'도 보여 줘요. 연습에서 먼저 써 보세요." : ''),
+    practice: (audioWant() ? '빠르기·크기·말투' : '빠르기') + ' 힌트를 위에 하나씩 보여 줘요. 꼭 말할 문장에는 밑줄을 그어 둬요. 끝나면 결과를 보여 주고, AI 키가 있으면 AI 코칭도 바로 받아요.',
+    live: "'천천히'만 흐리게 보여 줘요. 결과는 정지한 뒤 아래 '점검 결과'에서 봐요." + (desk ? " 목소리 분석을 켜면 '말하듯이'도 보여 줘요. 연습에서 먼저 써 보세요. 실전은 녹음하지 않아요." : ''),
   }[coach] + (blk ? ` 지난번에 ${blk === 'rec' ? '음성 인식이 멈춰서' : '분석기에 소리가 안 들어와서'} 목소리 분석을 꺼 뒀어요. 켜면 다시 시험해요.` : '');
   $('audioRow').hidden = !desk;
   $('audioOn').checked = audioWant();
+  $('recRow').hidden = !desk || coach === 'live';  // 녹음은 목소리 분석 스트림을 쓰므로 분석이 되는 PC에서, 리딩·연습만
+  $('recOn').checked = store.get('ls.rec') !== '0';
+  $('recOn').disabled = listening || !audioWant();
+  document.body.classList.toggle('keymark', coach === 'practice');  // 발표 화면의 꼭 말할 문장 밑줄
   $('cueOn').checked = cueOn;
   if (!listening) micRest();
 }
 for (const b of document.querySelectorAll('[data-coach]')) b.onclick = () => { if (!listening) setCoach(b.dataset.coach); };
 $('cueOn').onchange = () => { cueOn = $('cueOn').checked; cueOn ? store.del('ls.cue') : store.set('ls.cue', '0'); };
+$('recOn').onchange = () => { $('recOn').checked ? store.del('ls.rec') : store.set('ls.rec', '0'); };
 // 목소리 분석 값은 리딩·연습(r)과 실전(l)을 따로 기억한다. 다시 켜면 이 브라우저의 막힘 기록을 지운다(다시 시험).
 $('audioOn').onchange = () => {
   const on = $('audioOn').checked, key = browserKey(navigator);
@@ -877,11 +919,13 @@ function startAudio() {
     const buf = new Float32Array(an.fftSize);
     me.iv = setInterval(() => { an.getFloatTimeDomainData(buf); audioFrame(me, buf); }, 40);
     note({ audio: 'on', set: { echoCancellation: set.echoCancellation, noiseSuppression: set.noiseSuppression, autoGainControl: set.autoGainControl, sampleRate: set.sampleRate } });
+    if (set.autoGainControl === true) runAgc = true;  // 자동 음량 조절이 켜졌다고 알려 주면 이번 발표는 크기를 견주지 않는다(알려 주지 않으면 잡음 바닥 움직임으로 본다)
+    startRec(me, stream);
   }, () => { if (au === me) stopAudio('denied'); });
 }
 // 40ms마다 프레임 하나. 1초마다 감시: 분석기 말소리, 인식 결과 수, 들은 음절, 최대 dB, 바닥, 모두 0
 function audioFrame(me, buf) {
-  const t = performance.now(), r = F.push(buf, me.ctx.sampleRate, t, secNow(), keyNow());
+  const t = performance.now(), r = F.push(buf, me.ctx.sampleRate, t, secNow(), keyNow(), sidNow(), offNow());
   // 탭이 숨으면 Chrome이 40ms 타이머를 1초 넘게 늦춰 1초 칸에 프레임이 한두 개뿐이다. 그런 칸으로는 충돌을 판정하지 않는다
   if (document.hidden) { me.b = []; me.c = null; return; }
   const c = me.c ??= { t, sp: 0, mx: -Infinity, fl: 0, res: resN, hn: hs.n };
@@ -901,6 +945,7 @@ function stopAudio(why) {
   if (!me) return;
   au = null; flatW = null;
   clearInterval(me.iv);
+  if (me.rec) stopRec(me.rec);  // 트랙을 멈추기 전에 녹음을 끝낸다(조각 하나가 저장된다)
   me.stream?.getTracks().forEach(t => t.stop());
   me.ctx.close().catch(() => {});
   note({ audio: 'off', why });
@@ -911,6 +956,139 @@ function stopAudio(why) {
   if (why === 'rec?') recProbe = Date.now();
 }
 
+// ---- 연습 녹음: 목소리 분석 스트림을 그대로 녹음한다(마이크를 더 열지 않는다). 리딩·연습에서 '가'의 '연습 녹음'이 켜져 있을 때만 ----
+// 시작~정지 한 번이 조각 하나다. requestData()나 timeslice를 쓰면 Chrome이 WebM 길이를 0.001초로 적어 되감기가 안 되므로 정지할 때 한 번에 받는다.
+// 새로고침하면 하던 조각은 저장되지 않는다(정지해야 파일이 닫힌다). 저장소는 IndexedDB 'livescript-rec'(같은 출처의 다른 Pages 사이트와 겹치지 않는 이름)
+// 키 `${대본 id}:${runT}:${조각 시작 Date.now()}`, 값 { blob, ms: 길이, marks: [[ms, sid, 구간]] }. 기록(runs)에서 빠진 발표의 조각은 gcTakes가 지운다
+const REC_MAX_MS = 60 * 60e3, REC_TYPE = 'audio/webm;codecs=opus';
+const recWant = () => store.get('ls.rec') !== '0' && coach !== 'live';
+let recSaving = 0, recFail = false;  // 저장 중인 조각 수, 저장 실패를 알렸나(한 번만)
+function startRec(me, stream) {
+  if (!recWant() || !runT || !window.MediaRecorder || me.rec) return;
+  let mr;
+  try { mr = new MediaRecorder(stream, { ...(MediaRecorder.isTypeSupported(REC_TYPE) && { mimeType: REC_TYPE }), audioBitsPerSecond: 32000 }); mr.start(); }
+  catch { note({ rec: 'fail' }); return; }
+  const r = me.rec = { mr, chunks: [], key: `${lib.cur}:${runT}:${Date.now()}`, id: lib.cur, t0: runT, at: performance.now(), mark: [0, sidNow(), secNow()] };
+  mr.ondataavailable = e => { if (e.data.size) r.chunks.push(e.data); };
+  mr.onstop = () => saveSeg(r);
+  r.cap = setTimeout(() => { if (mr.state !== 'inactive') { stopRec(r); tell('녹음은 한 번에 60분까지만 해요. 그 뒤는 녹음하지 않았어요.'); } }, REC_MAX_MS);
+  runRec = true;
+  note({ rec: 'on' });
+  if (!store.get('ls.recTold')) { store.set('ls.recTold', '1'); tell("연습을 녹음하고 있어요. 녹음은 이 기기에만 남아요. 끄려면 '가'에서 '연습 녹음'을 꺼 주세요.", { stay: true }); }
+}
+// 녹음을 끝낸다. 녹음하던 동안 문장이 바뀐 때(sentEv)를 조각 안 시각으로 바꿔 지금 둔다(파일은 onstop에서 오는데 그때는 대본을 바꿨을 수 있다)
+function closeMarks(r) {
+  if (r.marks) return;
+  const end = performance.now();
+  r.ms = Math.round(end - r.at);
+  r.marks = [r.mark, ...sentEv.filter(([t]) => t > r.at && t <= end).map(([t, sid]) => [Math.round(t - r.at), sid, sid == null ? null : sidSec(sid)])];
+}
+function stopRec(r) {
+  clearTimeout(r.cap);
+  if (r.mr.state === 'inactive') return;
+  closeMarks(r);
+  r.wait = true; recSaving++;
+  try { r.mr.stop(); } catch { r.wait = false; recSaving--; }
+  note({ rec: 'off' });
+}
+// 조각 저장. 그사이 이 대본의 기록을 지웠으면(그 발표가 기록에도 지금 발표에도 없으면) 버린다
+async function saveSeg(r) {
+  clearTimeout(r.cap);
+  closeMarks(r);  // 장치가 끊겨 녹음이 혼자 멈췄으면 지금 시각까지
+  try {
+    if (!r.chunks.length || (r.id === lib.cur && r.t0 !== runT && !runs.some(x => x.t0 === r.t0))) return;
+    await segPut(r.key, { blob: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), ms: r.ms, marks: r.marks });
+  } catch (e) {
+    console.warn('녹음 저장 실패', e);
+    if (!recFail) { recFail = true; tell('녹음은 저장하지 못했어요. 저장 공간이 모자라거나 이 창에서는 저장할 수 없어요. 연습 기록은 남아요.'); }
+  } finally {
+    if (r.wait) { r.wait = false; recSaving--; }
+    if ($('checkDlg').open) renderTake(true);  // 정지하자마자 열린 결과 창에 녹음이 생겼다
+  }
+}
+// sid → 구간 번호(지금 SU 기준)
+const sidSec = sid => { let o = 0; for (const [i, u] of SU.entries()) { if (sid < o + u.s.length) return i; o += u.s.length; } return null; };
+
+let dbp = null;
+function idb() {
+  return dbp ??= new Promise((ok, no) => {
+    const q = indexedDB.open('livescript-rec', 1);
+    q.onupgradeneeded = () => q.result.createObjectStore('segs');
+    q.onsuccess = () => { const d = q.result; d.onversionchange = () => { d.close(); dbp = null; }; ok(d); };
+    q.onerror = () => no(q.error); q.onblocked = () => no(new Error('blocked'));
+  }).catch(e => { dbp = null; throw e; });
+}
+// f(store)가 돌려준 요청의 결과를 거래가 끝난 뒤 돌려준다
+async function idbDo(mode, f) {
+  const d = await idb();
+  return new Promise((ok, no) => {
+    const tx = d.transaction('segs', mode), q = f(tx.objectStore('segs'));
+    tx.oncomplete = () => ok(q?.result); tx.onerror = tx.onabort = () => no(tx.error);
+  });
+}
+const keyRange = p => IDBKeyRange.bound(p, p + '\uffff');
+const segPut = (k, v) => idbDo('readwrite', st => st.put(v, k));
+const segDel = p => idbDo('readwrite', st => st.delete(keyRange(p))).catch(() => {});
+// 이 발표(대본 id, t0)의 조각들 [{ key, blob, ms, marks }] (오래된 것부터). 저장소를 못 열면 []
+async function segsOf(id, t0) {
+  try {
+    const p = `${id}:${t0}:`, [ks, vs] = await Promise.all([idbDo('readonly', st => st.getAllKeys(keyRange(p))), idbDo('readonly', st => st.getAll(keyRange(p)))]);
+    return ks.map((key, i) => ({ key, ...vs[i] })).filter(g => g.blob instanceof Blob && Array.isArray(g.marks));
+  } catch { return []; }
+}
+// 기록(runs)에 없는 발표의 조각과 지운 대본의 조각을 지운다. 지금 발표(runT)는 남긴다(20초가 안 돼 아직 기록이 없어도 이어 할 수 있다)
+async function gcTakes() {
+  try {
+    const keep = new Set([...runs.map(r => r.t0), runT].map(String)), ids = new Set(lib.list.map(e => e.id)), id = lib.cur;
+    for (const k of await idbDo('readonly', st => st.getAllKeys())) {
+      const [a, t] = String(k).split(':');
+      if (!ids.has(a) || (a === id && !keep.has(t))) await idbDo('readwrite', st => st.delete(k));
+    }
+  } catch {}
+}
+
+// 녹음 듣기. 결과 창은 #cAudio(재생 막대), 편집 카드는 edAudio를 쓴다. 조각 하나를 [from, to]초만 듣고 멈춘다(timeupdate). objectURL은 창을 닫거나 대본을 바꿀 때 놓는다
+const edAudio = new Audio(), urls = new Map();
+const urlOf = g => { if (!urls.has(g.key)) urls.set(g.key, URL.createObjectURL(g.blob)); return urls.get(g.key); };
+function freeUrls() { for (const u of urls.values()) URL.revokeObjectURL(u); urls.clear(); }
+// 듣기 끝 자리(to)는 그 자리에 닿거나, 사용자가 멈추거나(끝까지 가서 멈춘 것은 빼고) 창을 닫으면 지운다. 남으면 나중에 전체를 들을 때 엉뚱한 곳에서 멈춘다
+for (const el of [edAudio, $('cAudio')]) {
+  el.addEventListener('timeupdate', () => { if (el.dataset.to && el.currentTime >= +el.dataset.to) el.pause(); });
+  el.addEventListener('pause', () => { if (!el.ended) delete el.dataset.to; });
+}
+const ready = el => new Promise(ok => el.readyState >= 1 ? ok() : el.addEventListener('loadedmetadata', ok, { once: true }));
+async function playClip(t0, has, el = $('cAudio')) {
+  const segs = await segsOf(lib.cur, t0), c = clip(segs, has);
+  if (!c) return tell('녹음에서 이 부분을 찾지 못했어요.');
+  const g = segs[c.i], u = urlOf(g);
+  if (el.getAttribute('src') !== u) { el.src = u; el.dataset.seg = c.i; }
+  await ready(el);
+  el.currentTime = c.from; el.dataset.to = c.to;
+  el.play().catch(() => {});
+}
+// 결과 창 맨 위 녹음 줄. 고른 기록이 바뀔 때만 src를 바꾼다(목표 시간을 고쳐 다시 그려도 듣던 것이 끊기지 않게). 조각이 여럿이면 끝나면 다음 조각
+let takeSeq = 0, takeSegs = [];
+async function renderTake(force = false) {
+  const [run] = runPair(), el = $('cAudio'), box = $('cTake'), my = ++takeSeq;
+  if (!run?.rec) { box.hidden = true; el.pause(); el.dataset.t0 = ''; return; }
+  if (!force && el.dataset.t0 === String(run.t0)) return;
+  const segs = await segsOf(lib.cur, run.t0);
+  if (my !== takeSeq) return;
+  box.hidden = false; takeSegs = segs;
+  const tot = segs.reduce((x, g) => x + g.ms, 0);
+  $('cTakeMsg').textContent = !segs.length ? (recSaving ? '녹음을 정리하고 있어요…' : '녹음을 찾지 못했어요. 새로고침하기 전에 하던 녹음은 남지 않아요.')
+    : `연습 녹음 ${mmss(tot / 1000)}` + (segs.length > 1 ? ` · 정지했다 이어 한 ${segs.length}조각을 이어서 들려 줘요` : '') + ' · 이 기기에만 남아요';
+  el.hidden = !segs.length;
+  if (segs.length && el.dataset.t0 !== String(run.t0)) { el.src = urlOf(segs[0]); el.dataset.seg = 0; }
+  el.dataset.t0 = segs.length ? run.t0 : '';
+}
+$('cAudio').addEventListener('ended', () => {
+  const el = $('cAudio'), i = +el.dataset.seg + 1;
+  if (el.dataset.to) { delete el.dataset.to; return; }  // 구간·문장 듣기가 조각 끝에서 끝났다. 다음 조각으로 넘어가지 않는다
+  if (!takeSegs[i]) return;
+  el.src = urlOf(takeSegs[i]); el.dataset.seg = i; el.play().catch(() => {});
+});
+
 // ---- 발표 점검 기록 (대본마다 sk('runs')에 최근 5회) ----
 // 정지, 질의응답, 탭 숨김에서 저장한다(같은 발표면 바꿔 씀). 말한 시간 20초 미만이면 저장하지 않는다(check.js buildRun).
 // 저장 공간이 모자라면 듣는 중에는 알리지 않고 runFull로 두었다가 정지 뒤 알린다.
@@ -919,18 +1097,53 @@ function secScript(i) {
   const text = $('text').value, lv = shr.on && U ? shr.lv[i] : 0;
   return SU[i].s.filter(x => x.top >= lv).map(x => text.slice(x.a, x.b)).join(' ');
 }
+// 꼭 말할 문장마다 기록 한 줄(check.js run.keys): 강조 단서(F.keys), 앞 쉼, 머문 시간 비, 들은 말로 본 말한 비율, 평가 기준 번호. p: 지금 대본에 맞는 발표 준비 | null
+function keyData(text, lv, p) {
+  const ms = new Set(must()), all = SU.flatMap((u, i) => u.s.map(x => ({ x, i }))), idOf = new Map(all.map((o, id) => [o.x, id]));
+  const keys = ms.size ? all.flatMap((o, id) => ms.has(text.slice(o.x.a, o.x.b)) ? [id] : []).slice(0, KEYS) : [];
+  if (!keys.length) return [];
+  const fk = new Map((F?.keys() ?? []).map(k => [k.sid, k])), pz = F?.pauses() ?? [], vis = i => SU[i].s.filter(x => !lv || x.top >= lv[i]);
+  const dw = dwell(sentEv, performance.now(), new Map(all.map((o, id) => [id, spoken(text.slice(o.x.a, o.x.b))])), new Set(keys));
+  // 말한 비율: 구간 끝 문장의 확정 결과는 다음 구간에 들기 쉬워서 앞뒤 구간의 들은 말까지 같이 맞춘다
+  const said = new Map();
+  for (const i of new Set(keys.map(id => all[id].i))) {
+    const near = [i - 1, i, i + 1].filter(j => j >= 0 && j < SU.length), ss = near.flatMap(vis);
+    const r = sentSaid(ss.map(x => text.slice(x.a, x.b)), near.map(j => tx[j] || '').join(' '));
+    ss.forEach((x, k) => { if (all[idOf.get(x)].i === i) said.set(idOf.get(x), r[k]); });
+  }
+  const first = new Map();
+  for (const [t, sid, by] of sentEv) if (sid != null && !first.has(sid)) first.set(sid, { t, by });
+  return keys.map(id => {
+    const { x, i } = all[id], f = fk.get(id), e = first.get(id), t = text.slice(x.a, x.b);
+    // 앞 쉼: 목소리로 그 문장에 왔을 때만. 구간 첫 문장은 문단 사이 쉼이 늘 있어 보지 않는다
+    const pre = F && f?.n > 0 && e?.by === 'voice' && vis(i)[0] !== x ? prePause(pz, e.t) : null;  // 분석기가 그 문장을 들었을 때만(꺼진 뒤 문장은 못 잼)
+    return { sid: id, s: i, w: t.replace(/\s+/g, ' ').slice(0, 20), db: f?.db ?? null, st: f?.st ?? null, n: f?.n ?? 0, pre, dw: dw.get(id) ?? null,
+      sd: tx[i] != null && acc?.[i]?.wall ? said.get(id) ?? null : null, r: p ? rubNo(p, x.p, t) : 0 };
+  });
+}
+// 꼭 말할 문장의 평가 기준 번호(1부터, 없으면 0): 발표 준비가 고른 핵심 문장이면 그 번호, 아니면 그 문단을 다루는 첫 내용 기준
+function rubNo(p, para, t) {
+  const k = p.keys?.find(k => k.t === t);
+  if (k?.r) return k.r;
+  const c = (p.crit ?? []).findIndex(c => c.kind === '내용' && c.ps.includes(para));
+  return c + 1;
+}
 function saveRun() {
   if (!t0 || !acc || acc.length !== SU.length) return null;
   const text = $('text').value, lv = shr.on && U ? shr.lv : null, ad = SU.map(() => 0), origSec = SU.flatMap((u, i) => u.s.map(() => i));
   for (const g of ads) ad[origSec[Math.max(0, g.s ?? 0)] ?? 0]++;  // 애드리브의 앞 문장(원문 번호)이 든 구간
+  const p = loadPrep(), fit = prepFits(p, text);
   const r = buildRun({
     t0: runT || t0, kind: runKind || coach, h: hashText(text), target: Math.round(target * 60), r0, el: elapsed(), pct: S.s.length ? Math.round(cur / S.s.length * 100) : 0,
     lv, re, audio: runAud, acc, aud: F?.secs() ?? null, emph: F?.emph() ?? null, rd, ad, cues, ai: null,
-    info: SU.map((u, i) => ({ w: text.slice(u.s[0].a, u.s[0].a + 40).replace(/\s+/g, ' ').slice(0, 20), n: u.len[lv?.[i] ?? 0], lv: lv?.[i] ?? 0 })),
+    info: SU.map((u, i) => ({ w: text.slice(u.s[0].a, u.s[0].a + 40).replace(/\s+/g, ' ').slice(0, 20), n: u.len[lv?.[i] ?? 0], lv: lv?.[i] ?? 0, pe: peOf[i] ?? null })),
+    keys: keyData(text, lv, fit ? p : null), nodb: !!F && nodbNow(), pzm: F ? pauseMid(F.pauses()) : null,
+    ph: fit ? p.t : 0, rh: fit && p.rub?.length ? hashText(p.rub.join('\n')) : '', rec: runRec,  // 그때의 발표 준비와 평가 기준(결과 창이 지금 것과 같을 때만 기준별로 묶는다)
   });
   if (!r) return null;
   runs = upsertRun(runs, r);
   runFull = !save(sk('runs'), saveRuns(runs));
+  gcTakes();  // 기록에서 빠진 발표의 녹음
   // 구간마다 보인 대본과 들은 말도 같이 둔다(대본을 나중에 고쳐도 비교할 수 있게). 못 저장해도 연습 기록은 남는다
   store.set(sk('says'), JSON.stringify(addSays(readSays(store.get(sk('says'))), { t0: r.t0, secs: packSays(SU.map((_, i) => [secScript(i), tx[i] || ''])) }, runs.map(x => x.t0))));
   liveNote = coach === 'live' ? r : null;  // 실전 뒤 연습을 하면 옛 실전 기록을 알리지 않는다
@@ -996,7 +1209,7 @@ function renderCompare(run) {
   $('cSug').replaceChildren(...sg.map(g => {
     const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), go = mk('button', '바꾸기', 'go'), no = mk('button', '그대로 두기');
     go.onclick = () => applySuggest(g, run);
-    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), g.k])); renderCheck(); };
+    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), g.k])); renderCheck(); $('checkTitle').focus(); };
     row.append(go, no);
     d.append(mk('h3', '대본을 이렇게 바꿀까요?'), mk('p', g.runs >= 2 ? `연습 ${g.runs}번 연속 '${g.from}' 대신 '${g.to}'라고 말했어요.` : `이번 연습에서 '${g.from}' 대신 '${g.to}'라고 ${g.n}번 말했어요.`), row, mk('p', '바꾸면 새 버전으로 저장돼요', 'small'));
     return d;
@@ -1009,7 +1222,7 @@ function renderCompare(run) {
   $('cDiffSec').replaceChildren(...c.cmp.flatMap((x, i) => x.n ? [(() => {
     const b = mk('button', `${i + 1}번 구간 (${x.n})`);
     b.setAttribute('aria-pressed', i === pick);
-    b.onclick = () => { diffSec = i; renderCompare(run); };
+    b.onclick = () => { diffSec = i; renderCheck(); $('cDiffSec').querySelector('[aria-pressed=true]')?.focus(); };  // 전체를 다시 그린다(숫자 카드·고칠 점 카드가 겹치거나 빠지지 않게)
     return b;
   })()] : []));
   const out = [];
@@ -1047,8 +1260,8 @@ function renderCheck() {
   const [run, prev] = runPair(), goal = Math.round(target * 60);
   $('cEmpty').hidden = !!run;
   $('cRunBox').hidden = $('cRunRow').hidden = !run;
-  $('cDel').disabled = !runs.length;
-  if (!SR || !run) return;
+  $('cDel').disabled = !runs.length && !runRec;  // 기록이 아직 없어도(20초 미만) 녹음은 지울 수 있게
+  if (!SR || !run) { $('cTake').hidden = true; return; }
   runSel = run.t0;
   $('cRun').replaceChildren(...[...runs].reverse().map(r => new Option(runLabel(r), r.t0, false, r === run)));
   const sum = sumLines(run, prev, goal);
@@ -1062,23 +1275,28 @@ function renderCheck() {
     return box;
   }));
   renderCompare(run);
+  renderEdits(run);
+  renderTake();
   // 걸린 시간·평균 빠르기·대본 밖은 위 숫자 카드에 있으므로 글에서는 뺀다
   $('cSum').replaceChildren(...sum.slice(1).filter(t => !/^(평균 빠르기|대본 밖) /.test(t)).map(t => mk('p', t)));
+  if (run.re && run.rec) $('cSum').append(mk('p', '새로고침하기 전에 하던 녹음은 남지 않아요.'));
+  if (run.nodb) $('cSum').append(mk('p', '이번엔 소리 크기 비교를 하지 않았어요. 마이크 음량이 저절로 바뀌었을 수 있어요.'));
   const tone = toneLines(run);
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
+  renderKeys(run);
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
   const rule = tips(run, goal).map(x => {
     const li = mk('li', x.text);
     if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
     return li;
   });
-  const ai = run.ai;
-  $('cTipsH').textContent = ai ? 'AI 코칭' : '다음에 해 볼 것';
+  const ai = run.ai, at = ai?.tips.length ? ai.tips : null;  // 고칠 점만 온 답이면 규칙 팁을 그대로 보인다
+  $('cTipsH').textContent = at ? 'AI 코칭' : '다음에 해 볼 것';
   $('cAiSum').textContent = ai ? ai.summary : rule.length ? '' : '규칙으로 찾은 고칠 점이 없어요.';  // 번호 없는 한 줄
   $('cAiSum').hidden = !$('cAiSum').textContent;
-  $('cTips').replaceChildren(...(ai ? ai.tips.map(x => mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`)) : rule));
-  $('cRule').hidden = !ai || !rule.length;
-  $('cRuleList').replaceChildren(...(ai ? rule : []));
+  $('cTips').replaceChildren(...(at ? at.map(x => mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`)) : rule));
+  $('cRule').hidden = !at || !rule.length;
+  $('cRuleList').replaceChildren(...(at ? rule : []));
   // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(연보라 띠 기대 시간, 진한 보라 걸린 시간), 정도 낱말, 숫자 보기
   $('cNoGoal').hidden = !!goal;
   $('cSemi').hidden = !run.secs.some(s => s.st);  // 범례의 '반음은 피아노 건반 한 칸'은 높낮이를 잰 기록에만
@@ -1086,6 +1304,7 @@ function renderCheck() {
   $('cSecs').replaceChildren(...secRows(run, prev, goal).map((r, i) => {
     const box = mk('div', '', 'sec'), h = mk('p', '', 'sh'), bar = mk('div', '', 'cbar'), band = mk('i'), w = mk('b'), m = r.bar.max || 1;
     h.append(mk('span', r.head), mk('b', r.time));
+    if (run.rec && run.secs[i].wall) h.append(listenBtn(`${i + 1}번 구간 듣기`, () => playClip(run.t0, x => x[2] === i)));
     band.style.left = pc(r.bar.lo / m); band.style.width = pc((r.bar.hi - r.bar.lo) / m);
     w.style.width = pc(r.bar.wall / m);
     w.classList.toggle('over', r.bar.over);  // 시안: 기대 띠를 넘으면 주황
@@ -1106,10 +1325,92 @@ function renderCheck() {
 }
 $('cRun').onchange = () => { runSel = +$('cRun').value; coachMsg(''); renderCheck(); };
 $('checkClose').onclick = () => $('checkDlg').close();
+$('checkDlg').addEventListener('close', () => { const a = $('cAudio'); a.pause(); a.removeAttribute('src'); a.load(); a.dataset.t0 = ''; edAudio.pause(); edAudio.removeAttribute('src'); freeUrls(); });
+
+// 듣기 단추(선 아이콘 + '듣기'). label: 화면 읽기용 이름(어느 구간·문장인지)
+const PLAY = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l8 5-8 5z"/></svg>';
+function listenBtn(label, f) {
+  const b = mk('button', '', 'ic play');
+  b.type = 'button'; b.innerHTML = PLAY + '<span>듣기</span>'; b.setAttribute('aria-label', label);
+  b.onclick = e => { e.stopPropagation(); f(); };
+  return b;
+}
+// 발표 준비의 문단 q가 든 구간 번호들(0부터, 지금 대본의 SU)
+const secsOfPara = q => SU.flatMap((u, j) => u.s.some(x => x.p === q) ? [j] : []);
+// 그 연습 때의 평가 기준이 지금 발표 준비의 것과 같으면 그 발표 준비, 아니면 null(기준 번호가 다른 기준을 가리킬 수 있다)
+function rubPrep(run) {
+  const p = loadPrep();
+  return p?.rub?.length && run.rh && run.rh === hashText(p.rub.join('\n')) ? p : null;
+}
+// '꼭 말할 문장' 묶음(check.js keyRows): 요약 한 줄, 손볼 문장은 펼치고 나머지는 접는다. 평가 기준이 있으면 기준마다 한 줄
+function renderKeys(run) {
+  const kr = keyRows(run), box = $('cKeys');
+  box.replaceChildren(); box.hidden = !kr;
+  if (!kr) return;
+  const p = rubPrep(run);
+  box.append(mk('h3', '꼭 말할 문장'), mk('p', kr.sum));
+  const row = k => {
+    const d = mk('div', '', 'krow ' + k.v), h = mk('p', '', 'kh');
+    h.append(mk('span', k.label, 'kv'), mk('span', `${k.s + 1}번 구간` + (k.w ? ` · “${k.w}${k.w.length >= 20 ? '…' : ''}”` : ''), 'kt'));
+    if (p && k.r) h.append(mk('span', `기준 ${k.r}`, 'kb'));
+    if (run.rec && k.v !== 'unread') h.append(listenBtn(`꼭 말할 문장 듣기: ${k.w || k.s + 1 + '번 구간'}`, () => playClip(run.t0, m => m[1] === k.sid)));
+    d.append(h);
+    if (k.detail) d.append(mk('p', k.detail, 'small'));
+    if (k.todo) d.append(mk('p', k.todo, 'small'));
+    return d;
+  };
+  const fix = kr.rows.filter(k => ['weak', 'skip', 'na'].includes(k.v)), rest = kr.rows.filter(k => !fix.includes(k));
+  box.append(...fix.map(row));
+  if (rest.length) { const dt = mk('details'); dt.append(mk('summary', fix.length ? `나머지 ${rest.length}개 보기` : `모두 보기(${rest.length}개)`), ...rest.map(row)); box.append(dt); }
+  if (p) {
+    const text = $('text').value, same = run.h === hashText(text) && prepFits(p, text), rb = mk('div', '', 'rub');
+    rb.append(mk('h4', '평가 기준'));
+    p.rub.forEach((name, i) => {
+      const c = p.crit?.[i], K = kr.rows.filter(k => k.r === i + 1);
+      let note = c?.kind === '전달' ? '위 숫자와 구간별 결과로 봐요' : '연습으로는 재지 않아요';
+      if (c?.kind === '내용') {
+        const secs = same ? [...new Set(c.ps.flatMap(secsOfPara))].sort((a, b) => a - b) : [], wall = secs.reduce((x, j) => x + (run.secs[j]?.wall ?? 0), 0);
+        note = [!same ? '대본이 바뀌어 구간은 보지 않아요' : secs.length ? `${secs.map(j => j + 1).join(', ')}번 구간` : '연결된 문단이 없어요',
+          secs.length && run.wall && `시간 ${Math.round(wall / run.wall * 100)}%`, K.length ? `꼭 말할 문장 ${K.length}개 · 살림 ${K.filter(k => k.v === 'ok').length}개` : '꼭 말할 문장 없음'].filter(Boolean).join(' · ');
+      }
+      rb.append(mk('p', `${i + 1}. ${name} — ${note}`, 'small'));
+    });
+    box.append(rb);
+  }
+  box.append(mk('p', run.audio ? '단서는 앞 쉼, 천천히, 크게, 높게예요. 2개 이상이면 살려 말한 것으로 봐요. ' + (run.rec ? '어림이라 틀릴 수 있으니 들어 보고 확인하세요.' : '어림이라 틀릴 수 있어요.')
+    : devKind() === 'desktop' ? '목소리 분석 없이 재서 말했는지만 봐요.' : '이 브라우저에서는 강조 단서를 재지 않아 말했는지만 봐요.', 'small'));
+}
+// AI 코칭의 '대본 고칠 점'(2개까지)을 대본 제안 카드 모양으로. '그대로 두기'는 그 기록에서 다시 보이지 않는다
+function renderEdits(run) {
+  const ign = ignored();
+  for (const e of run.ai?.edits ?? []) {
+    const k = `ai:${run.t0}:${hashText(`${e.sec}|${e.what}|${e.how}`)}`;  // 차례가 아니라 내용으로(다시 받은 코칭의 다른 고칠 점을 숨기지 않게)
+    if (ign.includes(k)) continue;
+    const d = mk('div', '', 'sug'), row = mk('div', '', 'row'), go = mk('button', e.sec ? `${e.sec}번 구간 고치기` : '대본 고치기', 'go'), no = mk('button', '그대로 두기');
+    go.onclick = () => fixWith(e.sec && run.h === hashText($('text').value) ? SU[e.sec - 1] : null, e.how);
+    no.onclick = () => { store.set(sk('sugIgnore'), JSON.stringify([...ignored(), k])); renderCheck(); $('checkTitle').focus(); };
+    row.append(go, no);
+    d.append(mk('h3', '대본을 이렇게 고쳐 볼까요?'), mk('p', (e.sec ? `${e.sec}번 구간: ` : '') + e.what), mk('p', e.how, 'small'), row, mk('p', "'AI 도구 › 지시로 고치기'로 열려요. 적용하기 전에 바뀌는 곳을 보여 줘요", 'small'));
+    $('cSug').append(d);
+  }
+}
+// 고칠 지시(how)로 'AI 도구 › 지시로 고치기'를 연다. u(구간)나 문단 자리 { a, b }를 주면 그 글만 고른다. 키가 있으면 바로 시작(적용 전 비교·버전 저장은 그대로)
+function fixWith(u, how) {
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  if (qaMode) setQa(false);
+  if (!editing()) setMode(true);
+  const ta = $('text'), a = u?.s ? u.s[0].a : u?.a, b = u?.s ? u.s.at(-1).b : u?.b;
+  ta.setSelectionRange(a ?? 0, b ?? 0);
+  openAi('edit');
+  $('instr').value = how;
+  $('onlySel').checked = !!u && !$('onlySelBox').hidden;
+  if (keyStore.get()) $('aiGo').click();
+}
 $('cDel').onclick = () => {
-  if (!runs.length || !confirm('이 대본의 연습 기록을 모두 지울까요? 되돌릴 수 없어요.')) return;
+  if ((!runs.length && !runRec) || !confirm('이 대본의 연습 기록과 녹음을 모두 지울까요? 되돌릴 수 없어요.')) return;
   coachCtl?.abort();
   runs = []; store.del(sk('runs')); store.del(sk('says'));
+  const a = $('cAudio'); a.pause(); a.removeAttribute('src'); a.dataset.t0 = ''; edAudio.pause(); freeUrls(); segDel(lib.cur + ':');
   resetTalk(0);  // 이어 하던 발표의 잰 값(ls.talk)도 버린다. 남기면 다음 정지에 지운 기록이 다시 저장된다. 다음 시작이 새 발표다
   renderCheck();
   $('checkMsg').textContent = '기록을 지웠어요.';
@@ -1134,6 +1435,13 @@ function shrinkFromCheck() {
 }
 
 // AI 코칭: 잰 숫자와 읽은 구간의 대본·들은 말을 보낸다(claude.js coachPrompt). 키가 없으면 프롬프트 복사 → 결과 붙여넣기. 결과는 그 기록의 ai에 둔다.
+// 평가 기준은 그 연습 때의 것이 지금 발표 준비와 같을 때만 보낸다. 다루는 구간은 대본이 그 연습 때와 같을 때만
+function critFor(run) {
+  const p = rubPrep(run);
+  if (!p) return null;
+  const text = $('text').value, same = run.h === hashText(text) && prepFits(p, text);  // 문단 번호가 지금 구간과 맞을 때만
+  return p.rub.map((name, i) => { const c = p.crit?.[i]; return { name, kind: c?.kind ?? '기타', secs: c?.kind !== '내용' ? [] : same ? [...new Set(c.ps.flatMap(secsOfPara))].sort((a, b) => a - b).map(j => j + 1) : null }; });
+}
 function setCoachAi(t, ai) {
   const r = runs.find(x => x.t0 === t);
   if (!r) { coachMsg('그사이 기록이 지워졌어요.'); return false; }
@@ -1154,7 +1462,7 @@ async function askCoach() {
   $('coachMsg').setAttribute('aria-busy', 'true');  // 받는 동안 바뀌는 글자 수를 화면 읽기가 하나하나 읽지 않게
   try {
     const ai = await coachRun(run, prev, ruleTips(run, goal), {
-      key: keyStore.get(), signal: ctl.signal, goal, says: compareOf(run)?.says,
+      key: keyStore.get(), signal: ctl.signal, goal, says: compareOf(run)?.says, crit: critFor(run),
       onProgress: x => coachMsg(x.chars ? `AI가 쓰는 중… ${x.chars}자` : 'AI가 생각하는 중…'),
     });
     setCoachAi(run.t0, ai);
@@ -1172,7 +1480,7 @@ $('coachPrompt').onclick = () => {
   if (!run) return;
   const goal = Math.round(target * 60);
   coachJob = run.t0;
-  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal, compareOf(run)?.says).text, coachMsg, '답');
+  copyPrompt($('coachOut'), coachPrompt(run, prev, ruleTips(run, goal), goal, compareOf(run)?.says, critFor(run)).text, coachMsg, '답');
   $('coachPasteBox').hidden = false;
 };
 $('coachPaste').onclick = () => { $('coachPasteBox').hidden = false; $('coachPasteIn').focus(); };
@@ -1181,7 +1489,7 @@ $('coachPasteApply').onclick = () => {
   if (!t.trim()) return coachMsg('챗봇이 돌려준 답을 붙여넣어 주세요.');
   if (!run) return coachMsg('그사이 기록이 지워졌어요.');
   try {
-    if (!setCoachAi(run.t0, parseCoach(t, run.secs.length))) return;
+    if (!setCoachAi(run.t0, parseCoach(t, run.secs.length, run.secs.map(s => s.wall)))) return;
     $('coachPasteIn').value = '';
     $('coachPasteBox').hidden = $('coachOut').hidden = true;
     $('cTipsH').focus();  // 붙여넣기 칸이 숨었다. 새 'AI 코칭' 목록으로
@@ -1197,7 +1505,8 @@ $('coachPasteApply').onclick = () => {
 // 8: 탭으로 옮긴 것을 되돌리기 { by: 'undo' }
 // 9: 발표 점검. 마이크로 발표를 시작하거나 이어 할 때 { run: 모드 }, 5초마다 { m: [말 빠르기 × 10, 높낮이 창 폭 × 10, 최근 연속 발화 최장 초] },
 //    힌트 { cue: 'fast' | 'slow' | 'read', on }, 목소리 분석 { audio: 'on', set: getSettings() } / { audio: 'off', why }. 파일에 mode(지금 점검 모드))
-const VERSION = 9;
+// 10: 연습 녹음 { rec: 'on' | 'off' | 'fail' }, 힌트 '크게' { cue: 'quiet', on }
+const VERSION = 10;
 const LOG_MAX = 20000;
 let log = [], logId = '';  // logId: 지금 log가 속한 대본 (loadScript가 정한다)
 function note(x) {
@@ -2154,7 +2463,7 @@ const unstay = () => { if (!$('toastX').hidden) $('toast').hidden = true; };  //
 function loadScript() {
   keepLog();  // 앞 대본의 기록을 남긴다 (돌아오면 아래에서 잇는다)
   stopAudio('load');
-  stopHear(); cardAt = -1; cardNew = false; diffSec = -1; upSlides = null; showUp(); $('promptOut').hidden = $('pasteBox').hidden = true;  // 앞 대본의 화면 값(열린 카드, 읽어 주던 소리, 올린 자료 칩, 복사한 프롬프트)은 비운다
+  stopHear(); edAudio.pause(); cardAt = -1; cardNew = false; diffSec = -1; upSlides = null; showUp(); $('promptOut').hidden = $('pasteBox').hidden = true;  // 앞 대본의 화면 값(열린 카드, 읽어 주던 소리, 올린 자료 칩, 복사한 프롬프트)은 비운다
   genCtl?.abort(); aiCtl?.abort(); altCtl?.abort(); adCtl?.abort(); coachCtl?.abort();  // 하던 AI 일은 앞 대본의 것이므로 멈춘다 (결과가 다른 대본에 들어가지 않게)
   $('text').value = (store.get(sk('script')) || '').normalize('NFC');
   target = +store.get(sk('target')) || 0;
@@ -2163,7 +2472,7 @@ function loadScript() {
   t0 = onSec = matched = seen = end = 0; endQa = false; r0 = rate(); log = []; heard = ''; cut = sessionNorm.length; pending = null; said = 0;
   // 발표 점검: 구간 수가 같을 때만 구간 누적을 되살린다. 높낮이·쉼(F)은 메모리에만 있어서 새로고침 전 것은 빠진다(re).
   SU = units($('text').value, [], spoken); secOf = []; keyOf = []; newRun();
-  runs = readRuns(store.get(sk('runs'))); runSel = 0; coachJob = 0;
+  runs = readRuns(store.get(sk('runs'))); runSel = 0; coachJob = 0; freeUrls();
   try {
     const v = JSON.parse(store.get(sk('talk'))); t0 = +v.t0 || 0; onSec = +v.onSec || 0; matched = +v.matched || 0; seen = +v.seen || t0; end = +v.end || 0; endQa = v.endQa === true; r0 = +v.r0 || rate();
     acc = readAcc(v.acc, SU.length) || acc;
@@ -2175,9 +2484,11 @@ function loadScript() {
     if (Array.isArray(v.cues)) cues = v.cues;
     runAud = v.aud && typeof v.aud === 'object' ? v.aud : null;
     re = v.re === true || !!runAud;
+    runRec = v.rc === true; runAgc = v.ag === true;  // 새로고침 전에 녹음한 조각은 남아 있다
   } catch {}
   // 새로고침했거나 다른 대본에 갔다 왔으면 이 탭에 남겨 둔 기록을 잇는다 (새 발표면 t0가 달라 되살리지 않는다)
   logId = lib.cur;
+  gcTakes();  // 기록에 없는 발표의 녹음과 지운 대본의 녹음(다른 탭에서 지웠을 수 있다)
   try { const s = JSON.parse(sessionStorage.getItem('ls.log.' + logId)); if (s?.t0 === t0 && Array.isArray(s.log)) log = s.log; } catch {}
   try { pinfo = JSON.parse(store.get(sk('qaInfo'))) || {}; } catch { pinfo = {}; }
   try { setPack(cleanPack(JSON.parse(store.get(sk('pack'))))); } catch { setPack(null); }  // 질문 팩도 대본마다 (첫 대본은 예전 ls.pack)
@@ -2307,7 +2618,8 @@ $('mRename').onclick = () => {
 };
 $('mDel').onclick = () => {
   const e = entry();
-  if (!confirm(`'${e.name}' 대본과 버전, 질문, 연습 기록을 모두 지울까요? 되돌릴 수 없어요.`)) return;
+  if (!confirm(`'${e.name}' 대본과 버전, 질문, 연습 기록, 녹음을 모두 지울까요? 되돌릴 수 없어요.`)) return;
+  segDel(e.id + ':');
   for (const k of ['script', 'cur', 'target', 'talk', 'qaInfo', 'pack', 'vers', 'prep', 'shrink', 'adlib', 'runs', 'says', 'sugIgnore', 'must', 'hardIgnore']) store.del(sk(k));
   try { sessionStorage.removeItem('ls.draft.' + e.id); } catch {}  // 저장하지 않은 질문 수정도 같이 지운다
   lib.list = lib.list.filter(x => x !== e);
@@ -2333,7 +2645,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 키 없이도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=16').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('mSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=17').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => $('text').focus();
 // 빈 편집 화면의 첫 안내 카드는 대본에 글이 생기면 숨긴다
@@ -2364,6 +2676,7 @@ function renderCards() {
   $('cards').hidden = !on;
   if (!on) { cardAt = -1; cardNew = false; return; }
   const ps = paraSpans(text), ss = sentSpans(text), ms = new Set(must()), hard = new Map(hardList().map(h => [h.k, h]));
+  const pp = loadPrep(), fit = prepFits(pp, text) ? pp : null, why = new Map((pp?.keys ?? []).map(k => [k.t, k]));  // 역할 칩, 꼭 말할 문장의 까닭
   if (cardAt >= ps.length) cardAt = cardNew ? ps.length : -1;
   $('cNav').replaceChildren();
   $('cList').replaceChildren(...[...ps.map(([a, b], i) => ({ a, b, i })), ...(cardNew ? [{ a: text.trimEnd().length + 2, b: text.trimEnd().length + 2, i: ps.length }] : [])].map(({ a, b, i }) => {
@@ -2371,7 +2684,10 @@ function renderCards() {
     card.id = 'p' + (i + 1); card.dataset.i = i;
     card.setAttribute('aria-label', `${i + 1}번 문단`);
     const ph = mk('div', '', 'ph');
-    ph.append(mk('span', `${i + 1} · ${titleOf(t) || '새 문단'}`, 'pn'), mk('span', `예상 ${est(t)}`, 'pe'));
+    ph.append(mk('span', `${i + 1} · ${titleOf(t) || '새 문단'}`, 'pn'));
+    const role = fit?.paras[i]?.role;
+    if (role) { const c = mk('span', role, 'prole'); c.title = [fit.paras[i].tone, fit.paras[i].e && `힘: ${PE[fit.paras[i].e]}`].filter(Boolean).join(' · '); ph.append(c); }
+    ph.append(mk('span', `예상 ${est(t)}`, 'pe'));
     card.append(ph);
     if (on) {
       const ta = mk('textarea', '', 'pta');
@@ -2381,10 +2697,11 @@ function renderCards() {
       ta.addEventListener('compositionend', () => cardInput(ta));
       for (const ev of ['select', 'keyup', 'mouseup', 'focus']) ta.addEventListener(ev, () => cardSel(ta));
       ta.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); const k = cardAt; cardAt = -1; cardNew = false; renderCards(); $('p' + (k + 1))?.focus(); } });
-      card.append(ta, cardTool(ta));
+      const fb = cardFeedback(text, a), pl = fit?.paras[i], pt = pl && [pl.tone, pl.e && `힘: ${PE[pl.e]}`].filter(Boolean).join(' · ');
+      card.append(...(pt ? [mk('p', '말할 때: ' + pt, 'small pplan')] : []), ta, ...(fb ? [fb] : []), cardTool(ta));  // 발표 준비가 정한 톤과 힘
     } else {
       const p = mk('p', '', 'pt');
-      p.replaceChildren(...paraNodes(text, a, b, ss[i] || [], ms, hard));  // 꼭 말할 문장은 표시, 막힌 낱말은 점선 밑줄
+      p.replaceChildren(...paraNodes(text, a, b, ss[i] || [], ms, hard, why, fit?.rub));  // 꼭 말할 문장은 표시, 막힌 낱말은 점선 밑줄
       card.append(p);
       card.tabIndex = 0;
       card.addEventListener('click', e => { if (!e.target.closest('.hard, .hardpop')) cardOpen(i, e); });
@@ -2403,8 +2720,8 @@ function renderCards() {
   if (ta) { autosize(ta); if (renderCards.focus) { ta.focus(); ta.setSelectionRange(...renderCards.focus); } }
   renderCards.focus = null;
 }
-// 문단 글을 노드로: 문장 사이 글은 그대로, 꼭 말할 문장은 <mark>, 막힌 낱말은 점선 밑줄 단추
-function paraNodes(text, a, b, sents, ms, hard) {
+// 문단 글을 노드로: 문장 사이 글은 그대로, 꼭 말할 문장은 <mark>(발표 준비가 고른 문장이면 title에 까닭·평가 기준), 막힌 낱말은 점선 밑줄 단추
+function paraNodes(text, a, b, sents, ms, hard, why = new Map(), rub = null) {
   const out = [];
   let o = a;
   const words = (from, to, host) => {
@@ -2420,12 +2737,28 @@ function paraNodes(text, a, b, sents, ms, hard) {
   };
   for (const [sa, sb] of sents) {
     words(o, sa, out);
-    if (ms.has(text.slice(sa, sb))) { const mk2 = mk('mark', '', 'must'), inner = []; words(sa, sb, inner); mk2.append(...inner); out.push(mk2); }
+    if (ms.has(text.slice(sa, sb))) {
+      const mk2 = mk('mark', '', 'must'), inner = [], k = why.get(text.slice(sa, sb));
+      if (k) mk2.title = [k.why, k.r && rub?.[k.r - 1] && `평가 기준: ${rub[k.r - 1]}`].filter(Boolean).join(' · ');
+      words(sa, sb, inner); mk2.append(...inner); out.push(mk2);
+    }
     else words(sa, sb, out);
     o = sb;
   }
   words(o, b, out);
   return out;
+}
+// 열린 카드의 '지난 연습' 줄: 가장 최근 기록에서 이 문단으로 시작하는 구간(첫 20자가 같은)의 판정 2~3개와 듣기. 고쳐도 첫 글이 같으면 남는다
+function cardFeedback(text, a) {
+  const run = runs.at(-1), w = text.slice(a, a + 40).replace(/\s+/g, ' ').slice(0, 20);
+  const i = run ? run.secs.findIndex(s => s.w && s.w === w && s.wall > 0) : -1;
+  if (i < 0) return null;
+  const s = run.secs[i], r = secRows(run, null, Math.round(target * 60))[i], ks = keyStates(run).filter(k => k.s === i && ['weak', 'skip'].includes(k.v));
+  const items = [...r.words.split(' · ').filter(x => /빠르기 빠름|빠르기 느림|힘|끝 흐림|작아짐/.test(x)), ...ks.map(k => `꼭 말할 문장 ${k.v === 'skip' ? '빼먹은 것 같음' : '더 살려 보세요'}`)].slice(0, 3);
+  const d = mk('div', '', 'pfb');
+  d.append(mk('span', '지난 연습', 'k'), mk('span', items.length ? items.join(' · ') : `걸린 시간 ${mmss(s.wall)} · 고칠 점 없음`));
+  if (run.rec) d.append(listenBtn('이 문단 연습 녹음 듣기', () => edAudio.paused ? playClip(run.t0, m => m[2] === i, edAudio) : edAudio.pause()));  // 듣는 중에 누르면 멈춘다
+  return d;
 }
 // 카드를 글칸으로. e가 있으면 누른 자리에 커서를 둔다
 function cardOpen(i, e) {
@@ -2819,20 +3152,24 @@ function jobFor(tab, paste = false) {
   const kw = flat.map(() => new Set());
   for (const a of anchors(s, words).list) kw[a.sent].add(a.k);
   let k = 0;
-  const input = ps.map(p => p.map(t => ({ t, kw: [...kw[k++]] })));
+  const ms = new Set(must()), rub = rubOf(gInfo('rubric').value);  // 평가 기준은 글칸에 지금 적힌 것(저장은 change에서)
+  const input = ps.map(p => p.map(t => ({ t, kw: [...kw[k++]], m: ms.has(t) })));
   return {
-    tab, schema: PREP_SCHEMA, prompt: prepPrompt(input),
+    tab, schema: PREP_SCHEMA, prompt: prepPrompt(input, rub),
     done: t => {
-      const p = parsePrep(t, ps);
+      const p = parsePrep(t, ps, rub);
+      p.keys = p.keys.map(x => ({ ...x, t: ps[x.p][x.s] }));  // 핵심 문장은 글 그대로도 둔다(꼭 말할 문장과 맞추고, 대본을 조금 고쳐도 남게)
       if (!save(sk('prep'), JSON.stringify({ h: hashText(text), t: Date.now(), ...p, n: ps.map(x => x.length) }))) throw new Error(FULL);
       updPrepState();
-      aiMsg(`발표 준비를 저장했어요. 문단 ${p.paras.length}개, 다른 말이 있는 키워드 ${Object.keys(p.kw).length}개`);
+      if (editing() && !$('cList').contains(document.activeElement)) renderCards();  // 문단 카드의 역할 칩(글 치는 중이면 카드를 닫을 때 그린다)
+      aiMsg(`발표 준비를 저장했어요. 문단 ${p.paras.length}개, 다른 말이 있는 키워드 ${Object.keys(p.kw).length}개` + (p.keys.length ? `, 핵심 문장 ${p.keys.length}개` : '') + (rub.length ? `, 평가 기준 ${rub.length}개` : ''));
     },
   };
 }
 
-// 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop }] (문장 번호 0부터, lib.js paras() 기준), kw, n: 문단마다 문장 수 }
-// paras는 늦어지면 줄이기(shrink.js)가 쓴다. 문장 번호만 쓰므로 대본이 같거나(h) 문단과 문장 수가 같을 때(n)만 쓴다.
+// 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop, role, tone, e }] (문장 번호 0부터, lib.js paras() 기준), kw, n: 문단마다 문장 수,
+//   keys: 핵심 문장 [{ p, s, t: 문장 글, why, r }], rub: 그때 보낸 평가 기준, crit: 기준마다 { kind, ps, at, how } }
+// paras는 늦어지면 줄이기(shrink.js)가 쓴다. 문장 번호만 쓰므로 대본이 같거나(h) 문단과 문장 수가 같을 때(n)만 쓴다. keys는 글로 맞춘다.
 function loadPrep() {
   try {
     const p = JSON.parse(store.get(sk('prep')));
@@ -2840,8 +3177,16 @@ function loadPrep() {
     // anchors()가 받는 모양만 남긴다 (저장된 값이 깨져도 발표 화면이 멈추지 않게)
     p.kw = Object.fromEntries(Object.entries(p.kw && typeof p.kw === 'object' ? p.kw : {}).filter(([, v]) => Array.isArray(v) && v.every(x => typeof x === 'string')));
     const ints = v => Array.isArray(v) ? v.filter(Number.isInteger) : [];  // shrink.js units()가 받는 모양
-    p.paras = p.paras.map(x => ({ imp: [1, 2, 3].includes(x?.imp) ? x.imp : 2, keep: ints(x?.keep), drop: ints(x?.drop) }));
+    const str = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
+    p.paras = p.paras.map(x => ({ imp: [1, 2, 3].includes(x?.imp) ? x.imp : 2, keep: ints(x?.keep), drop: ints(x?.drop), role: str(x?.role, 8), tone: str(x?.tone, 20), e: [1, 2, 3].includes(x?.e) ? x.e : null }));
     p.n = Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null;
+    p.keys = (Array.isArray(p.keys) ? p.keys : []).filter(k => Number.isInteger(k?.p) && Number.isInteger(k?.s) && typeof k.t === 'string' && k.t)
+      .map(k => ({ p: k.p, s: k.s, t: k.t, why: str(k.why, 40), r: Number.isInteger(k.r) && k.r > 0 ? k.r : 0 })).slice(0, 10);
+    p.rub = (Array.isArray(p.rub) ? p.rub : []).filter(x => typeof x === 'string' && x).map(x => x.slice(0, 60)).slice(0, 10);
+    p.crit = p.rub.map((_, i) => {
+      const c = Array.isArray(p.crit) ? p.crit[i] : null, kind = ['내용', '전달', '기타'].includes(c?.kind) ? c.kind : '기타', on = kind === '내용';
+      return { kind, ps: on ? ints(c.ps) : [], at: on && Number.isInteger(c.at) ? c.at : -1, how: on ? str(c.how, 120) : '' };
+    });
     return p;
   } catch { return null; }
 }
@@ -2853,12 +3198,42 @@ function updPrepState() {
     : p.h === hashText(text) ? `${when(p.t)}에 지금 대본으로 했어요.`
     : fits ? `${when(p.t)}에 했고, 그 뒤 고친 곳이 있지만 문단과 문장 수가 같아서 그대로 써요.`
     : `${when(p.t)}에 했는데 그 뒤로 대본이 바뀌었어요. 줄이기 정보를 쓰려면 다시 해 주세요. (키워드의 다른 말은 그대로 써요)`;
+  renderPrepFlow(p, fits, text);
   // 늦어지면 뺄 수 있는 문장을 모두 그어 보인다 (단위마다 가장 높은 단계)
   $('prepCap').hidden = $('prepDiff').hidden = !fits;
   if (!fits) return;
   const u = units(text, p.paras, spoken, must());
   showDiff($('prepDiff'), '', '', strikes(text, u, u.map(x => x.max)));
 }
+
+// 발표 준비 결과의 흐름 한 줄, AI가 고른 핵심 문장(꼭 말할 문장으로 표시할지 묻는다), 대본에 없는 평가 기준(고치기)
+function renderPrepFlow(p, fits, text) {
+  const box = $('prepFlow'), rubNow = rubOf(gInfo('rubric').value);
+  box.replaceChildren();
+  if (p && rubNow.join('\n') !== (p.rub ?? []).join('\n')) box.append(mk('p', '평가 기준이 바뀌었어요. 발표 준비를 다시 하면 반영돼요.', 'small'));
+  if (!fits) return;
+  if (p.paras.some(x => x.role)) box.append(mk('p', '흐름: ' + p.paras.map((x, i) => `${i + 1} ${x.role || '-'}${x.e ? ` (${PE[x.e]})` : ''}`).join(' → '), 'small'));
+  const ms = new Set(must()), sug = p.keys.filter(k => !ms.has(k.t) && sentSpans(text).flat().some(([a, b]) => text.slice(a, b) === k.t));
+  if (sug.length) {
+    const d = mk('div', '', 'sug'), go = mk('button', '모두 표시하기', 'go'), ul = mk('ul');
+    ul.append(...sug.map(k => mk('li', k.t.slice(0, 40) + (k.t.length > 40 ? '…' : '') + (k.why ? ` — ${k.why}` : ''))));
+    go.onclick = () => {
+      saveMust([...must(), ...sug.map(k => k.t)]);
+      if (editing()) { shrinkUnits(); renderCards(); }
+      updPrepState(); aiMsg(`꼭 말할 문장 ${sug.length}개를 표시했어요.`); $('aiGo').focus();  // 누른 단추는 다시 그려져 없어졌다
+    };
+    d.append(mk('h3', `AI가 고른 핵심 문장 ${sug.length}개예요. 꼭 말할 문장으로 표시할까요?`), ul, go, mk('p', '꼭 말할 문장은 대본을 줄일 때도 남고, 연습 때 강조했는지 봐요.', 'small'));
+    box.append(d);
+  }
+  p.crit.forEach((c, i) => {
+    if (c.kind !== '내용' || c.ps.length) return;
+    const d = mk('div', '', 'sug'), go = mk('button', '대본 고치기', 'go');
+    go.onclick = () => { const sp = paraSpans($('text').value)[c.at]; fixWith(sp && { a: sp[0], b: sp[1] }, c.how || `평가 기준 '${p.rub[i]}'을(를) 다루는 내용을 알맞은 곳에 더해 주세요. 대본에 없는 숫자나 사실은 지어내지 마세요.`); };
+    d.append(mk('h3', `평가 기준 '${p.rub[i]}' — 다루는 문단이 없어요`), ...(c.how ? [mk('p', c.how, 'small')] : []), go);
+    box.append(d);
+  });
+}
+gInfo('rubric').addEventListener('input', () => { if (aiTab === 'prep') updPrepState(); });
 
 $('aiGo').onclick = async () => {
   if (aiCtl) return aiCtl.abort();

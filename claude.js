@@ -1,7 +1,7 @@
 // Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack } from './qa.js?v=16';
-import { cleanAi } from './adlib.js?v=16';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished } from './check.js?v=16';
+import { cleanPack } from './qa.js?v=17';
+import { cleanAi } from './adlib.js?v=17';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=17';
 
 const API = 'https://api.anthropic.com/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
@@ -159,7 +159,7 @@ ${instr}
   return { system, user, text: system + '\n\n' + user };
 }
 
-// ---- 발표 준비: 문단마다 줄일 때 쓸 정보(새 문장은 쓰지 않고 원문 문장 번호만), 키워드마다 다른 말 ----
+// ---- 발표 준비: 문단마다 줄일 때 쓸 정보(새 문장은 쓰지 않고 원문 문장 번호만), 흐름(하는 일·톤·힘), 핵심 문장, 평가 기준, 키워드마다 다른 말 ----
 export const PREP_SCHEMA = {
   type: 'object',
   properties: {
@@ -172,8 +172,35 @@ export const PREP_SCHEMA = {
           imp: { type: 'integer', enum: [1, 2, 3] },
           keep: { type: 'array', items: { type: 'integer' } },
           drop: { type: 'array', items: { type: 'integer' } },
+          role: { type: 'string' },
+          tone: { type: 'string' },
+          e: { type: 'integer', enum: [1, 2, 3] },
         },
-        required: ['p', 'imp', 'keep', 'drop'],
+        required: ['p', 'imp', 'keep', 'drop', 'role', 'tone', 'e'],
+        additionalProperties: false,
+      },
+    },
+    keys: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { p: { type: 'integer' }, s: { type: 'integer' }, why: { type: 'string' }, r: { type: 'integer' } },
+        required: ['p', 's', 'why', 'r'],
+        additionalProperties: false,
+      },
+    },
+    crit: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          r: { type: 'integer' },
+          kind: { type: 'string', enum: ['내용', '전달', '기타'] },
+          ps: { type: 'array', items: { type: 'integer' } },
+          at: { type: 'integer' },
+          how: { type: 'string' },
+        },
+        required: ['r', 'kind', 'ps', 'at', 'how'],
         additionalProperties: false,
       },
     },
@@ -187,15 +214,19 @@ export const PREP_SCHEMA = {
       },
     },
   },
-  required: ['paras', 'kw'],
+  required: ['paras', 'keys', 'crit', 'kw'],
   additionalProperties: false,
 };
+export const KINDS = ['내용', '전달', '기타'];
+// 평가 기준 글칸 → 기준 목록(한 줄에 하나, 앞 번호·기호는 뗀다, 10개, 60자). 프롬프트와 저장값이 같은 목록을 쓴다
+export const rubOf = t => String(t ?? '').normalize('NFC').split('\n').map(x => x.replace(/^\s*(?:\d+[.)]|[-*•·])\s*/, '').replace(/\s+/g, ' ').trim().slice(0, 60)).filter(Boolean).slice(0, 10);
 
-// ps: 문단마다 [{ t: 문장, kw: [키워드] }] (키워드는 match.js anchors()가 뽑은 것)
-export function prepPrompt(ps) {
-  const system = `너는 발표 대본을 살펴 두 가지를 정한다. 발표 중에는 AI를 부르지 않고 앱이 이 결과로만 계산한다.
+// ps: 문단마다 [{ t: 문장, kw: [키워드], m: 꼭 말할 문장인가 }] (키워드는 match.js anchors()가 뽑은 것), rub: 평가 기준 목록(rubOf)
+export function prepPrompt(ps, rub = []) {
+  const system = `너는 발표 대본을 살펴 세 가지를 정한다. 발표 중에는 AI를 부르지 않고 앱이 이 결과로만 계산한다.
 1. 발표가 늦어지면 앱이 덜 중요한 문단부터 문장을 숨겨 시간을 맞춘다. 새 문장은 쓰지 않고 원문 문장 번호만 고른다.
 2. 발표자가 키워드를 다르게 말해도 앱이 읽는 위치를 따라가도록, 키워드마다 발표자가 대신 말할 법한 말을 모은다.
+3. 앱이 연습 녹음의 목소리 크기·높이로 계획대로 말했는지 견주도록, 문단마다 하는 일과 말할 힘, 발표 전체의 핵심 문장, 평가 기준마다 다루는 문단을 정한다.
 
 규칙
 - paras: 문단마다 하나씩 문단 번호 순서대로 쓴다. p는 문단 번호다.
@@ -203,25 +234,41 @@ export function prepPrompt(ps) {
   - keep: 시간이 없어도 꼭 남길 문장 번호 1~2개. 문장 번호는 문단 안에서 1부터 센다.
   - drop: 늦어지면 빼도 되는 문장 번호. keep에 넣은 번호는 넣지 않는다. 없으면 빈 배열.
   - 다음 문장이 '그래서', '이처럼', '앞서 말씀드린'처럼 앞 문장을 가리키면 그 앞 문장은 drop에 넣지 않는다.
+  - role: 그 문단이 발표에서 하는 일. 도입, 문제, 근거, 사례, 해결, 정리, 마무리처럼 6자 안쪽 낱말 하나.
+  - tone: 그 문단을 어떻게 말할지 15자 안쪽(예: 밝게 인사하듯, 진지하게 천천히). 대본 낱말을 옮기지 않는다.
+  - e: 1 차분하게, 2 보통, 3 힘 있게. 발표 안에서 견줘 정하고, 3은 문단 수의 30%를 넘지 않는다.
+- keys: 청중이 꼭 기억해야 할 문장. 문단 4개에 1개꼴, 많아야 10개, 한 문단에 1개까지. p는 문단 번호, s는 문장 번호이고, 그 문단 keep에 넣은 문장에서 고른다.
+  - 15자보다 짧은 문장, 인사, 질문 받기 문장은 고르지 않는다(짧으면 강조를 잴 수 없다).
+  - why는 왜 핵심인지 30자 안쪽으로, 대본 내용으로만 쓴다. r은 이 문장이 다루는 평가 기준 번호이고, 없으면 0이다.
+  - ★가 붙은 문장은 발표자가 이미 고른 꼭 말할 문장이다. 평가 기준을 붙일 때만 keys에 넣는다.
+- crit: <평가기준>의 기준마다 하나씩 번호(r) 순서대로 쓴다. <평가기준>이 (없음)이면 빈 배열이다.
+  - kind: 대본 내용으로 채우는 기준(예: 근거 제시, 구성, 결론)은 내용, 말하는 방법(목소리, 속도, 시선, 시간)은 전달, 그 밖(자료 디자인, 질의응답)은 기타.
+  - ps: 이 기준을 다루는 문단 번호. kind가 내용이 아니면 빈 배열.
+  - how와 at: kind가 내용이고 다루는 문단(ps)이 없으면, how에 대본을 고칠 지시 한 문장(예: 결론 문단 앞에 설문 결과가 뜻하는 바를 한 문장 더해 주세요), at에 고칠 문단 번호를 쓴다. 대본에 없는 숫자나 사실을 넣으라고 하지 않는다. 고칠 것이 없으면 how는 빈 문자열, at은 0.
 - kw: 다른 말이 있는 키워드만 하나씩 쓴다. k는 키워드를 적힌 그대로, v는 다른 말 1~4개.
   - 키워드는 앱이 공백과 문장부호를 빼고 숫자와 대문자 약어를 소리 나는 대로 바꿔 적은 것이다(30명 → 삼십명, AI → 에이아이).
   - v에는 발표자가 그 낱말 대신 말할 법한 말(휴대폰 → 핸드폰, 스마트폰)과 숫자·영어를 다르게 읽는 말(iphone → 아이폰, 에이아이 → 인공지능)을 쓴다.
   - 조사는 붙이지 않는다. 뜻이 넓어 다른 문장에도 나올 법한 말은 쓰지 않는다. 마땅한 다른 말이 없는 키워드는 kw에 쓰지 않는다.
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
-{"paras":[{"p":1,"imp":2,"keep":[1],"drop":[3]}],"kw":[{"k":"휴대폰","v":["핸드폰"]}]}`;
-  const body = ps.map((p, i) => `[문단 ${i + 1}]\n` + p.map((s, j) => `${j + 1}. ${s.t}` + (s.kw.length ? `\n   키워드: ${s.kw.join(', ')}` : '')).join('\n')).join('\n\n');
-  const user = `<대본>\n${body}\n</대본>\n\n위 대본의 문단 ${ps.length}개를 모두 정해 주세요.`;
+{"paras":[{"p":1,"imp":2,"keep":[1],"drop":[3],"role":"도입","tone":"밝게 인사하듯","e":2}],"keys":[{"p":2,"s":1,"why":"발표의 결론","r":1}],"crit":[{"r":1,"kind":"내용","ps":[2],"at":0,"how":""}],"kw":[{"k":"휴대폰","v":["핸드폰"]}]}`;
+  const body = ps.map((p, i) => `[문단 ${i + 1}]\n` + p.map((s, j) => `${j + 1}. ${s.m ? '★' : ''}${s.t}` + (s.kw.length ? `\n   키워드: ${s.kw.join(', ')}` : '')).join('\n')).join('\n\n');
+  const user = `<평가기준>\n${rub.length ? rub.map((x, i) => `${i + 1}. ${x}`).join('\n') : '(없음)'}\n</평가기준>\n<대본>\n${body}\n</대본>\n\n위 대본의 문단 ${ps.length}개를 모두 정해 주세요.`;
   return { system, user, text: system + '\n\n' + user };
 }
 
 // 뒤 문장이 이런 말로 시작하면 앞 문장을 가리키므로, 앞 문장은 빼지 않는다 (AI가 규칙을 어겨도 앱이 한 번 더 막는다)
 const BACKREF = /^["'“‘(]?(그래서|그러므로|따라서|그러니까|그 결과|이처럼|이렇게|이와 같이|이러한|이런|이 때문에|이는|이것은|그것은|즉|앞서|앞에서)(?![가-힣])/;
 
-// 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()). 반환 { paras: [{ imp, keep, drop }] (문장 번호는 0부터), kw: { 키워드: [다른 말] } }
-export function cleanPrep(obj, ps) {
+// 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()), rub: 보낸 평가 기준 목록.
+// 반환 { paras: [{ imp, keep, drop, role, tone, e }] (문장 번호는 0부터, e는 1~3 | null), kw: { 키워드: [다른 말] }, keys: [{ p, s, why, r }] (0부터, r 0 없음),
+//   crit: 평가 기준마다 [{ kind, ps: 다루는 문단(0부터), at: 고칠 문단(0부터, -1 없음), how }], rub }
+// 흐름·핵심 문장·평가 기준이 없는 답(옛 답, 챗봇에 붙여넣은 답)도 받는다. 핵심 문장은 keep에 넣고 drop에서 뺀다(줄여도 남게)
+export function cleanPrep(obj, ps, rub = []) {
   if (!obj || !Array.isArray(obj.paras)) throw new Error(NOT_FOUND('문단별 결과를'));
-  const flat = ps.flat();
+  const flat = ps.flat(), P = ps.length, R = rub.length;
+  const line = (x, n) => typeof x === 'string' ? x.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, n).trim() : '';
+  const no = (x, max) => Number.isInteger(x) && x >= 1 && x <= max ? x - 1 : -1;
   let o = 0;
   const paras = ps.map((sents, i) => {
     const it = obj.paras.find(x => x?.p === i + 1) ?? obj.paras[i] ?? {}, n = sents.length;
@@ -231,7 +278,21 @@ export function cleanPrep(obj, ps) {
     if (!keep.length) keep.push([...Array(n).keys()].find(k => !drop.includes(k)) ?? 0);
     drop = drop.filter(k => !keep.includes(k));
     o += n;
-    return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop };
+    return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop, role: line(it.role, 8), tone: line(it.tone, 20), e: [1, 2, 3].includes(it.e) ? it.e : null };
+  });
+  const keys = [];
+  for (const k of Array.isArray(obj.keys) ? obj.keys : []) {
+    const p = no(k?.p, P), s = p < 0 ? -1 : no(k?.s, ps[p].length);
+    if (s < 0 || keys.some(x => x.p === p) || keys.length >= 10) continue;  // 한 문단에 하나, 10개까지
+    keys.push({ p, s, why: line(k.why, 40), r: no(k.r, R) + 1 });
+    if (!paras[p].keep.includes(s)) paras[p].keep = [...paras[p].keep, s].sort((a, b) => a - b);
+    paras[p].drop = paras[p].drop.filter(x => x !== s);
+  }
+  const cs = Array.isArray(obj.crit) ? obj.crit : [];
+  const crit = rub.map((_, i) => {
+    const it = cs.find(x => x?.r === i + 1) ?? (Number.isInteger(cs[i]?.r) ? null : cs[i]) ?? {}, kind = KINDS.includes(it.kind) ? it.kind : '기타', c = kind === '내용';
+    return { kind, ps: c ? [...new Set((Array.isArray(it.ps) ? it.ps : []).map(x => no(x, P)).filter(x => x >= 0))].sort((a, b) => a - b) : [],
+      at: c ? no(it.at, P) : -1, how: c ? line(it.how, 120) : '' };
   });
   const kw = Object.create(null);  // 'constructor' 같은 이름도 키워드가 될 수 있다 (app.js·match.js는 Object.entries/keys만 쓴다)
   for (const it of Array.isArray(obj.kw) ? obj.kw : []) {
@@ -240,9 +301,9 @@ export function cleanPrep(obj, ps) {
       .map(x => x.normalize('NFC').replace(/\s+/g, ' ').trim()).filter(x => x && x !== k && x.length <= 20);
     if (k && v.length && (kw[k] || Object.keys(kw).length < 600)) kw[k] = [...new Set([...(kw[k] || []), ...v])].slice(0, 4);  // 다른 말이 있는 키워드 600개까지
   }
-  return { paras, kw };
+  return { paras, kw, keys, crit, rub: [...rub] };
 }
-export const parsePrep = (text, ps) => parseJson(text, o => cleanPrep(o, ps), '발표 준비');
+export const parsePrep = (text, ps, rub) => parseJson(text, o => cleanPrep(o, ps, rub), '발표 준비');
 
 // ---- 다른 말: 고른 말과 그 문장만 보낸다 ----
 export const ALT_SCHEMA = {
@@ -347,30 +408,33 @@ export async function summarizeAdlib(segs, opts) {
   return parseAdlib(await callClaude({ ...opts, system: p.system, user: p.user, schema: ADLIB_SCHEMA, effort: 'low' }), segs.length);
 }
 
-// ---- 발표 점검 코칭: 구간 번호, 위치, 글자 수와 잰 숫자를 보낸다. 연습 기록(says)이 있으면 읽은 구간의 대본과 들은 말도. 목소리는 보내지 않는다 ----
+// ---- 발표 점검 코칭: 구간 번호, 위치, 글자 수와 잰 숫자를 보낸다. 연습 기록(says)이 있으면 읽은 구간의 대본과 들은 말도. 목소리와 녹음은 보내지 않는다 ----
 // 첫 구간에는 반과 이름이 들어가기 쉽다. 팁은 구간 번호로 돌아오고 앱이 구간 글을 가지고 있다.
+// 흐름 계획(힘)과 평가 기준(발표자가 적은 글)도 보낸다. 꼭 말할 문장은 구간 번호와 숫자만 보낸다(대본 글 없음)
+const TIP = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: { sec: { type: 'integer' }, what: { type: 'string' }, how: { type: 'string' } },
+    required: ['sec', 'what', 'how'],
+    additionalProperties: false,
+  },
+};
 export const COACH_SCHEMA = {
   type: 'object',
-  properties: {
-    summary: { type: 'string' },
-    tips: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { sec: { type: 'integer' }, what: { type: 'string' }, how: { type: 'string' } },
-        required: ['sec', 'what', 'how'],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ['summary', 'tips'],
+  properties: { summary: { type: 'string' }, tips: TIP, edits: TIP },
+  required: ['summary', 'tips', 'edits'],
   additionalProperties: false,
 };
 
 // run: check.js 기록, prev: 고른 기록 바로 앞 기록(없으면 null), tips: check.js tips()의 [{ text }](구간 번호와 숫자만 담김),
-// goal: 지금 목표 초(결과 창에서 바꿀 수 있다, 기본은 기록의 목표), says: compare.js 연습 기록 { secs: [{ s: 보인 대본, x: 들은 말 }] } | null
-export function coachPrompt(run, prev, tips = [], goal = run.target, says = null) {
-  const k = run.secs.length, E = bands(run.secs.map(s => s.n), goal, run.r0), n = x => x == null ? '-' : Math.round(x);
+// goal: 지금 목표 초(결과 창에서 바꿀 수 있다, 기본은 기록의 목표), says: compare.js 연습 기록 { secs: [{ s: 보인 대본, x: 들은 말 }] } | null,
+// crit: 그 연습의 평가 기준 [{ name, kind, secs: 다루는 구간 번호(1부터) | null(대본이 바뀌어 모름) }] | null
+const KV = { ok: '단서 2개 이상', weak: '단서 1개 이하', skip: '빼먹은 듯', na: '못 잼', unread: '읽지 않음', said: '말함(분석 없음)' };
+const LVW = { high: '힘 있음', mid: '보통', low: '차분' };
+export function coachPrompt(run, prev, tips = [], goal = run.target, says = null, crit = null) {
+  const k = run.secs.length, E = bands(run.secs.map(s => s.n), goal, run.r0), n = x => x == null ? '-' : Math.round(x), EN = energy(run.secs, run.nodb), KS = keyStates(run);
+  const d1 = x => x == null ? '-' : (x > 0 ? '+' : '') + Math.round(x * 10) / 10, flow = run.secs.some(s => s.pe) || EN.some(Boolean), cr = crit?.length ? crit : null;
   const where = i => i < k / 3 ? '처음' : i < 2 * k / 3 ? '중간' : '끝';
   const perMin = s => s.talk >= PACE_TALK ? Math.round(s.heard / s.talk * 6) * 10 : null, sgn = x => (x > 0 ? '+' : '') + x;
   // 읽은 구간만. 읽지 않은 구간의 대본은 보내지 않는다
@@ -388,29 +452,42 @@ export function coachPrompt(run, prev, tips = [], goal = run.target, says = null
 - 끝 흐림: 0.25초 넘게 쉬기 직전 0.3초가 그 말 덩어리보다 10dB 넘게 작았던 문장 끝 수 / 잰 문장 끝 수다. 웅얼거림을 대신 보는 값이다(추정).
 - 강조: 발표자가 '꼭 말할 문장'으로 표시한 문장을 다른 문장보다 얼마나 크게(dB), 높게(반음) 말했는지다(가장 크고 높은 10% 기준). 0 근처면 강조가 약했다. 화면 위치가 말보다 약 1초 늦어 문장 앞머리가 앞 문장에 섞인다.
 - 기대 초: 목표 시간을 구간 글자 수 비율로 나눈 값이다. 목표가 없으면 발표를 시작할 때의 말 속도로 잡은 범위다.
-- '-'는 재지 않은 값이다. 걸린 초가 '-'인 구간은 읽지 않은 구간이다(중간에 멈췄거나 건너뜀).
+- '-'는 재지 않은 값이다. 걸린 초가 '-'인 구간은 읽지 않은 구간이다(중간에 멈췄거나 건너뜀).${flow ? `
+- 계획 힘: 발표 준비에서 정한 그 구간의 힘(1 차분하게, 2 보통, 3 힘 있게). 들은 힘: 같은 연습의 다른 구간과 견준 목소리 크기·높이·높낮이 폭(상대값, 추정). 감정이 아니다.
+  계획 3인데 차분, 계획 1인데 힘 있음일 때만 말하고, 한 칸 차이나 '-'는 말하지 않는다. 긴장했다, 자신 없다처럼 마음을 짐작하지 않는다.` : ''}${KS.length ? `
+- 꼭 말할 문장: 발표자가 표시한 문장마다 강조 단서 넷을 잰다. 앞 쉼(이번 쉼 중앙값의 1.5배와 0.5초를 넘으면), 머문 시간 배(글자당 머문 시간이 다른 문장의 1.2배를 넘으면),
+  소리 차(같은 구간 다른 문장보다 2dB 넘게 크면), 높이 차(1.5반음 넘게 높으면). 단서 2개 이상이면 살려 말한 것으로 본다.
+  같은 연습 안의 비교라 문장 하나의 결과는 틀릴 수 있다. 여러 문장의 흐름으로만 말한다. 말한 %는 받아 적은 말에 그 문장이 있는 비율이고, 인식이 놓쳐도 낮아진다.` : ''}${run.nodb ? `
+- 소리 크기 비교: 이번에는 하지 않았다(마이크 음량이 바뀐 것 같다). 소리 차와 들은 힘의 크기는 쓰지 않는다.` : ''}${cr ? `
+- 평가 기준: 발표 평가에 쓰일 기준이다. 내용 기준은 다루는 구간을 충분한 시간과 강조로 말했는지, 전달 기준은 잰 숫자로 본다. tips나 edits가 어느 기준에 대한 것인지 밝혀도 된다.` : ''}
 
 한국어 기준
 - 소리 내어 읽기(낭독)는 초당 4.8~5.1음절, 1분에 약 290~305자다. 자유롭게 말하면 초당 약 4.2음절이고, 뉴스 아나운서는 5.7~6.0음절이다.
 ${talk.length ? `
 대본과 한 말
 - 한 말은 음성 인식이 받아 적은 글이다. 문장부호가 없고, '어·음' 같은 군말은 빠졌을 수 있고, 잘못 받아 적은 낱말도 있다. 낱말 하나가 다르다고 발음을 탓하지 않는다.
-- tips 가운데 하나 이상은 내용에 대해 쓴다: 빼먹은 핵심 내용, 되풀이한 말버릇(예: '그러니까', '약간'), 대본보다 자연스럽게 바꿔 말한 곳(대본에 반영하라고 권한다).
+- 내용에 대해서도 쓴다: 빼먹은 핵심 내용과 되풀이한 말버릇(예: '그러니까', '약간')은 tips에, 대본보다 자연스럽게 바꿔 말한 곳은 edits에 쓴다(대본에 반영하라고 권한다).
 - 대본이나 한 말을 옮길 때는 20자 안쪽으로 짧게 따온다.
+- edits는 대본 글을 고칠 점이고 2개까지다. sec는 <대본과한말>에 있는 구간 번호이고, 대본 전체면 0이다. what은 무엇이 문제인지,
+  how는 'AI로 고치기'에 그대로 넣을 지시 한 문장이다(예: 「설문 결과…」 문장을 두 문장으로 나눠 주세요). 새 숫자나 사실을 넣으라고 하지 않는다.
+- tips에는 말하는 방법(빠르기, 쉼, 크기, 강조, 톤)과 빼먹은 내용·말버릇을, edits에는 대본 글을 바꿀 점만 쓴다. 같은 내용을 둘 다에 쓰지 않는다.
 ` : ''}
 규칙
-- tips는 3개까지 쓴다. sec는 구간 번호이고, 발표 전체에 대한 팁이면 0이다. 읽지 않은 구간에는 팁을 쓰지 않는다.
+- tips는 3개까지 쓴다. sec는 구간 번호이고, 발표 전체에 대한 팁이면 0이다. 읽지 않은 구간에는 팁을 쓰지 않는다.${talk.length ? '' : `
+- edits는 빈 배열로 둔다(대본 글을 받지 않았다).`}
 - 받은 숫자 밖의 숫자를 지어내지 않는다. 감정이나 성격을 판단하지 않는다. 사투리나 억양은 재지 않으므로 말하지 않는다.
 - what에는 숫자로 본 점을, how에는 다음 연습에서 할 행동 하나를 쓴다. 모두 해요체 한국어로 쓴다.
 - summary는 한 문장이다.
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
-{"summary":"...","tips":[{"sec":2,"what":"...","how":"..."}]}`;
+{"summary":"...","tips":[{"sec":2,"what":"...","how":"..."}],"edits":[]}`;
   // 읽지 않은 구간(걸린 시간 0)은 번호, 위치, 글자 수, 기대 초만 두고 잰 값은 '-' (0초나 멈춤 0번으로 읽히지 않게)
   const rows = run.secs.map((s, i) => [i + 1, where(i), s.n, n(s.wall), E[i].b ?? `${n(E[i].lo)}~${n(E[i].hi)}`, n(perMin(s)),
     s.st ? n(s.st[1] - s.st[0]) : '-', s.p25 == null ? '-' : s.p25 + s.p1, n(s.run), n(s.off), s.heard ? Math.min(100, Math.round(s.chars / s.heard * 100)) : '-', s.gaps,
-    n(s.vol), s.ends ? `${s.fall}/${s.ends}` : '-']
-    .map((x, j) => s.wall || [0, 1, 2, 4].includes(j) ? x : '-').join(' | '));
+    n(s.vol), s.ends ? `${s.fall}/${s.ends}` : '-', ...(flow ? [s.pe ?? '-', LVW[EN[i]] ?? '-'] : [])]
+    .map((x, j) => s.wall || [0, 1, 2, 4, 14].includes(j) ? x : '-').join(' | '));
+  const keyRows = KS.map(x => [x.s + 1, cr && x.r || '-', x.pre == null ? '-' : x.pre, x.dw == null ? '-' : x.dw.toFixed(1), run.nodb ? '-' : d1(x.db), d1(x.st),
+    x.sd == null ? '-' : Math.round(x.sd * 100), KV[x.v]].join(' | '));
   const user = `<발표점검>
 모드: ${NAME[run.kind]}
 목표: ${goal ? goal + '초' : '없음'}
@@ -420,29 +497,37 @@ ${talk.length ? `
 목소리 분석: ${!run.audio ? '하지 않음(높낮이 폭과 쉼 없음)' : run.audio.off ? `${n(run.audio.at)}초에 꺼짐(그 뒤 높낮이 폭과 쉼 없음)` : '함'}
 구간 수: ${k}
 강조: ${!run.emph ? '재지 않음(꼭 말할 문장이 없거나 목소리 분석을 하지 않음)' : `꼭 말할 문장이 다른 문장보다 소리 ${sgn(run.emph.db)}dB, 높이 ${sgn(run.emph.st)}반음`}
-구간 | 위치 | 글자 수 | 걸린 초 | 기대 초 | 1분에 자 | 높낮이 폭 반음 | 쉼 수 | 쉬지 않고 가장 긴 초 | 대본 밖 초 | 그대로 % | 1.5초 넘는 멈춤 | 목소리 크기 dB | 끝 흐림
+구간 | 위치 | 글자 수 | 걸린 초 | 기대 초 | 1분에 자 | 높낮이 폭 반음 | 쉼 수 | 쉬지 않고 가장 긴 초 | 대본 밖 초 | 그대로 % | 1.5초 넘는 멈춤 | 목소리 크기 dB | 끝 흐림${flow ? ' | 계획 힘 | 들은 힘' : ''}
 ${rows.join('\n')}
 지난 기록 총 시간: ${!prev ? '없음' : !(finished(run) && finished(prev)) ? '비교 안 함(끝까지 읽지 않은 기록이 있음)' : n(prev.wall) + '초' + (prev.h === run.h ? '' : '(대본이 달라 구간은 비교하지 않음)')}
-</발표점검>
+</발표점검>${KS.length ? `
+<꼭말할문장>
+구간 | 평가 기준 | 앞 쉼 초 | 머문 시간 배 | 소리 차 dB | 높이 차 반음 | 말한 % | 판정
+${keyRows.join('\n')}
+</꼭말할문장>` : ''}${cr ? `
+<평가기준>
+${cr.map((c, i) => `${i + 1}. ${c.name} (${c.kind}${c.kind === '내용' ? ', 다루는 구간: ' + (c.secs == null ? '모름(대본이 바뀜)' : c.secs.length ? c.secs.join(', ') : '없음') : ''})`).join('\n')}
+</평가기준>` : ''}
 <규칙으로찾은것>
 ${tips.length ? tips.map(t => '- ' + (t.text ?? t)).join('\n') : '(없음)'}
 </규칙으로찾은것>
-${talk.length ? `<대본과한말>\n${talk.join('\n\n')}\n</대본과한말>\n\n위 숫자와 대본, 한 말로` : '\n위 숫자로'} 다음 연습에서 해 볼 것을 정해 주세요.`;
+${talk.length ? `<대본과한말>\n${talk.join('\n\n')}\n</대본과한말>\n\n위 숫자와 대본, 한 말로 다음 연습에서 해 볼 것과 대본 고칠 점을` : '\n위 숫자로 다음 연습에서 해 볼 것을'} 정해 주세요.`;
   return { system, user, text: system + '\n\n' + user };
 }
 
-// AI 답 검사(check.js cleanAiCoach, 저장값도 같은 검사): summary 200자, 팁 3개까지, sec가 0~k 정수가 아니면 0, 빈 팁은 버림. 남은 팁이 없으면 Error
-export function cleanCoach(o, k) {
-  const c = cleanAiCoach(o, k);
+// AI 답 검사(check.js cleanAiCoach, 저장값도 같은 검사): summary 200자, 팁 3개·고칠 점 2개까지, sec가 0~k 정수가 아니면 0, 빈 팁은 버림.
+// walls(구간마다 걸린 시간)를 주면 읽지 않은 구간의 고칠 점은 버린다. 팁도 고칠 점도 없으면 Error
+export function cleanCoach(o, k, walls = null) {
+  const c = cleanAiCoach(o, k, walls);
   if (!c) throw new Error(Array.isArray(o?.tips) ? '쓸 만한 팁이 없어요.' : NOT_FOUND('코칭 내용을'));
   return c;
 }
-export const parseCoach = (text, k) => parseJson(text, o => cleanCoach(o, k), '발표 코칭');
+export const parseCoach = (text, k, walls) => parseJson(text, o => cleanCoach(o, k, walls), '발표 코칭');
 
-// 짧은 답이라 생각은 적게(effort low). 모델은 기본(MODEL)이고 대체 모델도 그대로 쓴다. opts.goal: 지금 목표 초
-export async function coachRun(run, prev, tips, { goal, says, ...opts } = {}) {
-  const p = coachPrompt(run, prev, tips, goal ?? run.target, says);
-  return parseCoach(await callClaude({ ...opts, system: p.system, user: p.user, schema: COACH_SCHEMA, effort: 'low' }), run.secs.length);
+// 짧은 답이라 생각은 적게(effort low). 모델은 기본(MODEL)이고 대체 모델도 그대로 쓴다. opts.goal: 지금 목표 초, opts.crit: 평가 기준
+export async function coachRun(run, prev, tips, { goal, says, crit, ...opts } = {}) {
+  const p = coachPrompt(run, prev, tips, goal ?? run.target, says, crit);
+  return parseCoach(await callClaude({ ...opts, system: p.system, user: p.user, schema: COACH_SCHEMA, effort: 'low' }), run.secs.length, run.secs.map(s => s.wall));
 }
 
 // ---- API 호출 (스트리밍: 질문이 많아도 시간 초과 없이 받고, 받은 만큼 진행을 보여 준다) ----
@@ -647,10 +732,28 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
     { p: 2, imp: 7, keep: [], drop: [1] },
     { p: 3, imp: 1, keep: [], drop: [1, 2] },
   ], kw: [{ k: '도입', v: ['인트로', ' 인트로 ', '도입', '', 3, '아주아주아주아주아주아주아주긴다른말입니다'] }, { k: '에이아이', v: [] }, null] }, PS);
-  assert.deepEqual(prep.paras[0], { imp: 3, keep: [0], drop: [3] }, 'keep은 빼지 않고, 다음 문장이 그래서로 시작하면 앞 문장(2)도 안 뺀다, 범위 밖 번호는 버림');
-  assert.deepEqual(prep.paras[1], { imp: 2, keep: [0], drop: [] }, '이상한 중요도는 2, 한 문장 문단은 남김');
-  assert.deepEqual(prep.paras[2], { imp: 1, keep: [1], drop: [0] }, '다음 문단 첫 문장(이처럼)이 가리키는 끝 문장은 안 뺀다, keep이 비면 빼지 않는 문장 하나');
-  assert.deepEqual(prep.paras[3], { imp: 2, keep: [0], drop: [] }, '빠진 문단은 기본값');
+  const nf = { role: '', tone: '', e: null };  // 흐름이 없는 옛 답
+  assert.deepEqual(prep.paras[0], { imp: 3, keep: [0], drop: [3], ...nf }, 'keep은 빼지 않고, 다음 문장이 그래서로 시작하면 앞 문장(2)도 안 뺀다, 범위 밖 번호는 버림');
+  assert.deepEqual(prep.paras[1], { imp: 2, keep: [0], drop: [], ...nf }, '이상한 중요도는 2, 한 문장 문단은 남김');
+  assert.deepEqual(prep.paras[2], { imp: 1, keep: [1], drop: [0], ...nf }, '다음 문단 첫 문장(이처럼)이 가리키는 끝 문장은 안 뺀다, keep이 비면 빼지 않는 문장 하나');
+  assert.deepEqual(prep.paras[3], { imp: 2, keep: [0], drop: [], ...nf }, '빠진 문단은 기본값');
+  assert.deepEqual([prep.keys, prep.crit, prep.rub], [[], [], []], '흐름·핵심 문장·평가 기준이 없는 답도 받는다');
+  // 흐름, 핵심 문장, 평가 기준
+  const RUB = ['문제를 분명히 말했나', '근거가 구체적인가', '목소리와 속도'];
+  assert.deepEqual(rubOf(' 1. 문제를 분명히 말했나\n\n- 근거가 구체적인가 \n3) 목소리와  속도\n' + '가'.repeat(80)), [...RUB, '가'.repeat(60)], '번호·기호를 떼고 빈 줄은 뺀다');
+  assert.equal(rubOf(Array(15).fill('기준').join('\n')).length, 10);
+  const fp = cleanPrep({ paras: [{ p: 1, imp: 1, keep: [1], drop: [2, 4], role: ' 도입 ', tone: '밝게 인사하듯 '.repeat(5), e: 3 }, { p: 2, imp: 2, keep: [1], drop: [], role: '근거', tone: '진지하게', e: 7 }],
+    keys: [{ p: 1, s: 4, why: '결론', r: 2 }, { p: 1, s: 1, why: '같은 문단 둘째', r: 1 }, { p: 9, s: 1, why: '없는 문단', r: 1 }, { p: 2, s: 1, why: '왜 '.repeat(30), r: 7 }],
+    crit: [{ r: 2, kind: '내용', ps: [2, 2, 1, 9], at: 2, how: '근거 문장을 더해 주세요' }, { r: 1, kind: '내용', ps: [], at: 1, how: '문제 문장을 더해 주세요' }, { r: 3, kind: '전달', ps: [1], at: 1, how: '천천히' }],
+    kw: [] }, PS.slice(0, 2), RUB);
+  assert.deepEqual(fp.paras[0], { imp: 1, keep: [0, 3], drop: [], role: '도입', tone: '밝게 인사하듯 밝게 인사하듯 밝게 인', e: 3 }, '핵심 문장(4)은 keep에 넣고 drop에서 뺀다(2는 다음 문장이 그래서), 톤 20자');
+  assert.equal(fp.paras[1].e, null, '이상한 힘은 null');
+  assert.deepEqual(fp.keys, [{ p: 0, s: 3, why: '결론', r: 2 }, { p: 1, s: 0, why: '왜 '.repeat(20).trim(), r: 0 }], '한 문단에 하나, 없는 문단·기준은 버림, 까닭 40자');
+  assert.deepEqual(fp.crit, [{ kind: '내용', ps: [], at: 0, how: '문제 문장을 더해 주세요' }, { kind: '내용', ps: [0, 1], at: 1, how: '근거 문장을 더해 주세요' }, { kind: '전달', ps: [], at: -1, how: '' }], '번호로 맞추고 전달 기준은 문단·고칠 점 없음');
+  assert.deepEqual(fp.rub, RUB);
+  const fpp = prepPrompt(PS.map(p => p.map((t, j) => ({ t, kw: [], m: j === 0 }))), RUB);
+  assert.ok(fpp.user.startsWith('<평가기준>\n1. 문제를 분명히 말했나\n2. 근거가 구체적인가\n3. 목소리와 속도\n</평가기준>\n<대본>\n[문단 1]\n1. ★도입입니다.'), '평가 기준과 꼭 말할 문장 표시');
+  assert.ok(pp.user.startsWith('<평가기준>\n(없음)\n</평가기준>') && fpp.system.includes('"crit"') && fpp.system.includes('e: 1 차분하게'));
   assert.deepEqual(prep.kw, { 도입: ['인트로'] }, '다른 말 다듬기');
   assert.deepEqual(Object.keys(cleanPrep({ paras: [], kw: [{ k: 'constructor', v: ['생성자'] }, { k: 'toString', v: ['글자로'] }] }, []).kw), ['constructor', 'toString'], 'Object 속성 이름도 키워드로 쓴다');
   const many = Array.from({ length: 900 }, (_, i) => ({ k: '키' + i, v: i % 3 ? [] : ['말' + i] }));
@@ -702,9 +805,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=16');
-  const { readScript: readEx } = await import('./lib.js?v=16');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=16');
+  const { units } = await import('./shrink.js?v=17');
+  const { readScript: readEx } = await import('./lib.js?v=17');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=17');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));
@@ -735,6 +838,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(vu.includes('강조: 꼭 말할 문장이 다른 문장보다 소리 +3.4dB, 높이 -0.5반음') && / \| 40 \| 0\/3\n2 \| /.test(vu) && / \| 39 \| 1\/3\n/.test(vu), vu.slice(-400));
   assert.ok(cp.system.includes('읽지 않은 구간에는 팁을 쓰지 않는다'));
   assert.ok(!JSON.stringify(COACH_SCHEMA).match(/maxItems|minItems|minLength|maxLength|minimum|maximum/));
+  assert.ok(cp.system.includes('edits는 빈 배열로 둔다') && !cp.user.includes('<꼭말할문장>') && !cp.user.includes('<평가기준>') && !cp.user.includes('계획 힘'), '말 기록·흐름이 없으면 고칠 점도 표도 없다');
   const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 3, what: '3번 구간이 빨랐어요.', how: '문장 끝에서 한 박자 쉬어 보세요.' }] };
   assert.deepEqual(parseCoach('네, 코칭 결과입니다.\n```json\n' + JSON.stringify(coach) + '\n```\n도움이 되길 바랍니다.', 8), coach, '코드 블록과 앞뒤 설명이 붙어도');
   const five = cleanCoach({ summary: '가'.repeat(300), tips: Array.from({ length: 5 }, (_, i) => ({ sec: i ? 99 : 2, what: ' 무엇 ' + i, how: '어떻게'.repeat(200) })) }, 8);
@@ -758,7 +862,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(tp.user.includes(`<대본과한말>\n1번 구간\n대본: ${secText[0]}\n한 말: 그러니까 `) && tp.user.includes('2번 구간\n대본: ') && tp.user.includes('한 말: (받아 적은 말 없음)'));
   const head = cp.user.slice(0, cp.user.indexOf('</규칙으로찾은것>'));
   assert.ok(head.length > 100 && tp.user.startsWith(head), '숫자 부분은 그대로');
-  assert.ok(tp.user.endsWith('</대본과한말>\n\n위 숫자와 대본, 한 말로 다음 연습에서 해 볼 것을 정해 주세요.'));
+  assert.ok(tp.user.endsWith('</대본과한말>\n\n위 숫자와 대본, 한 말로 다음 연습에서 해 볼 것과 대본 고칠 점을 정해 주세요.'));
   const pt = coachPrompt(part, prev, [], 180, says).user;
   assert.ok(pt.includes(secText[1]) && !secText.slice(2).some(s => pt.includes(s)), '읽지 않은 구간(3번부터)의 대본은 보내지 않는다');
   assert.equal(coachPrompt(cr, prev, ct, 180, { secs: [] }).text, cp.text, '들은 말이 없으면 숫자만');
@@ -766,6 +870,25 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   mock(ok(JSON.stringify(coach)));
   await coachRun(cr, prev, ct, { key: 'k', goal: 180, says });
   assert.equal(JSON.parse(calls[0].init.body).messages[0].content, tp.user, '코칭 요청에 대본과 한 말이 들어간다');
+  assert.ok(tp.system.includes('edits는 대본 글을 고칠 점') && tp.system.includes('같은 내용을 둘 다에 쓰지 않는다') && tp.user.endsWith('해 볼 것과 대본 고칠 점을 정해 주세요.'));
+  // 흐름·꼭 말할 문장·평가 기준: 구간 번호와 숫자, 발표자가 적은 평가 기준만. 대본 글은 여전히 없다
+  const fr = { ...cr, pzm: 0.4, secs: cr.secs.map((x, i) => ({ ...x, rv: i === 2 ? -34 : -30, pm: i === 2 ? 18 : 20, pe: i === 2 ? 3 : 2 })),
+    keys: [{ sid: 3, s: 2, w: ex.text.slice(0, 20), db: 0.4, st: -0.2, n: 80, pre: 0.3, dw: 1, sd: 1, r: 1 }, { sid: 9, s: 5, w: '', db: 3, st: 2, n: 80, pre: 0.9, dw: 1.3, sd: 0.2, r: 0 }] };
+  const crit = [{ name: '근거가 구체적인가', kind: '내용', secs: [3, 4] }, { name: '목소리와 속도', kind: '전달', secs: [] }];
+  const fu = coachPrompt(fr, null, [], 180, null, crit);
+  assert.ok(fu.user.includes('| 끝 흐림 | 계획 힘 | 들은 힘\n') && / \| 3 \| 차분\n4 \| /.test(fu.user), '계획 힘과 들은 힘');
+  assert.ok(fu.user.includes('<꼭말할문장>\n구간 | 평가 기준 | 앞 쉼 초 | 머문 시간 배 | 소리 차 dB | 높이 차 반음 | 말한 % | 판정\n3 | 1 | 0.3 | 1.0 | +0.4 | -0.2 | 100 | 단서 1개 이하\n6 | - | 0.9 | 1.3 | +3 | +2 | 20 | 빼먹은 듯\n</꼭말할문장>'));
+  assert.ok(fu.user.includes('<평가기준>\n1. 근거가 구체적인가 (내용, 다루는 구간: 3, 4)\n2. 목소리와 속도 (전달)\n</평가기준>'));
+  assert.ok(fu.system.includes('마음을 짐작하지 않는다') && fu.system.includes('여러 문장의 흐름으로만'));
+  const fn = norm(fu.text);
+  for (let i = 0; i + 8 <= sn.length; i++) assert.ok(!fn.includes(sn.slice(i, i + 8)), `꼭 말할 문장 표에 대본 글이 들어감: ${sn.slice(i, i + 8)}`);
+  assert.ok(!/undefined|NaN|null/.test(fu.text));
+  assert.ok(coachPrompt({ ...fr, nodb: true }, null, [], 180).user.includes('| - | -0.2 |'), 'dB를 믿지 못하면 소리 차를 보내지 않는다');
+  assert.ok(coachPrompt(fr, null, [], 180).user.includes('\n3 | - | 0.3 |'), '평가 기준을 보내지 않으면 기준 번호도 보내지 않는다');
+  assert.ok(coachPrompt(fr, null, [], 180, null, [{ name: '근거', kind: '내용', secs: null }]).user.includes('1. 근거 (내용, 다루는 구간: 모름(대본이 바뀜))'));
+  mock(ok(JSON.stringify({ ...coach, edits: [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '그 문장을 둘로 나눠 주세요.' }, { sec: 8, what: '읽지 않은 구간', how: 'x' }] })));
+  const ce = await coachRun(part, prev, [], { key: 'k', goal: 180, says });
+  assert.deepEqual(ce.edits, [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '그 문장을 둘로 나눠 주세요.' }], '읽지 않은 구간(8)의 고칠 점은 버린다');
 
   console.log('claude.js ok');
 }

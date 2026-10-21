@@ -37,6 +37,23 @@ export function align(script, spoken) {
 }
 export const diffCount = ops => ops.filter(o => o.t !== '=').length;
 
+// 구간의 문장들(sents)을 들은 말과 맞춰 문장마다 말한 비율(0~1). 같게 말한 낱말과 바꿔 말한 낱말을 말한 것으로 센다.
+// 핵심 문장을 빼먹었는지 볼 때 쓴다. 낱말이 없는 문장은 1
+export function sentSaid(sents, spoken) {
+  const n = sents.map(s => words(s).length), done = n.map(() => 0);
+  if (!spoken.trim()) return n.map(k => k ? 0 : 1);
+  let i = 0, s = 0, used = 0;  // i: 대본 낱말 번호, s: 그 낱말의 문장, used: 그 문장에서 지나온 낱말 수
+  for (const o of align(sents.join(' '), spoken)) {
+    if (o.t === '+') continue;
+    for (let k = words(o.s).length; k > 0; k--, i++) {
+      while (s < n.length && used >= n[s]) { s++; used = 0; }
+      if (o.t !== '-') done[s]++;
+      used++;
+    }
+  }
+  return n.map((k, j) => k ? done[j] / k : 1);
+}
+
 // 한 번의 연습에서 바꿔 말한 것: { '대본 글→들은 글': { from, to, n } }. 글자만 앞뒤 부호를 떼어 모은다.
 export function swaps(ops) {
   const out = {};
@@ -118,6 +135,10 @@ if (typeof process === 'object' && process.argv[1]?.endsWith('compare.js')) {
   const kinds = ops.filter(o => o.t !== '=');
   assert.deepEqual(kinds.map(o => [o.t, o.s ?? '', o.w ?? '']), [['-', '동시에', ''], ['+', '', '사실 저도 그랬는데요'], ['~', '활용하고', '쓰고']], '빼먹음, 더함(이어진 낱말은 한 곳), 바꿔 말함');
   assert.equal(diffCount(ops), 3);
+  assert.deepEqual(sentSaid(['가 나 다.', '라 마 바 사.', '아 자.'], '가 나 다 아 자'), [1, 0, 1], '가운데 문장을 빼먹음');
+  assert.deepEqual(sentSaid(['가 나 다 라.', '마 바.'], '가 나 하 라 마 바'), [1, 1], '바꿔 말한 낱말은 말한 것');
+  assert.deepEqual(sentSaid(['가 나.', '다 라.'], ''), [0, 0], '들은 말이 없음');
+  assert.deepEqual(sentSaid(['가 나 다 라.', '...'], '가 나'), [0.5, 1], '반만 말함, 낱말 없는 문장');
   assert.deepEqual(align('안녕하세요. 반갑습니다!', '안녕하세요 반갑습니다').map(o => o.t), ['=', '='], '문장부호와 대소문자는 무시');
   assert.deepEqual(align('', '').length, 0);
   assert.deepEqual(align('가 나', '').map(o => [o.t, o.s]), [['-', '가 나']], '말이 없으면 대본 전체가 빼먹음 한 곳');

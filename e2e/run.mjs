@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { launch, page, open, sample, BASE } from './lib.mjs';
 import { pptx, pdf, SLIDES } from './fixtures.mjs';
-import { paraSpans, sentSpans } from '../lib.js';
+import { paraSpans, sentSpans, paras } from '../lib.js';
 
 const only = process.argv[2] || '';
 const browser = await launch();
@@ -241,11 +241,12 @@ t('질문: 질문 준비 창에서 핵심 키워드를 고치고 저장하면 �
 const SAMPLE = JSON.parse(fs.readFileSync(new URL('../sample.livescript.json', import.meta.url), 'utf8'));
 const SENTS = SAMPLE.text.split(/\n+/).flatMap(par => par.split(/(?<=[.?!])\s+/)).filter(Boolean);
 // 연습 한 번: 문장마다 확정 결과로 읽는다. mutate(문장 번호, 문장) → 실제로 말한 글
-async function practiceRun(p, mutate = (i, x) => x, first = true) {
+// warm: 마이크를 켠 뒤 기다릴 실제 ms(가짜 마이크와 녹음이 켜지기까지. 시험의 연습은 실제로 몇 초 만에 끝난다)
+async function practiceRun(p, mutate = (i, x) => x, first = true, warm = 300) {
   if (first) { await p.click('#menuBtn'); await p.click('#mCheck'); await p.waitForTimeout(300); }
   await p.click('#cPractice'); await p.waitForTimeout(500);
   if (await p.locator('#shrinkNo').isVisible()) await p.click('#shrinkNo');
-  await p.click('#mic'); await p.waitForTimeout(300);
+  await p.click('#mic'); await p.waitForTimeout(warm);
   const dt = 200000 / SENTS.length;
   // 실제 인식처럼 낱말마다 중간 결과를 보내고, 문장이 끝나면 확정한다
   for (const [i, x] of SENTS.entries()) {
@@ -352,6 +353,150 @@ t('결과: 회차별 시간 막대와 구간부터 연습 단추', async () => {
   assert.equal(await p.locator('#checkDlg').evaluate(d => d.open), false);
   const cur = +await p.evaluate(() => localStorage.getItem(Object.keys(localStorage).find(k => /^ls\.cur\./.test(k)) || 'ls.cur'));
   assert.ok(k === 1 ? cur === 0 : cur > 0, `읽는 위치가 ${k}번 구간 처음 (${cur})`);
+  assert.deepEqual(p.errors, []);
+});
+
+// ---- 연습 녹음, 꼭 말할 문장, 평가 기준과 흐름 ----
+// 녹음 저장소 들여다보기(CSP가 eval을 막아 할 일은 이름으로 넘긴다): 'count' | 'all'(파일은 크기와 형식만)
+const idb = (p, op) => p.evaluate(op => new Promise((ok, no) => { const q = indexedDB.open('livescript-rec'); q.onerror = no; q.onsuccess = () => { const st = q.result.transaction('segs').objectStore('segs'), r = op === 'count' ? st.count() : st.getAll(); r.onsuccess = () => ok(op === 'count' ? r.result : r.result.map(v => ({ ...v, blob: { size: v.blob.size, type: v.blob.type } }))); r.onerror = no; }; }), op);
+const setMust = (p, ms) => p.evaluate(ms => { const id = Object.keys(localStorage).find(k => k.startsWith('ls.script.')).slice(10); localStorage.setItem('ls.must.' + id, JSON.stringify(ms)); }, ms);
+// 말소리 같은 가짜 마이크: 잡음 바닥(-60dBFS) 위에 160Hz 소리를 0.4초 켜고 0.2초 끈다. Chrome 가짜 장치는 일정한 소리라 말이 빠르면 분석기가 굶음으로 보고 꺼진다
+const SPEECH_MIC = `(() => {
+  const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = async c => {
+    if (!c?.audio) return real(c);
+    const ctx = new AudioContext(); await ctx.resume().catch(() => {});
+    const d = ctx.createMediaStreamDestination(), o = ctx.createOscillator(), g = ctx.createGain(), nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), n = ctx.createBufferSource();
+    nb.getChannelData(0).forEach((_, i, a) => { a[i] = (Math.random() * 2 - 1) * 0.0017; });
+    n.buffer = nb; n.loop = true; n.connect(d); n.start();
+    o.frequency.value = 160; o.connect(g).connect(d); g.gain.value = 0;
+    for (let i = 0, t = ctx.currentTime; i < 500; i++) { g.gain.setValueAtTime(0.3, t + i * 0.6); g.gain.setValueAtTime(0, t + i * 0.6 + 0.4); }
+    o.start();
+    return d.stream;
+  };
+})();`;
+// 실제 시간으로 하는 짧은 연습(가짜 시계로 몇 초에 200초를 돌리면 분석기가 소리가 안 들어온다고 보고 꺼진다). 말한 시간이 20초를 넘게.
+// 가짜 마이크는 가끔 5초쯤에 0 샘플을 내서 분석기(와 녹음)가 꺼지므로 처음 6문장은 빨리 읽는다
+async function realRun(p, ms = [...Array(6).fill(500), ...Array(7).fill(2600)]) {
+  await p.click('#menuBtn'); await p.click('#mCheck'); await p.waitForTimeout(300);
+  await p.click('#cPractice'); await p.waitForTimeout(500);
+  if (await p.locator('#shrinkNo').isVisible()) await p.click('#shrinkNo');
+  await p.click('#mic'); await p.waitForTimeout(1500);
+  for (const [i, x] of SENTS.slice(0, ms.length).entries()) {
+    const w = x.split(' ');
+    for (let k = 1; k <= w.length; k++) { await p.evaluate(t => window.__say(t), w.slice(0, k).join(' ')); await p.waitForTimeout(ms[i] / w.length); }
+    await p.evaluate(t => window.__fin(t), x);
+  }
+  await p.waitForTimeout(300);
+  await p.click('#mic'); await p.waitForSelector('#checkDlg[open]'); await p.waitForTimeout(600);
+}
+t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남기고, 결과 창에서 구간마다 다시 듣고, 기록을 지우면 같이 지운다', async () => {
+  const p = await page(browser); await p.context().addInitScript(SPEECH_MIC); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await p.evaluate(() => localStorage.setItem('ls.audio', JSON.stringify({ l: false, r: true })));  // 가짜 마이크로 분석기와 녹음을 돌린다
+  await realRun(p);
+  const run = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.runs'))))[0]);
+  assert.equal(run.rec, true, '기록에 녹음했다고 남는다');
+  await p.waitForSelector('#cTake:not([hidden]) #cAudio:not([hidden])', { timeout: 10000 });
+  const segs = await idb(p, 'all');
+  assert.equal(segs.length, 1, '시작~정지가 조각 하나');
+  assert.ok(segs[0].blob.size > 0 && /^audio\/webm/.test(segs[0].blob.type), `녹음 파일 ${segs[0].blob.size} ${segs[0].blob.type}`);
+  const mk = segs[0].marks;
+  assert.equal(run.audio.off, null, '분석이 끝까지 켜져 있었다');
+  assert.ok(mk.length >= 12 && mk.every((m, i, a) => !i || m[0] >= a[i - 1][0]) && mk.every(m => m.length === 3) && mk.at(-1)[0] <= segs[0].ms, `문장이 바뀐 때(시각 순서, 구간 번호 포함) ${JSON.stringify(mk)} ${JSON.stringify(run.audio)} ${segs[0].ms}`);
+  assert.ok(new Set(mk.map(m => m[2])).size >= 2, '여러 구간');
+  assert.match(await p.textContent('#cTakeMsg'), /^연습 녹음 \d+:\d\d · 이 기기에만 남아요$/);
+  const dur = await p.evaluate(() => new Promise(ok => { const a = document.getElementById('cAudio'); a.readyState >= 1 ? ok(a.duration) : a.addEventListener('loadedmetadata', () => ok(a.duration), { once: true }); }));
+  assert.ok(Number.isFinite(dur) && dur > 0, `길이를 안다(되감기가 된다) ${dur}`);
+  assert.ok(await p.locator('#cSecs .sec .sh button.play').count() >= 2, '읽은 구간마다 듣기');
+  assert.match(await p.getAttribute('#cSecs .sec:nth-child(2) .sh button.play', 'aria-label'), /^2번 구간 듣기$/);
+  await p.locator('#cSecs .sec .sh button.play').nth(1).click(); await p.waitForTimeout(600);
+  const at = await p.evaluate(() => { const a = document.getElementById('cAudio'); return [+a.dataset.to, a.currentTime, a.paused]; });
+  assert.ok(at[0] > at[1] - 0.5 && at[1] > 1 && !at[2], `둘째 구간부터 듣고, 그 구간 끝에서 멈출 자리를 둔다 ${at}`);
+  await p.screenshot({ path: OUT + '/rec-result.png' });
+  // 가 시트: 리딩·연습에서만, 분석이 켜져 있을 때
+  await p.click('#checkClose'); await p.click('#view');
+  assert.equal(await p.locator('#recRow').isVisible(), true); assert.equal(await p.isChecked('#recOn'), true);
+  await p.click('[data-coach="live"]');
+  assert.equal(await p.locator('#recRow').isHidden(), true, '실전은 녹음하지 않는다');
+  await p.click('[data-coach="practice"]');
+  // 기록을 지우면 녹음도 지운다
+  await p.click('#checkOpen'); await p.waitForSelector('#checkDlg[open]');
+  p.once('dialog', d => d.accept());
+  await p.click('#cDel'); await p.waitForTimeout(500);
+  assert.equal(await idb(p, 'count'), 0, '녹음도 지웠다');
+  assert.deepEqual(p.errors, []);
+});
+t('결과: 꼭 말할 문장을 빼먹으면 묶음과 다음에 해 볼 것이 알려 주고, 연습 화면에 밑줄, 편집 카드에 지난 연습 줄이 생긴다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await setMust(p, [SENTS[4], SENTS[9]]);
+  await practiceRun(p, (i, x) => i === 9 ? '음 잠깐만요 이건 넘어가고 다음 이야기를 할게요' : x);
+  assert.equal(await p.locator('#cKeys').isVisible(), true);
+  assert.equal(await p.textContent('#cKeys > p'), '꼭 말할 문장 2개 가운데 1개를 말했어요. 1개는 빼먹은 것 같아요.', '목소리 분석이 없으면 말했는지만');
+  assert.equal(await p.locator('#cKeys .krow.skip').count(), 1);
+  assert.match(await p.textContent('#cKeys .krow.skip .kt'), new RegExp(SENTS[9].slice(0, 8)));
+  assert.match(await p.textContent('#cTips'), /꼭 말할 문장을 빼먹은 것 같아요/);
+  const run = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.runs'))))[0]);
+  assert.equal(run.keys.length, 2);
+  await p.click('#checkClose');
+  assert.equal(await p.evaluate(() => document.body.classList.contains('keymark')), true, '연습 모드');
+  assert.equal(await p.locator('#prompt .s.key').count(), 2, '꼭 말할 문장에 밑줄');
+  await p.click('#mode'); await p.waitForTimeout(400);
+  await p.locator('#cList .pc').first().click();
+  assert.match(await p.textContent('#cList .pc.on .pfb'), /^지난 연습/, '열린 카드에 지난 연습 줄');
+  assert.deepEqual(p.errors, []);
+});
+t('준비: 평가 기준을 적고 붙여넣은 답으로 흐름, 핵심 문장 제안, 다루지 않은 기준이 보이고 카드에 역할 칩이 생긴다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  await p.click('#aiBtn'); await p.click('#aiTabs [data-tab="prep"]');
+  await p.fill('#ai [data-info="rubric"]', '1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기');
+  await p.click('#aiCopy');
+  assert.ok((await p.inputValue('#aiPrompt')).includes('<평가기준>\n1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기\n</평가기준>'), '평가 기준을 보낸다');
+  const ps = paras(SAMPLE.text), roles = ['도입', '문제', '해결'];
+  const ans = { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], role: roles[i % 3], tone: '또렷하게', e: i === 1 ? 3 : 2 })),
+    keys: [{ p: 2, s: 1, why: '문제 제기', r: 1 }],
+    crit: [{ r: 1, kind: '내용', ps: [2], at: 0, how: '' }, { r: 2, kind: '내용', ps: [], at: 3, how: '셋째 문단에 한계를 한 문장 더해 주세요.' }, { r: 3, kind: '전달', ps: [], at: 0, how: '' }], kw: [] };
+  await p.click('#aiPaste'); await p.fill('#aiPasteIn', JSON.stringify(ans)); await p.click('#aiPasteApply'); await p.waitForTimeout(300);
+  assert.match(await p.textContent('#prepFlow'), /흐름: 1 도입 \(보통\) → 2 문제 \(힘 있게\) → 3 해결/);
+  assert.equal(await p.textContent('#prepFlow .sug h3'), 'AI가 고른 핵심 문장 1개예요. 꼭 말할 문장으로 표시할까요?');
+  assert.match(await p.textContent('#prepFlow'), /평가 기준 '한계와 개선점' — 다루는 문단이 없어요/);
+  assert.equal(await p.locator('#prepFlow').getByText('목소리 크기').count(), 0, '전달 기준은 대본 빈 곳으로 보지 않는다');
+  await p.locator('#prepFlow .sug .go').first().click();
+  const must = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.must.')))));
+  assert.deepEqual(must, [ps[1][0]], '꼭 말할 문장이 됐다');
+  assert.equal(await p.locator('#prepFlow .sug h3').first().textContent(), "평가 기준 '한계와 개선점' — 다루는 문단이 없어요", '표시했으니 제안이 사라졌다');
+  await p.screenshot({ path: OUT + '/prep-flow.png' });
+  await p.locator('#prepFlow .sug .go').first().click(); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
+  assert.equal(await p.inputValue('#instr'), '셋째 문단에 한계를 한 문장 더해 주세요.', '지시로 고치기에 고칠 점');
+  assert.equal(await p.isChecked('#onlySel'), true, '그 문단만');
+  await p.click('#aiClose');
+  assert.equal(await p.locator('#cList .pc .prole').count(), ps.length, '문단마다 역할 칩');
+  assert.equal(await p.textContent('#cList .pc:nth-child(2) .prole'), '문제');
+  assert.equal(await p.getAttribute('#cList .pc:nth-child(2) mark.must', 'title'), '문제 제기 · 평가 기준: 문제를 분명히 말했나');
+  assert.deepEqual(p.errors, []);
+});
+t('결과: AI 코칭의 대본 고칠 점은 카드로 보이고, 누르면 그 구간을 고른 채 지시로 고치기를 연다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }], edits: [{ sec: 2, what: '둘째 구간 문장이 길어요.', how: '둘째 구간의 긴 문장을 둘로 나눠 주세요.' }] };
+  const sse = [{ type: 'message_start', message: { id: 'm', content: [] } }, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(coach) } }, { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }, { type: 'message_stop' }].map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' };
+  await p.route('https://api.anthropic.com/**', r => r.request().method() === 'OPTIONS' ? r.fulfill({ status: 204, headers: cors }) : r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'text/event-stream' }, body: sse }));
+  await p.evaluate(() => sessionStorage.setItem('ls.key', 'sk-ant-test'));
+  await practiceRun(p);
+  for (let i = 0; i < 50 && await p.textContent('#cTipsH') !== 'AI 코칭'; i++) await p.waitForTimeout(100);
+  assert.equal(await p.textContent('#cSug .sug h3'), '대본을 이렇게 고쳐 볼까요?');
+  assert.match(await p.textContent('#cSug .sug'), /2번 구간: 둘째 구간 문장이 길어요\./);
+  await p.evaluate(() => sessionStorage.removeItem('ls.key'));  // 열기만 보고 바로 고치지는 않게
+  await p.click('#cSug .sug .go'); await p.waitForTimeout(400);
+  assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
+  assert.equal(await p.evaluate(() => document.body.classList.contains('editing')), true, '편집 화면으로');
+  assert.equal(await p.inputValue('#instr'), '둘째 구간의 긴 문장을 둘로 나눠 주세요.');
+  assert.equal(await p.isChecked('#onlySel'), true, '그 구간만');
   assert.deepEqual(p.errors, []);
 });
 

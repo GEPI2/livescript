@@ -11,6 +11,8 @@ const dir = guess.find(d => fs.existsSync(path.join(d, 'playwright-core')));
 if (!dir) throw new Error('playwright-core를 찾지 못했어요. PW_CORE에 node_modules 경로를 적어 주세요.');
 const { chromium } = createRequire(dir + '/')('playwright-core');
 export const BASE = process.env.BASE || 'http://localhost:8765/';
+// AI 중계(claude.js API). 호스트는 배포한 Worker마다 달라서 경로로 잡는다
+export const AI = '**/v1/messages';
 const cache = path.join(home, 'Library/Caches/ms-playwright');
 const chromeGuess = () => {
   if (process.env.CHROME) return process.env.CHROME;
@@ -51,10 +53,11 @@ try { localStorage.getItem('ls.audio') || localStorage.setItem('ls.audio', JSON.
 export async function page(browser, o = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, locale: 'ko-KR', permissions: ['microphone'], ...o });
   await ctx.addInitScript(MOCK);
+  await ctx.route(AI, r => r.abort());  // 시험이 진짜 중계(서비스가 돈을 낸다)를 부르지 않게. 답이 필요한 시험은 p.route로 덮는다
   const p = await ctx.newPage();
   p.errors = [];
   p.on('pageerror', e => p.errors.push(e.message));
-  p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|favicon|Password field/.test(m.text())) p.errors.push(m.text()); });
+  p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|favicon/.test(m.text())) p.errors.push(m.text()); });
   return p;
 }
 // 첫 화면은 홈이다. home: false(기본)면 홈을 닫고 편집 화면에서 시작한다

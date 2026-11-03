@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data: blob:; media-src 'self' blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://livescript-ai.YOUR-SUBDOMAIN.workers.dev https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data: blob:; media-src 'self' blob:">
 <title>말랑</title>
 <meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="manifest.webmanifest">
@@ -49,9 +49,9 @@
   footer button { min-width: 56px; }
   header button { min-width: 44px; }
   button:disabled { opacity: .4; cursor: default; }
-  .cta, .bottom .primary, #keySave { background: var(--primary-bg); border-color: transparent; color: var(--primary-fg); }
+  .cta, .bottom .primary { background: var(--primary-bg); border-color: transparent; color: var(--primary-fg); }
   .primary { border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); }  /* 한 창에 주요 단추는 하나(끝맺는 단추). 나머지 강조는 연보라 */
-  .bottom .primary, #keySave { border-color: transparent; }
+  .bottom .primary { border-color: transparent; }
   /* 선택된 칩·탭·세그먼트 */
   [aria-pressed=true], .tabs button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
   header, footer { position: fixed; left: 0; right: 0; z-index: 1; display: flex; gap: var(--space-8); align-items: center; padding: 8px var(--space-24); background: var(--header-bg); }
@@ -194,7 +194,9 @@
   .pc { position: relative; padding: var(--space-20) 22px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); cursor: text; }
   .pc.on { border: 2px solid var(--accent); padding: 19px 21px; }
   .pc .ph { display: flex; justify-content: space-between; gap: var(--space-12); font-size: 13px; color: var(--ink-muted); }
-  .pc .pn { font-weight: 600; }
+  .pc .pn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .pc .ph { align-items: center; }  /* 칩이 둘이어도 폰에서 머리줄 한 줄 */
+  .pc .pe { flex: none; }
   .pc.on .pn { color: var(--accent-strong); }
   .pc .pt, .pc .pta { display: block; width: 100%; margin: var(--space-10) 0 0; padding: 0; font: inherit; font-size: 17px; line-height: 1.75; color: var(--ink); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
   .pc .pta { min-height: 4em; border: 0; border-radius: 0; background: transparent; resize: none; overflow: hidden; }
@@ -230,7 +232,6 @@
   .page .bottom { bottom: 0; margin: var(--space-16) calc(-1 * var(--space-20)) 0; }
   .sfoot { margin-top: var(--space-24); }
   .sfoot button { min-height: 40px; border: 0; background: transparent; color: var(--ink-muted); font-weight: 400; text-decoration: underline; }
-  #genNoKey summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
   #genMsg:not(:empty) { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); }
 
   /* 내 발표(시안의 홈): 대본마다 카드 하나. 머리줄의 '말랑'을 누르면 열린다 */
@@ -381,9 +382,9 @@
   :where(dialog) h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; line-height: 1.45; }
   :where(dialog, .page) h3 { margin: 20px 0 4px; font-size: 15px; font-weight: 600; }
   :where(dialog, .page) label { display: block; margin: 8px 0; }
-  :where(dialog, .page) :is(input, textarea, select), #qa input { display: block; width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px 12px; }
+  :where(dialog, .page) :is(input, textarea, select), #qa input, .pc .pslidesel select { display: block; width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 8px 12px; }
   :where(dialog, .page) :is(input, textarea)::placeholder, #qa input::placeholder { color: var(--ink-muted); }
-  :where(dialog, .page) :is(input, textarea, select):focus-visible, #qa input:focus-visible { outline-offset: 0; border-color: var(--accent); }
+  :where(dialog, .page) :is(input, textarea, select):focus-visible, #qa input:focus-visible, .pc .pslidesel select:focus-visible { outline-offset: 0; border-color: var(--accent); }
   :where(dialog, .page) input[type=checkbox] { display: inline; flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--accent); }
   :where(dialog, .page) label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; min-height: 44px; }  /* 글자까지 눌리는 칸이 44px */
   :where(dialog, .page) textarea { resize: vertical; field-sizing: content; max-height: 50vh; }
@@ -408,7 +409,7 @@
   .qitem label { margin: 6px 0; }
   .qitem .chk { padding: 2px 10px; border-radius: var(--radius-pill); font-size: 13px; }
   .qitem.check .chk { background: var(--warning-tint); color: var(--warning); font-weight: 600; }
-  #qaOpt summary, #qaNoKey summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+  #qaOpt summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
   .qmat { margin: var(--space-12) 0; padding: 8px 8px 8px 14px; border: 1px dashed var(--accent-border); border-radius: var(--radius-lg); }
   .qmat .small { margin: 0; white-space: normal; }
   .qimg { display: block; max-width: 220px; max-height: 140px; margin: 6px 0; border-radius: var(--radius-sm); border: 1px solid var(--border); }
@@ -578,7 +579,11 @@
   .krow .kb { flex: none; font-size: 12px; color: var(--ink-muted); }
   .krow p.small { margin: 4px 0 0; }
   /* 편집 카드: 역할 칩(발표 준비), 열린 카드의 '지난 연습' 줄 */
-  .pc .prole { flex: none; margin-right: auto; padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-muted); font-size: 12px; }
+  .pc :is(.prole, .pslide) { flex: none; padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-muted); font-size: 12px; }
+  .pc .prole { margin-right: auto; }
+  .pc .pslide { margin-left: auto; }  /* 역할 칩이 없어도 오른쪽(예상 시간 옆)에 */
+  .pc .pslidesel { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; }
+  .pc .pslidesel select { flex: 0 1 20em; min-width: 0; }  /* 모양은 창 안 입력칸과 같다(16px: iPhone이 눌러도 확대하지 않게) */
   .pfb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: var(--space-12); font-size: 13px; color: var(--ink-muted); }
   .pfb .k { font-weight: 600; color: var(--ink); }
   .pc .pplan { margin: 0 0 8px; }
@@ -649,7 +654,6 @@
   <label>슬라이드 개요 (한 줄에 슬라이드 하나) <textarea data-info="outline" rows="4" placeholder="도입: 대본을 놓친 경험&#10;문제: 프롬프터 앱의 한계&#10;해결: 목소리로 따라가기"></textarea></label>
   <label>참고 자료 (선택) <textarea data-info="refs" rows="3" placeholder="숫자, 조사 결과, 인용할 내용"></textarea></label>
   <div class="row"><button id="genGo" class="cta">대본 만들기</button></div>
-  <details id="genNoKey"><summary>AI 키 없이 쓰기</summary><p class="small">프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣어 주세요. <button id="keyBtn6">AI 키 넣기</button></p><div class="row"><button id="genCopy">프롬프트 복사</button><button id="genPaste">결과 붙여넣기</button></div></details>
   <p id="genMsg" role="status"></p>
   <div class="row sfoot"><button id="eDel">이 발표 지우기</button></div>
 </section>
@@ -678,7 +682,6 @@
     <div data-tp="set" role="tabpanel" hidden>
       <h1 tabindex="-1">설정</h1>
       <div id="hSet" class="hlist">
-        <button id="hsKey"><span>AI 키</span><span id="hsKeyV"></span></button>
         <div id="hsFont"><span>발표 글자 크기</span><span class="row"><button id="hsSm" aria-label="글자 작게">가−</button><b id="hsFs"></b><button id="hsBg" aria-label="글자 크게">가+</button></span></div>
         <label id="hsAudio"><span>연습할 때 목소리 분석·녹음 <small>이 기기에만 남아요</small></span><input type="checkbox" id="hsAudioOn"></label>
         <button id="mImport"><span>파일 가져오기</span><span>›</span></button>
@@ -775,16 +778,6 @@
     <label>듣는 사람 <input id="audience" data-info="audience" autocomplete="off" placeholder="예: 같은 과 학생과 교수님"></label>
     <label>질문 수 <input id="count" data-info="n" type="number" min="1" max="40" value="20" inputmode="numeric"></label>
   </details>
-  <details id="qaNoKey">
-    <summary>AI 키 없이 만들기</summary>
-    <p class="small" id="keyHint">프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣어 주세요. <button id="keyBtn2">AI 키 넣기</button></p>
-    <div class="row"><button id="copyPrompt">프롬프트 복사</button><button id="pasteBtn">결과 붙여넣기</button></div>
-    <textarea id="promptOut" rows="6" readonly hidden></textarea>
-    <div id="pasteBox" hidden>
-      <textarea id="pasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-      <div class="row"><button id="pasteApply">적용</button></div>
-    </div>
-  </details>
   <p id="prepMsg" role="status"></p>
   <div class="qhead"><h2>질문 <span id="qCount">0</span>개</h2><input id="qFind" type="search" autocomplete="off" placeholder="질문 찾기" aria-label="질문 찾기"></div>
   <div id="qList"></div>
@@ -817,16 +810,8 @@
   </div>
   <div class="row">
     <button id="aiGo" class="primary">AI로 쓰기</button>
-    <button id="aiCopy">프롬프트 복사</button>
-    <button id="aiPaste">결과 붙여넣기</button>
   </div>
-  <p class="small" id="aiKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn3">AI 키 넣기</button></p>
   <p id="aiMsg" role="status"></p>
-  <textarea id="aiPrompt" rows="6" readonly hidden></textarea>
-  <div id="aiPasteBox" hidden>
-    <textarea id="aiPasteIn" rows="6" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-    <div class="row"><button id="aiPasteApply">적용</button></div>
-  </div>
   <textarea id="aiOut" rows="8" readonly hidden aria-label="AI가 쓰는 대본"></textarea>
   <div id="aiResBox" hidden>
     <div class="row"><span class="small grow" id="aiLen"></span><button id="aiShorter" hidden>줄이기</button><button id="aiLonger" hidden>늘리기</button></div>
@@ -879,17 +864,10 @@
   <p class="small" id="adHead"></p>
   <div class="row">
     <button id="adAi" class="primary">AI 정리</button>
-    <button id="adPrompt">프롬프트 복사</button>
-    <button id="adPaste">결과 붙여넣기</button>
     <button id="adCopy">복사</button>
   </div>
-  <p class="small" id="adKeyHint">AI 키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣으세요. <button id="keyBtn4">AI 키 넣기</button></p>
   <p id="adMsg" role="status"></p>
   <textarea id="adOut" rows="6" readonly hidden aria-label="복사할 글"></textarea>
-  <div id="adPasteBox" hidden>
-    <textarea id="adPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-    <div class="row"><button id="adPasteApply">적용</button></div>
-  </div>
   <div id="adList"></div>
   <div class="row bottom">
     <button id="adApply" class="primary" hidden>적용</button>
@@ -944,13 +922,7 @@
           <p id="coachMsg" role="status"></p>
           <details id="coachMore">
             <summary>AI 코칭 받기</summary>
-            <div class="row"><button id="coachAi">AI 코칭</button><button id="coachPrompt">프롬프트 복사</button><button id="coachPaste">결과 붙여넣기</button></div>
-            <p class="small" id="coachKeyHint">키가 없으면 프롬프트를 복사해 claude.ai 같은 챗봇에 붙여넣고, 받은 답을 '결과 붙여넣기'에 넣어 주세요. <button id="keyBtn5">AI 키 넣기</button></p>
-            <textarea id="coachOut" rows="6" readonly hidden aria-label="복사할 프롬프트"></textarea>
-            <div id="coachPasteBox" hidden>
-              <textarea id="coachPasteIn" rows="6" aria-label="챗봇이 돌려준 답" placeholder="챗봇이 돌려준 답을 그대로 붙여넣으세요"></textarea>
-              <div class="row"><button id="coachPasteApply">적용</button></div>
-            </div>
+            <div class="row"><button id="coachAi">AI 코칭</button></div>
           </details>
         </section>
         <section id="cSugBox" hidden><h3>대본 고칠 점</h3><div id="cSug"></div></section>
@@ -967,22 +939,7 @@
   <div class="row rfoot"><button id="cDel">기록 모두 지우기</button></div>
 </dialog>
 
-<dialog id="keyDlg" aria-labelledby="keyTitle">
-  <h2 id="keyTitle">AI 키</h2>
-  <p class="small">AI 기능을 쓰면 대본 텍스트와 발표 정보(평가 기준 포함)가 Anthropic으로 전송돼요. 발표 점검의 AI 코칭은 잰 숫자, 흐름 계획과 평가 기준, 읽은 구간의 대본과 받아 적은 말을 보내요. 목소리와 녹음은 보내지 않아요.</p>
-  <p class="small" id="keyState"></p>
-  <label>Anthropic API 키 <input id="keyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
-  <label><input type="checkbox" id="keyRemember"> 이 기기에 기억 (끄면 이 탭을 닫을 때 지워져요)</label>
-  <p class="small" id="keyShared" hidden>이 주소(github.io)는 같은 GitHub 계정의 다른 Pages 사이트와 저장 공간을 같이 써서, 기억한 키를 그 사이트들도 읽을 수 있어요. 팀 키는 기억하지 말고 이 탭에만 두세요.</p>
-  <div class="row">
-    <button id="keySave" class="primary">저장</button>
-    <button id="keyClear">키 지우기</button>
-    <span class="grow"></span>
-    <button id="keyClose">닫기</button>
-  </div>
-</dialog>
-
-<script src="match.js?v=19"></script>
-<script type="module" src="app.js?v=19"></script>
+<script src="match.js?v=20"></script>
+<script type="module" src="app.js?v=20"></script>
 </body>
 </html>

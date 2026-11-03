@@ -1,32 +1,18 @@
-// Claude 호출. 키가 있으면 브라우저가 Anthropic API를 바로 부르고, 없으면 프롬프트를 복사해 챗봇에 붙여넣는다.
-import { cleanPack, CATS } from './qa.js?v=19';
-import { cleanAi } from './adlib.js?v=19';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=19';
+// Claude 호출. 브라우저는 키 없이 서비스의 AI 중계(worker/)를 부르고, 키와 요금은 서비스가 맡는다.
+import { cleanPack, CATS } from './qa.js?v=20';
+import { cleanAi } from './adlib.js?v=20';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=20';
 
-const API = 'https://api.anthropic.com/v1/messages';
+// 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
+export const API = 'https://livescript-ai.YOUR-SUBDOMAIN.workers.dev/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
 // '다른 말'은 짧고 자주 부르므로 Haiku. Haiku 5.5는 서버 대체 모델(fallbacks)을 받지 않는다.
 export const ALT_MODEL = 'claude-haiku-5-5';
 
-// ---- 키: 기본은 이 탭에만(sessionStorage), '이 기기에 기억'일 때만 localStorage ----
-const K = 'ls.key';
-const tryDo = f => { try { return f(); } catch { return null; } };
-export const keyStore = {
-  get: () => tryDo(() => sessionStorage.getItem(K) || localStorage.getItem(K)) || '',
-  remembered: () => !!tryDo(() => localStorage.getItem(K)),
-  set(key, remember) {
-    this.clear();
-    tryDo(() => (remember ? localStorage : sessionStorage).setItem(K, key));
-  },
-  clear() { tryDo(() => sessionStorage.removeItem(K)); tryDo(() => localStorage.removeItem(K)); },
-};
-// 헤더에 넣을 수 있는 글자만 (한글이나 보이지 않는 글자가 섞이면 fetch가 네트워크 오류처럼 실패한다)
-export const keyOk = k => /^[\x21-\x7e]+$/.test(k);
-const BAD_KEY = '키에 쓸 수 없는 글자가 있어요. AI 키에서 키를 다시 복사해 넣어 주세요.';
-// 붙여넣은 답이든 API로 받은 답이든 같은 글을 쓴다. 필드 이름 같은 개발자 말은 화면에 내지 않는다
+// API로 받은 답이든 가져온 파일이든 같은 글을 쓴다. 필드 이름 같은 개발자 말은 화면에 내지 않는다
 const NOT_FOUND = what => `받은 글에서 ${what} 찾지 못했어요. 답이 처음부터 끝까지 다 들어갔는지 확인해 주세요.`;
 
-// ---- 예상 질문 프롬프트 (API와 붙여넣기가 같은 글을 쓴다) ----
+// ---- 예상 질문 프롬프트 ----
 export const PACK_SCHEMA = {
   type: 'object',
   properties: {
@@ -104,7 +90,7 @@ ${script}
   return { system, user, text: system + '\n\n' + user };
 }
 
-// 챗봇 답에 설명이나 ``` 표시가 붙어도 JSON 부분만 골라 clean으로 검사한다. 코드 블록이 있으면 그 안부터 본다.
+// 답에 설명이나 ``` 표시가 붙어도 JSON 부분만 골라 clean으로 검사한다. 코드 블록이 있으면 그 안부터 본다.
 function parseJson(text, clean, what) {
   let err = null;
   for (const s of [String(text).match(/```(?:json)?\s*([\s\S]*?)```/)?.[1], String(text)]) {
@@ -284,7 +270,7 @@ const BACKREF = /^["'“‘(]?(그래서|그러므로|따라서|그러니까|그
 // 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()), rub: 보낸 평가 기준 목록.
 // 반환 { paras: [{ imp, keep, drop, role, tone, e }] (문장 번호는 0부터, e는 1~3 | null), kw: { 키워드: [다른 말] }, keys: [{ p, s, why, r }] (0부터, r 0 없음),
 //   crit: 평가 기준마다 [{ kind, ps: 다루는 문단(0부터), at: 고칠 문단(0부터, -1 없음), how }], rub }
-// 흐름·핵심 문장·평가 기준이 없는 답(옛 답, 챗봇에 붙여넣은 답)도 받는다. 핵심 문장은 keep에 넣고 drop에서 뺀다(줄여도 남게)
+// 흐름·핵심 문장·평가 기준이 없는 답(옛 답)도 받는다. 핵심 문장은 keep에 넣고 drop에서 뺀다(줄여도 남게)
 export function cleanPrep(obj, ps, rub = []) {
   if (!obj || !Array.isArray(obj.paras)) throw new Error(NOT_FOUND('문단별 결과를'));
   const flat = ps.flat(), P = ps.length, R = rub.length;
@@ -413,7 +399,7 @@ export function adlibPrompt(segs) {
 }
 
 // AI 답 검사(adlib.js cleanAi). 반환: 애드리브 순서대로 정리 또는 null(빠졌거나 모양이 틀림). 하나도 없으면 Error.
-// 붙여넣기에서는 items 배열만 와도 받는다.
+// items 배열만 와도 받는다.
 export function cleanAdlib(obj, n) {
   const items = Array.isArray(obj) ? obj : obj?.items;
   if (!Array.isArray(items)) throw new Error(NOT_FOUND('애드리브 정리를'));
@@ -570,25 +556,23 @@ export async function coachRun(run, prev, tips, { goal, says, crit, fixed, ...op
 // ---- API 호출 (스트리밍: 질문이 많아도 시간 초과 없이 받고, 받은 만큼 진행을 보여 준다) ----
 function errorText(status, err = {}, model = MODEL) {
   const t = err.type || '';
-  if (status === 401 || t === 'authentication_error') return 'API 키가 맞지 않아요(401). AI 키에서 키를 다시 넣어 주세요.';
+  // 키와 결제는 서비스 쪽 일이라 사용자가 고칠 수 없다. 숫자만 알려 받는다
+  if (status === 401 || t === 'authentication_error' || status === 403 || t === 'permission_error') return `AI 서버 설정에 문제가 있어요(${status || t}). 같은 오류가 되풀이되면 이 숫자를 알려 주세요.`;
   // 지출 한도(429나 400)와 크레딧 부족(400)은 기다려도 풀리지 않는다
-  if (/usage limit|credit balance/i.test(err.message || '')) return `지출 한도에 걸렸거나 크레딧이 부족해요(${status || t}). Claude Console에서 결제와 한도 설정을 확인해 주세요.`;
-  if (status === 403 || t === 'permission_error') return '이 키로는 쓸 수 없어요(403). 키의 권한을 확인해 주세요.';
-  if (status === 402 || t === 'billing_error') return '크레딧이나 월 지출 한도를 확인해 주세요(402).';
-  if (status === 404 || t === 'not_found_error') return `이 키로는 ${model} 모델을 쓸 수 없어요(404). 키의 워크스페이스 설정을 확인해 주세요.`;
+  if (/usage limit|credit balance/i.test(err.message || '') || status === 402 || t === 'billing_error') return `서비스의 AI 사용량이 다 찼어요(${status || t}). 나중에 다시 해 주세요.`;
+  if (status === 404 || t === 'not_found_error') return `AI 서버에서 ${model} 모델을 쓸 수 없어요(404). 같은 오류가 되풀이되면 이 숫자를 알려 주세요.`;
   if (status === 429 || t === 'rate_limit_error') return '요청이 너무 많아요(429). 1분쯤 뒤에 다시 해 주세요.';
   // 너무 긴 글은 413이 아니라 400 'prompt is too long'으로 온다
   if (status === 413 || t === 'request_too_large' || /too long|too many tokens|maximum context/i.test(err.message || '')) return `대본이 너무 길어서 보내지 못했어요(${status || t}). 문단을 나눠 고르거나 대본을 줄여 주세요.`;
-  if (status >= 500 || t === 'overloaded_error' || t === 'api_error') return `Anthropic 서버가 바빠요(${status || t}). 잠시 뒤 다시 해 주세요.`;
-  console.warn('Anthropic 오류', status, err);  // 영어 원문은 화면에 내지 않고 콘솔에만 남긴다
+  if (status >= 500 || t === 'overloaded_error' || t === 'api_error') return `AI 서버가 바빠요(${status || t}). 잠시 뒤 다시 해 주세요.`;
+  console.warn('AI 오류', status, err);  // 영어 원문은 화면에 내지 않고 콘솔에만 남긴다
   return `AI가 요청을 처리하지 못했어요(${status || t || '?'}). 같은 오류가 되풀이되면 이 숫자를 알려 주세요.`;
 }
 
 // 반환: 모델이 쓴 글(text 블록만). 앞에 thinking 블록이 와도 건너뛴다.
 // onProgress({ chars, questions, text }): text는 지금까지 받은 글 전체 (대본 미리보기에 바로 보여 준다)
 export async function callClaude(o) {
-  const { key, system, user, schema, signal, onProgress, model = MODEL, effort = EFFORT, fallback = true } = o;
-  if (!keyOk(key)) throw new Error(BAD_KEY);
+  const { system, user, schema, signal, onProgress, model = MODEL, effort = EFFORT, fallback = true } = o;
   const body = {
     model,
     max_tokens: 64000,
@@ -597,22 +581,16 @@ export async function callClaude(o) {
     messages: [{ role: 'user', content: user }],
     output_config: { effort, ...(schema && { format: { type: 'json_schema', schema } }) },
   };
-  const headers = {
-    'content-type': 'application/json',
-    'x-api-key': key,
-    'anthropic-version': '2023-06-01',
-    'anthropic-dangerous-direct-browser-access': 'true',
-  };
-  // 안전 분류기가 잘못 거절하면 서버가 다른 모델로 다시 돌린다
-  if (fallback) { body.fallbacks = 'default'; headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; }
+  // 안전 분류기가 잘못 거절하면 서버가 다른 모델로 다시 돌린다. 키·버전·베타 헤더는 중계(worker/)가 붙인다
+  if (fallback) body.fallbacks = 'default';
 
   let res;
-  try { res = await globalThis.fetch(API, { method: 'POST', headers, body: JSON.stringify(body), signal }); }
-  catch (e) { if (e.name === 'AbortError') throw e; throw new Error('Anthropic에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.'); }
+  try { res = await globalThis.fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal }); }
+  catch (e) { if (e.name === 'AbortError') throw e; throw new Error('AI 서버에 연결하지 못했어요. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.'); }
   if (!res.ok) {
     let err = {};
     try { err = (await res.json()).error || {}; } catch {}
-    // 조직에서 대체 모델 베타를 못 쓰면 그것만 빼고 한 번 더
+    // 조직에서 대체 모델 베타를 못 쓰면 그것만 빼고 한 번 더 (중계는 Anthropic 오류를 그대로 돌려준다)
     if (fallback && res.status === 400 && /anthropic-beta|fallbacks/.test(err.message || ''))
       return callClaude({ ...o, fallback: false });
     throw new Error(errorText(res.status, err, model));
@@ -652,17 +630,9 @@ export async function callClaude(o) {
   return text;
 }
 
-// node claude.js 로 실행하면 확인 (실제 키 없이 fetch를 흉내 낸다)
+// node claude.js 로 실행하면 확인 (중계 없이 fetch를 흉내 낸다)
 if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWith('claude.js'))) {
   const assert = (await import('node:assert')).default;
-  const mem = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
-  globalThis.sessionStorage = mem(); globalThis.localStorage = mem();
-
-  keyStore.set('k1', false);
-  assert.equal(keyStore.get(), 'k1'); assert.equal(localStorage.getItem(K), null, '기본은 탭에만');
-  keyStore.set('k2', true);
-  assert.equal(keyStore.get(), 'k2'); assert.equal(sessionStorage.getItem(K), null); assert.ok(keyStore.remembered());
-  keyStore.clear(); assert.equal(keyStore.get(), '');
 
   const p = qaPrompt({ topic: '라이브스크립트', audience: '대학생', n: 7, script: '안녕하세요.' });
   assert.ok(p.system.includes('7개') && p.system.includes('6~8개') && p.system.includes('check를 true') && p.system.includes('"version":1'));
@@ -703,31 +673,25 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   mock(ok(JSON.stringify(good)));
   const seen = [];
-  const pack = await generatePack(info, { key: 'test-key', onProgress: x => seen.push(x) });
+  const pack = await generatePack(info, { onProgress: x => seen.push(x) });
   assert.equal(pack.questions[0].alts[0], '사파리에서 돼요');
   assert.equal(seen.at(-1).questions, 1, '진행 표시');
   const { url, init } = calls[0], body = JSON.parse(init.body);
-  assert.equal(url, 'https://api.anthropic.com/v1/messages');
-  assert.equal(init.headers['x-api-key'], 'test-key');
-  assert.equal(init.headers['anthropic-version'], '2023-06-01');
-  assert.equal(init.headers['anthropic-dangerous-direct-browser-access'], 'true');
-  assert.equal(init.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+  assert.equal(url, API); assert.ok(url.endsWith('.workers.dev/v1/messages'), '중계로 보낸다');
+  assert.deepEqual(init.headers, { 'content-type': 'application/json' }, '브라우저는 키를 보내지 않는다');
   assert.equal(body.model, 'claude-opus-5-5'); assert.equal(body.stream, true); assert.equal(body.fallbacks, 'default');
   assert.equal(body.output_config.effort, 'medium');
   assert.deepEqual(body.output_config.format, { type: 'json_schema', schema: PACK_SCHEMA });
   assert.equal(body.thinking, undefined, 'Opus 5.5는 thinking을 끌 수 없으니 보내지 않는다');
 
-  const err = async (re, ...answers) => { mock(...answers); await assert.rejects(generatePack(info, { key: 'k' }), re); };
-  await err(/키가 맞지 않아요\(401\)/, fail(401, 'authentication_error', 'invalid x-api-key'));
+  const err = async (re, ...answers) => { mock(...answers); await assert.rejects(generatePack(info, {}), re); };
+  await err(/설정에 문제가 있어요\(401\)/, fail(401, 'authentication_error', 'invalid x-api-key'));
+  await err(/설정에 문제가 있어요\(403\)/, fail(403, 'permission_error', 'origin not allowed'));
   await err(/너무 많아요\(429\)/, fail(429, 'rate_limit_error', 'slow down'));
-  await err(/지출 한도/, fail(429, 'rate_limit_error', 'You have reached your API usage limits: please try again later.'));
-  await err(/크레딧이 부족/, fail(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.'));
+  await err(/사용량이 다 찼어요\(429\)/, fail(429, 'rate_limit_error', 'You have reached your API usage limits: please try again later.'));
+  await err(/사용량이 다 찼어요\(400\)/, fail(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.'));
   await err(/쓸 수 없어요\(404\)/, fail(404, 'not_found_error', 'model: claude-opus-5-5'));
-  for (const bad of ['sk-ant-abc\u200b', 'sk-ant-테스트', '']) {
-    mock(ok(JSON.stringify(good)));
-    await assert.rejects(generatePack(info, { key: bad }), /쓸 수 없는 글자/);
-    assert.equal(calls.length, 0, '이상한 키는 보내지 않는다');
-  }
+  await err(/사용량이 다 찼어요\(402\)/, fail(402, 'billing_error', 'billing'));
   await err(/바빠요\(529\)/, fail(529, 'overloaded_error', 'Overloaded'));
   await err(/너무 길어서/, fail(400, 'invalid_request_error', 'prompt is too long: 250000 tokens > 200000 maximum'));
   await err(/처리하지 못했어요\(400\)/, fail(400, 'invalid_request_error', 'something odd'));
@@ -739,12 +703,12 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   // 대체 모델 베타를 못 쓰는 조직이면 빼고 다시
   mock(fail(400, 'invalid_request_error', 'Unexpected value(s) `server-side-fallback-2026-07-01` for the `anthropic-beta` header.'), ok(JSON.stringify(good)));
-  assert.equal((await generatePack(info, { key: 'k' })).questions.length, 1);
+  assert.equal((await generatePack(info, {})).questions.length, 1);
   assert.equal(calls.length, 2); assert.equal(calls[1].init.headers['anthropic-beta'], undefined); assert.equal(JSON.parse(calls[1].init.body).fallbacks, undefined);
 
   const ctl = new AbortController(); ctl.abort();
   globalThis.fetch = async (u, init) => { init.signal.throwIfAborted(); };
-  await assert.rejects(generatePack(info, { key: 'k', signal: ctl.signal }), { name: 'AbortError' });
+  await assert.rejects(generatePack(info, { signal: ctl.signal }), { name: 'AbortError' });
 
   // 대본 쓰기: 슬라이드마다 글자 수, 규칙
   const sp = scriptPrompt({ topic: '출석 앱', audience: '교수님', goal: '시간 절약', tone: '해요체', outline: '도입\n\n문제\n해결', refs: '', minutes: 3, chars: 900 });
@@ -758,7 +722,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 대본 스트리밍: 받은 글이 진행 표시로 온다
   mock(ok('안녕하세요.\n\n반갑습니다.'));
   const texts = [];
-  assert.equal(await callClaude({ key: 'k', system: sp.system, user: sp.user, onProgress: x => x.text && texts.push(x.text) }), '안녕하세요.\n\n반갑습니다.');
+  assert.equal(await callClaude({ system: sp.system, user: sp.user, onProgress: x => x.text && texts.push(x.text) }), '안녕하세요.\n\n반갑습니다.');
   assert.ok(texts.length > 2 && texts.at(-1) === '안녕하세요.\n\n반갑습니다.' && texts[0].length < texts.at(-1).length, '받는 대로 보여 주기');
   assert.equal(JSON.parse(calls[0].init.body).output_config.format, undefined, '대본은 글 그대로 받는다');
 
@@ -809,12 +773,12 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const ap = altPrompt({ phrase: '레버리지를', sentence: '이 레버리지를 쓰면' });
   assert.ok(ap.user === '<문장>이 레버리지를 쓰면</문장>\n<고른말>레버리지를</고른말>' && ap.system.includes('조사와 어미까지') && ap.system.includes('고유명사'));
   mock(ok(JSON.stringify({ alts: ['지렛대를', '활용을', '힘을'] })));
-  assert.deepEqual(await suggestAlts({ phrase: '레버리지를', sentence: '이 레버리지를 쓰면' }, { key: 'k' }), ['지렛대를', '활용을', '힘을']);
+  assert.deepEqual(await suggestAlts({ phrase: '레버리지를', sentence: '이 레버리지를 쓰면' }, {}), ['지렛대를', '활용을', '힘을']);
   const ab = JSON.parse(calls[0].init.body);
   assert.equal(ab.model, 'claude-haiku-5-5'); assert.equal(ab.output_config.effort, 'low');
   assert.deepEqual(ab.output_config.format, { type: 'json_schema', schema: ALT_SCHEMA });
   assert.equal(ab.fallbacks, undefined, 'Haiku 5.5는 서버 대체 모델이 없다'); assert.equal(calls[0].init.headers['anthropic-beta'], undefined);
-  await (async () => { mock(fail(404, 'not_found_error', 'model')); await assert.rejects(suggestAlts({ phrase: '가', sentence: '가' }, { key: 'k' }), /claude-haiku-5-5 모델/); })();
+  await (async () => { mock(fail(404, 'not_found_error', 'model')); await assert.rejects(suggestAlts({ phrase: '가', sentence: '가' }, {}), /claude-haiku-5-5 모델/); })();
 
   // 애드리브 정리: 애드리브와 앞뒤 문장만 보낸다
   const AD = [{ prev: '오늘은 라이브스크립트를 소개하겠습니다.', text: '제가 작년에 발표하다가 대본을 놓쳤거든요', next: '발표할 때 대본을 놓치지 않게 도와줍니다.', raw: '음 제가', cur: 9 },
@@ -837,18 +801,18 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.throws(() => parseAdlib('{"paras":[]}', 1), /애드리브 정리를 찾지/);
   assert.equal(parseAdlib('네.\n```json\n{"items":[{"n":1,"title":"제목","points":["점"],"worth":true,"add":["문장."]}]}\n```', 1)[0].add[0], '문장.', '붙여넣은 JSON');
   mock(ok(JSON.stringify({ items: [{ n: 1, title: '작년 경험', points: ['점'], worth: true, add: ['문장.'] }, { n: 2, title: '인사', points: [], worth: false, add: [] }] })));
-  assert.equal((await summarizeAdlib(AD, { key: 'k' }))[1].title, '인사');
+  assert.equal((await summarizeAdlib(AD, {}))[1].title, '인사');
   const adb = JSON.parse(calls[0].init.body);
   assert.equal(adb.model, 'claude-opus-5-5'); assert.equal(adb.output_config.effort, 'low'); assert.equal(adb.fallbacks, 'default');
   assert.deepEqual(adb.output_config.format, { type: 'json_schema', schema: ADLIB_SCHEMA });
-  assert.equal(adb.messages[0].content, adp.user, '보내는 글은 프롬프트 복사와 같다');
+  assert.equal(adb.messages[0].content, adp.user, '보내는 글은 프롬프트의 user와 같다');
 
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=19');
-  const { readScript: readEx } = await import('./lib.js?v=19');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=19');
+  const { units } = await import('./shrink.js?v=20');
+  const { readScript: readEx } = await import('./lib.js?v=20');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=20');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));
@@ -889,11 +853,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.throws(() => parseCoach('{"summary":"x"}', 8), /코칭 내용을/);
   assert.throws(() => parseCoach('{"summary": "잘', 8), /JSON/);
   mock(ok(JSON.stringify(coach)));
-  assert.deepEqual(await coachRun(cr, prev, ct, { key: 'k', goal: 240 }), coach);
+  assert.deepEqual(await coachRun(cr, prev, ct, { goal: 240 }), coach);
   const cb = JSON.parse(calls[0].init.body);
   assert.deepEqual(cb.output_config.format, { type: 'json_schema', schema: COACH_SCHEMA });
   assert.equal(cb.output_config.effort, 'low'); assert.equal(cb.model, 'claude-opus-5-5'); assert.equal(cb.goal, undefined);
-  assert.equal(cb.messages[0].content, coachPrompt(cr, prev, ct, 240).user, '보내는 글은 프롬프트 복사와 같다');
+  assert.equal(cb.messages[0].content, coachPrompt(cr, prev, ct, 240).user, '보내는 글은 프롬프트의 user와 같다');
 
   // 내용 코칭: 연습 기록(says)을 주면 읽은 구간의 대본과 들은 말을 보낸다. 읽지 않은 구간의 대본은 보내지 않는다
   const secText = SU.map(u => ex.text.slice(u.s[0].a, u.s.at(-1).b));
@@ -912,7 +876,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(fx.user.includes('<지난연습고칠점>\n- 고쳤어요: 1번 구간이 빨랐어요.\n- 아직이에요: 2번 구간 목소리가 작아졌어요.\n</지난연습고칠점>') && fx.system.includes("'고쳤어요'인 것은 summary에서"), '지난 연습 고칠 점');
   assert.ok(!/undefined|NaN|null/.test(tp.text));
   mock(ok(JSON.stringify(coach)));
-  await coachRun(cr, prev, ct, { key: 'k', goal: 180, says });
+  await coachRun(cr, prev, ct, { goal: 180, says });
   assert.equal(JSON.parse(calls[0].init.body).messages[0].content, tp.user, '코칭 요청에 대본과 한 말이 들어간다');
   assert.ok(tp.system.includes('edits는 대본 글을 고칠 점') && tp.system.includes('같은 내용을 둘 다에 쓰지 않는다') && tp.user.endsWith('해 볼 것과 대본 고칠 점을 정해 주세요.'));
   // 흐름·꼭 말할 문장·평가 기준: 구간 번호와 숫자, 발표자가 적은 평가 기준만. 대본 글은 여전히 없다
@@ -931,7 +895,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.ok(coachPrompt(fr, null, [], 180).user.includes('\n3 | - | 0.3 |'), '평가 기준을 보내지 않으면 기준 번호도 보내지 않는다');
   assert.ok(coachPrompt(fr, null, [], 180, null, [{ name: '근거', kind: '내용', secs: null }]).user.includes('1. 근거 (내용, 다루는 구간: 모름(대본이 바뀜))'));
   mock(ok(JSON.stringify({ ...coach, edits: [{ sec: 2, why: '한 문장이 길어요.', from: '가 나 다', to: '가 나. 다' }, { sec: 8, why: '읽지 않은 구간', from: 'x', to: 'y' }] })));
-  const ce = await coachRun(part, prev, [], { key: 'k', goal: 180, says });
+  const ce = await coachRun(part, prev, [], { goal: 180, says });
   assert.deepEqual(ce.edits, [{ sec: 2, why: '한 문장이 길어요.', from: '가 나 다', to: '가 나. 다' }], '읽지 않은 구간(8)의 고칠 점은 버린다');
 
   console.log('claude.js ok');

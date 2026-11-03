@@ -178,6 +178,13 @@ export function cleanScript(t) {
   return t;
 }
 
+// ---- 문단에 띄울 슬라이드 ----
+// 직접 고른 쪽은 문단 머리글(공백을 접은 앞 20자)로 묶는다. 앞에 문단을 넣거나 빼도 그 문단을 따라간다
+export const headOf = t => t.replace(/\s+/g, ' ').trim().slice(0, 20);
+// { 머리글: 쪽 번호(1부터) } 모양만 남긴다 (저장값·가져온 파일은 믿지 않는다)
+export const cleanParaSlide = v => v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).filter(([k, n]) => k && k.length <= 20 && Number.isInteger(n) && n > 0).slice(0, 300)) : {};
+
 // ---- 대본 파일 (발표용 휴대폰으로 옮기기) ----
 // 앱이 내보낸 파일 { app: 'livescript', kind: 'script', name, text, target, info, pack, prep }이나 글 파일(.txt)을 읽는다. 파일은 믿지 않는다.
 // 반환 { name, text, target, info, pack, prep }. pack은 앱이 qa.js cleanPack으로 검사하고, prep은 모양만 맞춘다(앱 loadPrep이 읽을 때마다 검사).
@@ -202,6 +209,7 @@ export function readScript(raw, fname = '') {
       n: Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null,
       ...Object.fromEntries(['keys', 'crit', 'rub'].filter(k => Array.isArray(p[k])).map(k => [k, p[k]])) } : null,
     must: Array.isArray(d.must) ? d.must.filter(x => typeof x === 'string').slice(0, 200) : [],  // 꼭 말할 문장(대본 글 그대로)
+    paraSlide: cleanParaSlide(d.paraSlide),
   };
 }
 
@@ -310,8 +318,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
 
   // 대본 파일
   const file = { app: 'livescript', kind: 'script', name: '발표', text: '가'.normalize('NFD') + '나.', target: '7', info: { topic: '주제', bad: '1', n: 5 }, pack: { questions: [] }, prep: { h: 1, paras: [{ imp: 1 }], kw: 3 } };
-  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {}, n: null }, must: [] });
-  assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null, must: [] }, '글 파일');
+  assert.deepEqual(readScript(JSON.stringify(file), 'x.json'), { name: '발표', text: '가나.', target: 7, info: { topic: '주제' }, pack: { questions: [] }, prep: { h: '1', t: 0, paras: [{ imp: 1 }], kw: {}, n: null }, must: [], paraSlide: {} });
+  assert.deepEqual(readScript('\uFEFF첫 줄\r\n둘째 줄', '내 대본.txt'), { name: '내 대본', text: '첫 줄\n둘째 줄', target: 0, info: {}, pack: null, prep: null, must: [], paraSlide: {} }, '글 파일');
+  assert.deepEqual(readScript(JSON.stringify({ ...file, paraSlide: { 가나: 2, 다라: 0, 마: 'x', 바: 1.5, ['가'.repeat(21)]: 1 } })).paraSlide, { 가나: 2 }, '고른 슬라이드는 20자 머리글과 1 이상 정수만');
+  assert.deepEqual([readScript(JSON.stringify({ ...file, paraSlide: '가' })).paraSlide, cleanParaSlide([3]), cleanParaSlide(null)], [{}, {}, {}], '객체가 아니면 비운다');
+  assert.equal(headOf('  안녕하세요.\n 오늘은   발표 대본을 따라가는 말랑을 소개합니다.'), '안녕하세요. 오늘은 발표 대본을 따라', '공백을 접은 앞 20자');
   assert.throws(() => readScript('{"version":1,"questions":[]}', 'qa-pack.json'), /대본 파일이 아니/, '질문 팩 파일');
   assert.throws(() => readScript('{"app":"livescript"', 'a.json'), SyntaxError);
   assert.throws(() => readScript(' \n', 'a.txt'), /비어/);

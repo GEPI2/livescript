@@ -1,0 +1,16 @@
+# AI 중계 Worker. 배포는 이 폴더(worker/)에서 한 번:
+#   npx wrangler@latest login                        Cloudflare 계정으로 로그인 (무료 요금제면 된다)
+#   npx wrangler@latest deploy                       끝에 나오는 https://livescript-ai.<계정>.workers.dev 주소를
+#                                                    claude.js의 API와 index.html CSP connect-src에 넣는다
+#   npx wrangler@latest secret put ANTHROPIC_API_KEY  서비스 키를 넣는다 (워크스페이스 월 지출 한도를 건 키)
+name = "livescript-ai"
+main = "index.js"
+compatibility_date = "2026-10-01"
+
+# IP마다 1분에 120번까지. 한 교실(30명쯤)이 학교 와이파이(같은 IP)로 같이 연습해도 막히지 않게 넉넉히 둔다.
+# 연습 한 번에 AI를 2~3번 부른다(들어갈 때 발표 준비, 정지할 때 코칭·애드리브 정리). 비용 상한은 이것이 아니라 지출 한도다.
+# 이 묶음 때문에 배포가 실패하면 지워도 된다(index.js는 RL이 없으면 세지 않는다)
+[[ratelimits]]
+name = "RL"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }

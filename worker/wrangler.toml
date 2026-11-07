@@ -7,6 +7,11 @@ name = "livescript-ai"
 main = "index.js"
 compatibility_date = "2026-10-01"
 
+# 한국에서 부르면 홍콩(HKG) 서버에서 돌 때가 있는데, Anthropic은 홍콩에서 오는 요청을 막는다(403 "Request not allowed").
+# 미국 동부 가까이에서 돌게 한다. 응답 헤더 cf-placement로 확인한다
+[placement]
+region = "aws:us-east-1"
+
 # IP마다 1분에 120번까지. 한 교실(30명쯤)이 학교 와이파이(같은 IP)로 같이 연습해도 막히지 않게 넉넉히 둔다.
 # 연습 한 번에 AI를 2~3번 부른다(들어갈 때 발표 준비, 정지할 때 코칭·애드리브 정리). 비용 상한은 이것이 아니라 지출 한도다.
 # 이 묶음 때문에 배포가 실패하면 지워도 된다(index.js는 RL이 없으면 세지 않는다)

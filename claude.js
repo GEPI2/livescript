@@ -4,7 +4,7 @@ import { cleanAi } from './adlib.js?v=20';
 import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=20';
 
 // 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
-export const API = 'https://livescript-ai.YOUR-SUBDOMAIN.workers.dev/v1/messages';
+export const API = 'https://livescript-ai.gepi.workers.dev/v1/messages';
 export const MODEL = 'claude-opus-5-5', EFFORT = 'medium';
 // '다른 말'은 짧고 자주 부르므로 Haiku. Haiku 5.5는 서버 대체 모델(fallbacks)을 받지 않는다.
 export const ALT_MODEL = 'claude-haiku-5-5';

@@ -492,8 +492,16 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   // 고칠 점마다 기준 한 줄, 지적한 구간은 녹음으로 다시 듣는다(가짜 마이크는 한 음 높이라 높낮이 폭이 좁다고 나온다)
   const tipN = await p.locator('#cTips li').count();
   assert.ok(tipN >= 1, '고칠 점');
-  assert.equal(await p.locator('#cTips li .crit').count(), tipN, '고칠 점마다 기준 한 줄');
-  assert.match(await p.locator('#cTips li .crit').first().textContent(), /^기준: /);
+  assert.equal(await p.locator('#cTips li .clips .tag').count(), tipN, '고칠 점마다 기준 태그 하나');
+  assert.match(await p.locator('#cTips li .tag').first().textContent(), /^기준 \S/);
+  assert.equal(await p.locator('#cTips li .tag').evaluateAll(es => es.every(e => e.getBoundingClientRect().height < 30)), true, '태그는 줄을 바꾸지 않는다');
+  assert.ok(await p.locator('#cCritList dd .tag').count() >= 15, '평가 기준 목록도 태그');
+  await p.evaluate(() => { document.getElementById('cCrit').open = true; }); await p.locator('#cTipsH').scrollIntoViewIfNeeded();
+  await p.screenshot({ path: OUT + '/rec-tips.png' });
+  const vp = p.viewportSize(); await p.setViewportSize({ width: 375, height: 812 }); await p.locator('#cTipsH').scrollIntoViewIfNeeded();
+  await p.screenshot({ path: OUT + '/rec-tips-phone.png' });
+  assert.equal(await p.locator('#checkDlg').evaluate(d => d.scrollWidth <= d.clientWidth + 1), true, '폰에서 결과 창이 가로로 넘치지 않는다');
+  await p.setViewportSize(vp); await p.evaluate(() => { document.getElementById('cCrit').open = false; });
   const cb = p.locator('#cTips .clips button.play');
   assert.ok(await cb.count() >= 1, `지적한 구간 듣기 ${await p.textContent('#cTips')}`);
   assert.match(await cb.first().getAttribute('aria-label'), /^\d+번 구간 녹음 듣기$/);

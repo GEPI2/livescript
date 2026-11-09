@@ -543,15 +543,15 @@
   #spText.wait { opacity: .45; }
   #spProg { display: block; width: 100%; height: 8px; accent-color: var(--accent); }
   .sprow { margin: 6px 0 0; }
-  /* 고칠 점의 기준 한 줄과 지적한 구간 듣기 단추, 평가 기준 목록 */
-  .crit { display: block; margin-top: 4px; color: var(--ink-muted); font-size: 13px; }
+  /* 고칠 점 아래 기준 태그와 지적한 구간 듣기 단추, 평가 기준 목록(태그). 태그는 줄을 바꾸지 않는다 */
   .clips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink-muted); font-size: 12px; font-weight: 400; line-height: 1.4; white-space: nowrap; }
+  .tag b { color: var(--ink); font-weight: 600; }
   .critbox { margin-top: 10px; }
   .critbox summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
-  .critbox dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 4px 0 8px; font-size: 13px; }
-  .critbox dt { font-weight: 600; white-space: nowrap; }
-  .critbox dd { margin: 0; color: var(--ink-muted); }
-  @media (max-width: 420px) { .critbox dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .critbox dd { margin-bottom: 6px; } }
+  .critbox dl { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px 12px; margin: 4px 0 8px; font-size: 13px; }
+  .critbox dt { padding-top: 3px; font-weight: 600; white-space: nowrap; }
+  .critbox dd { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
   .tlink { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
   @media (max-width: 720px) { .sp2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 560px) { #spTest { padding: 0; border: 0; background: none; } #spText { font-size: 16px; line-height: 1.7; } }  /* 폰 한 화면에 시험 글이 다 들어가게(읽는 동안은 카드 테두리도 뺀다) */

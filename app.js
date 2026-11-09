@@ -11,7 +11,7 @@ import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, ruleOf } from './check.js?v=21';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, TIP_TAG } from './check.js?v=21';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1444,14 +1444,11 @@ function renderCheck() {
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
   renderKeys(run);
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
-  // 고칠 점마다 기준 한 줄과, 녹음이 있으면 지적한 구간 듣기 단추
+  // 고칠 점마다 아래 줄에 기준 태그 하나와, 녹음이 있으면 지적한 구간 듣기 단추
   const rule = tips(run, goal).map(x => {
     const li = mk('li', x.text);
     if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
-    const r = ruleOf(x.k);
-    if (r) li.append(mk('span', `기준: ${r.rule}`, 'crit'));
-    clipRow(li, run, x.s);
-    return li;
+    return clipRow(li, run, x.s, TIP_TAG[x.k]);
   });
   const ai = run.ai, at = ai?.tips.length ? ai.tips : null;  // 고칠 점만 온 답이면 규칙 팁을 그대로 보인다
   $('cTipsH').textContent = at ? 'AI 코칭' : '다음에 해 볼 것';
@@ -1540,12 +1537,14 @@ function listenBtn(label, f) {
   b.onclick = e => { e.stopPropagation(); f(); };
   return b;
 }
-// 지적한 구간 듣기 줄: 녹음이 있고 읽은 구간이면 구간마다 '▶ 3번 구간'. 많으면 앞 CLIP_N곳과 '외 N곳'. li를 돌려준다
+// 고칠 점 아래 줄: 기준 태그(있으면)와, 녹음이 있고 읽은 구간이면 구간마다 '▶ 3번 구간'. 많으면 앞 CLIP_N곳과 '외 N곳'. li를 돌려준다
 const CLIP_N = 5;
-function clipRow(li, run, s) {
+const tagEl = (t, k) => { const e = mk('span', '', 'tag'); if (k) e.append(mk('b', k), ' '); e.append(t); return e; };
+function clipRow(li, run, s, tag) {
   const a = run.rec ? s.filter(i => run.secs[i]?.wall > 0) : [];
-  if (!a.length) return li;
+  if (!a.length && !tag) return li;
   const row = mk('span', '', 'clips');
+  if (tag) row.append(tagEl(tag, '기준'));
   for (const i of a.slice(0, CLIP_N)) {
     const b = listenBtn(`${i + 1}번 구간 녹음 듣기`, () => playClip(run.t0, m => m[2] === i));
     b.lastChild.textContent = `${i + 1}번 구간`;
@@ -1555,8 +1554,10 @@ function clipRow(li, run, s) {
   li.append(row);
   return li;
 }
-// 평가 기준 목록(dt 이름, dd 기준). keys가 있으면 그것만
-function critList(keys) { return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => [mk('dt', r.name), mk('dd', r.rule)]); }
+// 평가 기준 목록(dt 이름, dd 태그들). keys가 있으면 그것만
+function critList(keys) {
+  return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => { const dd = mk('dd'); dd.append(...r.tags.map(t => tagEl(t))); return [mk('dt', r.name), dd]; });
+}
 $('cCritList').replaceChildren(...critList());
 $('spCrit').replaceChildren(...critList(['fast', 'flat', 'run', 'vol', 'fall']));  // 홈 '내 말하기'의 말하는 방식
 // 발표 준비의 문단 q가 든 구간 번호들(0부터, 지금 대본의 SU)

@@ -790,22 +790,27 @@ export function tips(run, goal, n = 3) {
   if (goal && full && run.wall < OK_LO * goal) out.push({ k: 'short', s: [], text: `목표보다 ${mmss(goal - run.wall)} 짧아요. 천천히 읽거나 설명을 더해 보세요.` });
   return out.slice(0, n);
 }
-// 평가 기준(화면에 그대로 보인다). 숫자는 위 상수에서 와서 판정과 늘 같다. k는 tips()의 종류(ruleOf가 묶는다)
+// 평가 기준을 짧은 태그로(화면에 그대로 보인다, 한 줄에 들어가게 짧게). 숫자는 위 상수에서 와서 판정과 늘 같다.
+// RULES: '평가 기준' 펼침 목록(이름 + 태그들). TIP_TAG: 고칠 점(tips()의 k)마다 그 팁을 낸 기준 태그 하나
 const pc = x => Math.round(x * 100);
 export const RULES = [
-  { k: 'over', name: '걸린 시간', rule: `목표보다 ${OK_HI}초 넘게 길면 넘었다고 해요. 끝까지 읽었는데 목표의 ${pc(OK_LO)}%보다 짧으면 짧다고 해요.` },
-  { k: 'fast', name: '빠르기', rule: `1분에 ${PACE_SLOW * 60}~${PACE_FAST * 60}음절이면 보통, ${PACE_FAST * 60}음절 넘으면 빨라요. 구간마다 재고, ${PACE_TALK}초 넘게 말한 구간만 봐요.` },
-  { k: 'jump', name: '갑자기 빨라짐', rule: `구간 빠르기가 읽은 구간 가운데값의 ${JUMP}배를 넘으면 알려요(구간이 셋 이상일 때).` },
-  { k: 'key', name: '꼭 말할 문장', rule: `받아 적은 말에 그 문장이 절반 넘게 없으면 빼먹었다고 해요. 앞 쉼 ${KEY_PRE}초 이상, 머문 시간 ${KEY_DW}배, 소리 +${KEY_DB}dB, 높이 +${KEY_ST}반음 가운데 2개 이상이면 살려 말한 거예요.` },
-  { k: 'fall', name: '문장 끝', rule: `쉬기 직전 ${TAIL_MS / 1000}초가 그 말보다 ${FALL_DB}dB 넘게 작으면 흐려진 거예요. 문장 끝의 ${pc(FALL_P)}% 이상, 3번 이상이면 알려요.` },
-  { k: 'vol', name: '목소리 크기', rule: `주변 소리보다 ${LOW_VOL}dB 넘게 크지 않으면 작아요. 다른 구간 가운데값보다 ${QUIET_DB}dB 넘게 작으면 작아졌다고 해요.` },
-  { k: 'tone', name: '힘', rule: '발표 준비에서 힘 있게 말할 곳으로 정한 구간이 다른 구간보다 작고 낮게 들리면 알려요. 차분하게 말할 곳은 그 반대예요.' },
-  { k: 'flat', name: '높낮이', rule: `구간 안 높낮이 폭이 ${NARROW}반음 미만이면 좁고, ${WIDE}반음 넘으면 넓어요.` },
-  { k: 'run', name: '쉼', rule: `${P_SHORT}초 넘게 멈추면 쉼으로 세요. 쉬지 않고 ${LONG_RUN}초 넘게 말하면 알려요.` },
-  { k: 'read', name: '말투 신호', rule: `최근 ${READ_WIN}초를 대본과 ${pc(READ_P)}% 넘게 똑같이, 높낮이 폭 ${FLAT}반음 미만으로 읽으면 신호예요. 판정은 아니에요.` },
+  { k: 'over', name: '걸린 시간', tags: [`목표 +${OK_HI}초 넘음`, `목표의 ${pc(OK_LO)}% 미만`] },
+  { k: 'fast', name: '빠르기', tags: [`보통 ${PACE_SLOW * 60}~${PACE_FAST * 60}음절/분`, `${PACE_TALK}초 넘게 말한 구간만`] },
+  { k: 'jump', name: '갑자기 빨라짐', tags: [`평소의 ${JUMP}배 넘음`] },
+  { k: 'key', name: '꼭 말할 문장', tags: ['절반 넘게 빠지면 빼먹음', `앞 쉼 ${KEY_PRE}초`, `${KEY_DW}배 천천히`, `+${KEY_DB}dB`, `+${KEY_ST}반음`, '단서 2개면 살림'] },
+  { k: 'fall', name: '문장 끝', tags: [`끝 ${TAIL_MS / 1000}초 ${FALL_DB}dB↓`, `${pc(FALL_P)}%·3번 이상`] },
+  { k: 'vol', name: '목소리 크기', tags: [`주변보다 ${LOW_VOL}dB 미만`, `다른 구간보다 ${QUIET_DB}dB↓`] },
+  { k: 'tone', name: '힘', tags: ['정한 힘과 반대로 들림'] },
+  { k: 'flat', name: '높낮이', tags: [`${NARROW}반음 미만 좁음`, `${WIDE}반음 넘게 넓음`] },
+  { k: 'run', name: '쉼', tags: [`${P_SHORT}초 넘게 멈추면 쉼`, `${LONG_RUN}초 넘게 안 쉼`] },
+  { k: 'read', name: '말투 신호', tags: [`대본 그대로 ${pc(READ_P)}%`, `높낮이 ${FLAT}반음 미만`] },
 ];
-const RULE_K = { short: 'over', 'key-skip': 'key', 'key-weak': 'key', emph: 'key', low: 'vol', quiet: 'vol' };
-export const ruleOf = k => RULES.find(r => r.k === (RULE_K[k] ?? k)) ?? null;
+export const TIP_TAG = {
+  over: `목표 +${OK_HI}초 넘음`, short: `목표의 ${pc(OK_LO)}% 미만`, fast: `${PACE_FAST * 60}음절/분 넘음`, jump: `평소의 ${JUMP}배 넘음`,
+  'key-skip': '절반 넘게 빠짐', 'key-weak': '강조 단서 2개 미만', emph: `+${EMPH_DB}dB·+${EMPH_ST}반음 안 됨`,
+  fall: `끝 ${FALL_DB}dB↓ ${pc(FALL_P)}% 이상`, low: `주변보다 ${LOW_VOL}dB 미만`, quiet: `다른 구간보다 ${QUIET_DB}dB↓`,
+  tone: '정한 힘과 반대', flat: `높낮이 ${NARROW}반음 미만`, run: `${LONG_RUN}초 넘게 안 쉼`, read: `대본 그대로 ${pc(READ_P)}%`,
+};
 
 // 지난 연습의 고칠 점(화면에 보인 3개)이 이번에 나아졌나: [{ k, text: 지난번 글, v: 'done' 고쳤어요 | 'still' 아직이에요 | 'unread' 이번에 그 구간을 읽지 않음 }].
 // 같은 종류의 팁이 이번에도 같은 구간(발표 전체 팁이면 그냥)에 나왔으면 아직이다. 대본 구간 수가 달라졌으면 종류만 본다
@@ -1482,11 +1487,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(voiceCards({ ...vn, nodb: false, vol: 30, ends: 5, fall: 2 })[3].value, '조금 흐림', '흐림 3번 미만이면 조금');
   assert.match(voiceCards(vz)[2].note, /dB만 커요/, '작으면 \'커요\'만 쓰지 않는다');
 
-  // 평가 기준: 팁마다 기준이 있고, 숫자는 상수에서 온다
-  for (const k of ['over', 'fast', 'key-skip', 'key-weak', 'jump', 'fall', 'low', 'quiet', 'tone', 'emph', 'flat', 'run', 'read', 'short']) assert.ok(ruleOf(k), `${k}의 기준`);
-  assert.match(ruleOf('fast').rule, /^1분에 240~330음절이면 보통, 330음절 넘으면/);
-  assert.match(ruleOf('fall').rule, /0\.3초가 그 말보다 10dB.*30% 이상/);
-  assert.ok(RULES.every(r => !/NaN|undefined|\d\.\d{3}/.test(r.rule)), '기준 글에 계산 찌꺼기가 없다');
+  // 평가 기준 태그: 팁마다 하나, 짧게(한 줄), 숫자는 상수에서 온다
+  for (const k of ['over', 'fast', 'key-skip', 'key-weak', 'jump', 'fall', 'low', 'quiet', 'tone', 'emph', 'flat', 'run', 'read', 'short']) assert.ok(TIP_TAG[k], `${k}의 기준 태그`);
+  assert.equal(TIP_TAG.fast, '330음절/분 넘음'); assert.equal(TIP_TAG.fall, '끝 10dB↓ 30% 이상');
+  const allTags = [...Object.values(TIP_TAG), ...RULES.flatMap(r => r.tags)];
+  assert.ok(allTags.every(t => t.length <= 14 && !/NaN|undefined|\d\.\d{3}/.test(t)), `태그는 짧고 계산 찌꺼기가 없다 ${allTags.filter(t => t.length > 14)}`);
 
   console.log(`check.js ok (yin 프레임 250개 ${tYin.toFixed(0)}ms)`);
 }

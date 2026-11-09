@@ -489,6 +489,18 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   const at = await p.evaluate(() => { const a = document.getElementById('cAudio'); return [+a.dataset.to, a.currentTime, a.paused]; });
   assert.ok(at[0] > at[1] - 0.5 && at[1] > 1 && !at[2], `둘째 구간부터 듣고, 그 구간 끝에서 멈출 자리를 둔다 ${at}`);
   await p.screenshot({ path: OUT + '/rec-result.png' });
+  // 고칠 점마다 기준 한 줄, 지적한 구간은 녹음으로 다시 듣는다(가짜 마이크는 한 음 높이라 높낮이 폭이 좁다고 나온다)
+  const tipN = await p.locator('#cTips li').count();
+  assert.ok(tipN >= 1, '고칠 점');
+  assert.equal(await p.locator('#cTips li .crit').count(), tipN, '고칠 점마다 기준 한 줄');
+  assert.match(await p.locator('#cTips li .crit').first().textContent(), /^기준: /);
+  const cb = p.locator('#cTips .clips button.play');
+  assert.ok(await cb.count() >= 1, `지적한 구간 듣기 ${await p.textContent('#cTips')}`);
+  assert.match(await cb.first().getAttribute('aria-label'), /^\d+번 구간 녹음 듣기$/);
+  await p.evaluate(() => document.getElementById('cAudio').pause());
+  await cb.first().click(); await p.waitForTimeout(600);
+  assert.equal(await p.evaluate(() => !document.getElementById('cAudio').paused && +document.getElementById('cAudio').dataset.to > 0), true, '누르면 그 구간만 들려 준다');
+  assert.equal(await p.locator('#cCritList dt').count(), 10, '평가 기준 전체 목록');
   // 녹음 아래 구간 띠: 누르면 그 자리부터 듣고, 듣는 구간 줄에 불이 들어온다
   assert.ok(await p.locator('#cMarks button').count() >= 2, '구간 띠');
   await p.locator('#cMarks button').nth(1).click(); await p.waitForTimeout(800);
@@ -599,6 +611,105 @@ t('결과: 연습 때 대본에 없던 말은 AI가 정리해 넣을 만한 것�
   await p.click('#cAdList .adw button'); await p.waitForSelector('#adDlg[open]');
   await p.click('#adApply'); await p.waitForTimeout(300);
   assert.ok((await textOf(p)).includes(add), '대본에 들어갔다');
+  assert.deepEqual(p.errors, []);
+});
+
+// ---- 발표 시간 줄과 내 읽기 속도 ----
+const lsGet = (p, k) => p.evaluate(k => JSON.parse(localStorage.getItem(k)), k);
+// 읽기 시험 글을 낱말마다 중간 결과로 읽는다(0.5초 간격). n: 읽을 낱말 수(없으면 끝까지). 낱말마다 들은 음절 수를 돌려준다
+async function readTest(p, n) {
+  const words = (await p.textContent('#spText')).split(' ').slice(0, n);
+  await p.click('#spGo'); await p.clock.runFor(2000);
+  const lens = await p.evaluate(ws => ws.map((_, i) => norm(ws.slice(0, i + 1).join(' ')).length), words);
+  for (let k = 1; k <= words.length; k++) { await p.evaluate(t => window.__say(t), words.slice(0, k).join(' ')); await p.clock.runFor(500); await p.waitForTimeout(4); }
+  return lens;
+}
+const mmssOf = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+t('편집: 발표 시간은 한 줄이고, 예상을 누르면 홈의 내 말하기로 간다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  await p.setViewportSize({ width: 1280, height: 800 });
+  await p.fill('#target', '3'); await p.waitForTimeout(400);
+  const box = await p.locator('footer.e-only').boundingBox();
+  assert.ok(box.height <= 72, `한 줄 높이 ${box.height}`);
+  assert.match(await p.textContent('#est'), /^예상 \d+:\d\d \(\+\d+:\d\d\)$/);
+  assert.equal(await p.locator('#est').evaluate(e => e.scrollWidth <= e.clientWidth + 1), true, '넘친 시간이 잘리지 않는다');
+  const est = (await p.textContent('#est')).match(/\d+:\d\d/)[0];
+  await p.click('#est');
+  assert.equal(await p.locator('#home').isVisible(), true, '창이 아니라 홈으로 간다');
+  assert.equal(await p.locator('dialog[open]').count(), 0);
+  assert.equal(await p.evaluate(() => document.activeElement.id), 'spTitle');
+  assert.match(await p.textContent('#spSrc'), /^아직 안 쟀어요/);
+  assert.equal(await p.textContent('#hGrid .pcard.on .mt'), `예상 ${est} · 목표 3:00`, '발표 카드와 시간 줄이 같은 예상');
+  assert.equal(await p.textContent('#spGo'), '1분 읽고 내 속도 재기');
+  assert.equal(await p.locator('#spCards').isHidden(), true, '재기 전에는 말하는 방식 카드가 없다');
+  assert.match(await p.textContent('#spWhy'), /목소리 분석을 켜면|PC Chrome에서/, '잴 수 없는 기기에는 재기 전부터 까닭을 말한다(시험은 분석을 꺼 둔다)');
+  assert.deepEqual(await p.locator('#spCrit dt').allTextContents(), ['빠르기', '문장 끝', '목소리 크기', '높낮이', '쉼'], '말하는 방식의 평가 기준');
+  await p.setViewportSize({ width: 375, height: 812 }); await p.waitForTimeout(200);
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.getElementById('home').scrollWidth <= innerWidth), true, '폰에서 홈이 가로로 넘치지 않는다');
+  await p.setViewportSize({ width: 375, height: 553 }); await p.click('#spGo'); await p.waitForTimeout(300);
+  const tb = await p.locator('#spTest').boundingBox();
+  assert.ok(tb.y >= 0 && tb.y + tb.height <= 553 + 1, `키 작은 폰에서도 시험 글과 단추가 한 화면에 들어간다 ${tb.y} ${tb.height}`);
+  await p.keyboard.press('Escape');
+  assert.equal(await p.locator('#home').isVisible(), true, 'Esc는 시험만 그만두고 홈은 그대로');
+  assert.equal(await p.locator('#spDash').isVisible(), true);
+  await p.click('#homeBtn');
+  assert.equal(await p.locator('#est').isVisible(), true, '홈 단추를 다시 누르면 보던 편집 화면');
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '폰에서 가로로 넘치지 않는다');
+  assert.deepEqual(p.errors, []);
+});
+t('읽기 속도: 시험 글을 읽으면 기다린 시간은 빼고 재고, 예상 시간이 내 속도를 따른다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  await p.click('#est');
+  const lens = await readTest(p);
+  assert.equal(await p.locator('#spTest').isVisible(), true, '끝말을 듣고 1.5초 동안은 기다린다');
+  await p.clock.runFor(2000); await p.waitForTimeout(50);
+  // 가짜 시계도 실제 시간만큼은 흐른다(낱말마다 몇 ms). 그래서 3% 안에서 맞춘다
+  const want = (lens.at(-1) - lens[0]) / ((lens.length - 1) * 0.5), lr = await lsGet(p, 'ls.rate'), r = lr.m / lr.s;
+  assert.equal(lr.by, 'test');
+  assert.equal(lr.m, lens.at(-1) - lens[0], '첫 결과부터 들은 음절');
+  assert.ok(Math.abs(r - want) / want < 0.03, `잰 빠르기 ${r} ≈ ${want}`);
+  assert.equal(await p.locator('#spDash').isVisible(), true, '다 읽으면 저절로 결과');
+  assert.equal(await p.textContent('#spR'), `${Math.round(r * 60)} 음절/분`);
+  assert.match(await p.textContent('#spSrc'), /^읽기 시험 · /);
+  assert.match(await p.textContent('#spMsg'), /내 속도를 쟀어요/);
+  assert.equal(await p.textContent('#spGo'), '다시 재기');
+  const L = await p.evaluate(t => norm(t).length, SAMPLE.text), sec = Math.round(L / r);
+  assert.ok((await p.textContent('#est')).startsWith(`예상 ${mmssOf(sec)}`), '시간 줄 예상이 잰 빠르기를 그대로 쓴다');
+  assert.ok((await p.textContent('#hGrid .pcard.on .mt')).startsWith(`예상 ${mmssOf(sec)}`), '발표 카드도 새 속도로 다시 그린다');
+  assert.equal(await p.locator('#spCards').isHidden(), true, '목소리 분석을 끈 브라우저는 카드 대신 까닭 한 줄');
+  assert.match(await p.textContent('#spWhy'), /목소리 분석을 켜면|PC Chrome/);
+  assert.equal((await lsGet(p, 'ls.readTest')).v, null);
+  assert.deepEqual(p.errors, []);
+});
+t('읽기 속도: 절반만 읽으면 저장하지 않고, 시험 뒤에도 연습 인식이 된다', async () => {
+  const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
+  // 연습 인식기를 먼저 만들어 둔다(시험 인식기가 따로 생겨도 연습으로 돌아가면 다시 듣는지 보려고)
+  await p.click('[data-tab="practice"]'); await p.clock.runFor(500);
+  await p.click('#mic'); await p.clock.runFor(300); await p.click('#mic'); await p.clock.runFor(800);
+  if (await p.locator('#checkDlg[open]').count()) await p.click('#checkClose');
+  await p.click('#homeBtn'); await p.clock.runFor(300);
+  await readTest(p, 40);
+  assert.equal(await p.textContent('#spEnd'), '다 읽었어요');
+  await p.click('#spEnd');
+  assert.match(await p.textContent('#spMsg'), /끝까지/);
+  assert.equal(await p.textContent('#spEnd'), '다시 읽기');
+  assert.equal(await lsGet(p, 'ls.rate'), null, '못 잰 값은 저장하지 않는다');
+  // 못 잰 화면에서 다른 홈 탭으로 가면 결과 화면으로 돌리고, 거기서 Esc는 홈을 닫는다
+  await p.click('.htabs [data-t="set"]'); await p.keyboard.press('Escape');
+  assert.equal(await p.locator('#home').isHidden(), true, '설정 탭에서 Esc는 홈을 닫는다');
+  await p.click('#homeBtn');
+  assert.equal(await p.locator('#spDash').isVisible(), true, '다시 오면 시험 글이 아니라 결과');
+  assert.equal(await p.textContent('#spMsg'), '', '못 잰 안내도 지운다');
+  // 읽는 중에 홈을 닫으면 시험을 버린다(그 뒤에 들린 말은 세지 않는다)
+  await readTest(p, 10);
+  await p.click('#homeBtn');
+  await p.evaluate(() => window.__say(document.getElementById('spText').textContent)); await p.clock.runFor(3000);
+  assert.equal(await lsGet(p, 'ls.rate'), null, '닫은 뒤에는 재지 않는다');
+  await p.click('[data-tab="practice"]'); await p.clock.runFor(500);
+  await p.click('#mic'); await p.clock.runFor(300);
+  await p.evaluate(() => window.__say('안녕하세요 오늘은 발표 대본을'));
+  await p.clock.runFor(200);
+  assert.match(await p.textContent('#heardT'), /안녕하세요 오늘은/, '연습 인식기가 다시 듣는다');
   assert.deepEqual(p.errors, []);
 });
 
@@ -880,7 +991,7 @@ t('홈: 말랑을 누르면 발표 카드가 나오고, 카드를 누르면 그 
   assert.equal(await p.textContent('#homeH'), '어떤 발표를 준비할까요?');
   assert.equal(await p.locator('#hGrid .pcard').count(), 3, '대본 둘(처음 빈 대본, 예시) + 새 발표 만들기');
   assert.equal(await p.locator('#hGrid .pcard.on .nm').textContent(), '예시: 말랑 소개');
-  assert.match(await p.locator('#hGrid .pcard.on .mt').textContent(), /^목표 3:00$/);
+  assert.match(await p.locator('#hGrid .pcard.on .mt').textContent(), /^예상 \d+:\d\d · 목표 3:00$/);
   assert.match(await p.locator('#hGrid .pcard.on .th').textContent(), /^안녕하세요\. 오늘은/);
   assert.equal(await p.locator('#hGrid .pcard .badge').first().textContent(), '대본 쓰는 중');
   await p.screenshot({ path: OUT + '/home.png' });

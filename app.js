@@ -1,16 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=20';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=20';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, cleanParaSlide } from './lib.js?v=20';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=20';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=20';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=20';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=20';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=20';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=21';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=21';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, cleanParaSlide } from './lib.js?v=21';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=21';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=21';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=21';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=21';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=21';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
-  newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS } from './check.js?v=20';
+  newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, ruleOf } from './check.js?v=21';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -217,6 +218,10 @@ const sayNone = () => say(SR ? NOT_SAFARI : NO_SR);
 // 한 줄 칩은 좁은 화면에서 잘리므로 오류는 토스트로도 올린다. userAgentData는 Chrome·Edge에만 있다(iPadOS Safari는 UA가 Mac이라 글로는 못 가린다)
 const CHROMIUM = !!navigator.userAgentData;
 const sayErr = t => { say(t); tell(t); };
+// 음성 인식 오류 문구(발표 화면과 읽기 시험이 같이 쓴다). iPhone·iPad Safari는 받아쓰기가 꺼져 있으면 service-not-allowed를 낸다
+const recErr = code => code === 'not-allowed' ? '마이크 권한을 허용해 주세요. ' + (CHROMIUM ? '주소창 왼쪽 아이콘에서 마이크를 허용하고 새로고침해 주세요' : 'iPhone·iPad는 설정 > 앱 > Safari > 마이크')
+  : code === 'service-not-allowed' ? (CHROMIUM ? '음성 인식이 꺼져 있어요. 브라우저의 음성 인식 설정을 확인해 주세요' : '음성 인식이 꺼져 있어요. iPhone·iPad는 설정 > 일반 > 키보드 > 받아쓰기를 켜 주세요')
+  : code === 'network' ? '인터넷 연결을 확인해 주세요' : code === 'audio-capture' ? '마이크를 쓸 수 없어요. 연결과 다른 앱이 쓰는지 확인해 주세요' : '음성 인식이 잠깐 끊겼어요';
 
 function initRec() {
   rec = new SR();
@@ -285,12 +290,10 @@ function initRec() {
     if (e.error === 'no-speech' || e.error === 'aborted') return;
     errored = true;
     if (e.error === 'audio-capture' && listening) stopAudio('rec?');  // 분석용 마이크와 부딪쳤을 수 있다. 분석만 끈다
-    if (e.error === 'not-allowed') { stop(); sayErr('마이크 권한을 허용해 주세요. ' + (CHROMIUM ? '주소창 왼쪽 아이콘에서 마이크를 허용하고 새로고침해 주세요' : 'iPhone·iPad는 설정 > 앱 > Safari > 마이크')); }
-    // iPhone·iPad Safari는 받아쓰기가 꺼져 있으면 이 오류를 낸다
-    else if (e.error === 'service-not-allowed') { stop(); sayErr(CHROMIUM ? '음성 인식이 꺼져 있어요. 브라우저의 음성 인식 설정을 확인해 주세요' : '음성 인식이 꺼져 있어요. iPhone·iPad는 설정 > 일반 > 키보드 > 받아쓰기를 켜 주세요'); }
-    else if (e.error === 'network') sayErr('인터넷 연결을 확인해 주세요');
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { stop(); sayErr(recErr(e.error)); }
+    else if (e.error === 'network') sayErr(recErr(e.error));
     // audio-capture는 분석용 마이크와 부딪친 일시 오류일 수 있어(위에서 분석을 끄면 1초 뒤 혼자 다시 켜진다) 토스트 없이 칩에만 중립 문구로 둔다
-    else { console.warn('음성 인식 오류', e.error); say(e.error === 'audio-capture' ? '마이크를 쓸 수 없어요. 연결과 다른 앱이 쓰는지 확인해 주세요' : '음성 인식이 잠깐 끊겼어요'); }
+    else { console.warn('음성 인식 오류', e.error); say(recErr(e.error)); }
   };
 }
 
@@ -427,13 +430,16 @@ const saveTalk = () => {
     acc: acc && packAcc(acc), hs, rt: runT, kind: runKind, rd, tx, cues, aud: runAud, re, rc: runRec, ag: runAgc }));  // 발표 점검 (아래 '발표 점검' 참고)
   // 말 속도는 사람마다 다르므로 대본과 따로 마지막으로 잰 값을 둔다 (편집 화면의 예상 시간, AI 대본 길이)
   // ponytail: 1분 넘게 말한 마지막 발표 하나로 잰다. 리허설 여러 번을 합치려면 시간 가중 평균으로.
-  if (onSec >= 60) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
+  // 읽기 시험 값은 시험 뒤에 시작한 발표만 덮는다(이어 하던 옛 발표의 누적 값이 방금 잰 값을 지우지 않게)
+  const lr = onSec >= 60 && getJ('ls.rate');
+  if (onSec >= 60 && !(lr?.by === 'test' && lr.t > runT)) store.set('ls.rate', JSON.stringify({ s: onSec, m: matched }));
 };
-// 초당 정규화 글자. 잰 값이 적을 때는 기본값 쪽으로 당긴다(상태줄 예상 종료와 같은 계산).
+// 초당 정규화 글자. 연습에서 잰 값이 적을 때는 기본값 쪽으로 당긴다(상태줄 예상 종료와 같은 계산).
+// 읽기 시험 값(by: 'test')은 당기지 않는다. 홈 '내 말하기'에 보이는 숫자와 예상 시간·AI 대본 길이가 같은 값이 되게
 function rate() {
-  let s = 0, m = 0;
-  try { const r = JSON.parse(store.get('ls.rate')); s = +r.s || 0; m = +r.m || 0; } catch {}
-  return (m + R0 * 30) / (s + 30);
+  let s = 0, m = 0, k = 30;
+  try { const r = JSON.parse(store.get('ls.rate')); s = +r.s || 0; m = +r.m || 0; if (r.by === 'test' && s > 0) k = 0; } catch {}
+  return (m + R0 * k) / (s + k);
 }
 const spoken = t => norm(t).length;  // 소리 내어 읽는 글자 수 ([확인 필요] 표시와 문장부호는 빠진다)
 // 새 발표: 지난 발표에서 들은 말도 비운다
@@ -532,17 +538,15 @@ function setTarget(v) {
 $('target').oninput = () => setTarget($('target').value);
 $('gMin').oninput = () => setTarget($('gMin').value);
 
-// 편집창 아래 '예상 7:40 / 목표 8:00'. 30분 대본이면 정규화에 휴대폰에서 수 ms가 걸려서 타자를 멈출 때 센다.
+// 편집창 아래 '예상 7:40 (+0:20)'. 30분 대본이면 정규화에 휴대폰에서 수 ms가 걸려서 타자를 멈출 때 센다.
 function updEst() {
   clearTimeout(updEst.h);
   updEst.h = setTimeout(() => {
     renderVerSide();  // 버전 카드는 타자를 멈춘 뒤에 다시 그린다 (글자마다 그리면 긴 대본에서 무겁다)
-    const s = Math.round(spoken($('text').value) / rate()), e = $('est'), w = document.createElement('span');
+    const s = Math.round(spoken($('text').value) / rate()), e = $('est');
     const over = target ? s - Math.round(target * 60) : 0;
-    e.textContent = `예상 ${mmss(s)}` + (over > 0 ? ` (+${mmss(over)})` : '');  // 넘친 시간은 휴대폰에서도 보이게 .wide 밖에
+    e.textContent = `예상 ${mmss(s)}` + (over > 0 ? ` (+${mmss(over)})` : '');  // 목표는 바로 옆 입력칸에 보인다. 누르면 내 읽기 속도
     e.classList.toggle('over', over > 0);
-    w.className = 'wide';
-    if (target) { w.textContent = ` / 목표 ${mmss(Math.round(target * 60))}`; e.append(w); }
   }, 150);
   $('shrinkBox').hidden = !target;
   updShrinkUi();
@@ -863,10 +867,11 @@ $('resBtn').onclick = () => openCheck();
 const devKind = () => deviceKind(navigator, matchMedia('(pointer: coarse)').matches, !!window.AudioContext);
 const getJ = k => { try { const v = JSON.parse(store.get(k)); return v && typeof v === 'object' ? v : null; } catch { return null; } };
 // 목소리 분석: PC Chrome의 연습은 켜고(홈 › 설정에서 끈다) 실전은 끈다. 인식기와 부딪친 브라우저는 막힘으로 적어 두고 켜지 않는다
-function audioWant() {
+function audioWant(m = coach) {
   const key = browserKey(navigator);
-  return audioDefault(devKind(), coach, getJ('ls.audio'), !!(key && getJ('ls.audioBlock')?.[key]));
+  return audioDefault(devKind(), m, getJ('ls.audio'), !!(key && getJ('ls.audioBlock')?.[key]));
 }
+const MIC = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };  // 분석은 원래 소리로(발표 화면과 읽기 시험)
 // 이 브라우저(brand + 주버전)에서 분석이 막힌다고 적는다. 업데이트하면 키가 달라 다시 시험한다.
 function setBlock(v) {
   const key = browserKey(navigator);
@@ -881,7 +886,7 @@ function startAudio() {
   } catch { au = null; return; }
   F ??= frames(SU.length);
   runAud ??= { off: null, at: null };
-  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }).then(stream => {
+  navigator.mediaDevices.getUserMedia({ audio: MIC }).then(stream => {
     me.stream = stream;
     if (au !== me) return stream.getTracks().forEach(t => t.stop());  // 기다리는 사이 정지했다
     if (runAud?.off) runAud = { off: null, at: null };  // 이어 한 발표에서 다시 켜졌다. 꺼져 있던 사이 구간은 높낮이 없이 보인다
@@ -925,6 +930,153 @@ function stopAudio(why) {
   if (why === 'audio') setBlock('audio');
   if (why === 'rec?') recProbe = Date.now();
 }
+
+// ---- 내 읽기 속도: 정해진 글(READ_TEST)을 소리 내어 읽고 말 빠르기와 말하는 방식을 잰다 ----
+// 발표용 인식기와 상태(talk, runs, cur)는 건드리지 않고 인식기를 따로 하나 만든다(start()/stop()은 기록·코칭까지 바꾼다).
+// 결과: ls.rate { s: 말한 초, m: 음절, by: 'test', t }(rate()가 그대로 쓴다), ls.readTest { t, r, v: voiceSum | null, why: v가 없는 까닭 }.
+// 그 뒤에 시작한 연습이 60초를 넘으면 그 빠르기가 ls.rate를 덮는다(가장 최근 값). 출처 줄이 어느 쪽인지 말한다.
+// 자리는 홈 '내 발표' 탭의 '내 말하기' 섹션(창이 아니다). 시간 줄의 '예상'과 새 발표 만들기의 '내 읽기 속도 재기'는 여기로 온다
+const TL = spoken(READ_TEST), SP_MAX = 180e3, SP_FIN = 1500, SP_QUIET = 1500, SP_STARVE = 5000;
+let sp = null;  // 재는 중 { rec, h: 들은 음절, len, resFinal, pts: [[ms, 들은 음절]], t0, last: 마지막 결과 때, err, a: 목소리 분석, iv, fin, go, wl }
+function openSpeed() {
+  openHome();
+  $('spTitle').focus();
+}
+const spSay = t => { $('spMsg').textContent = t; };
+// v: 'dash' 결과 | 'run' 읽는 중 | 'fail' 못 잼. quiet가 아니면 바뀐 화면의 첫 자리로 포커스를 옮긴다(누른 단추가 숨어 포커스가 빠지지 않게)
+function spView(v, quiet) {
+  $('spDash').hidden = v !== 'dash'; $('spTest').hidden = v === 'dash';
+  $('spEnd').textContent = v === 'run' ? '다 읽었어요' : '다시 읽기';
+  if (quiet) return;
+  if (v === 'dash') return $('spTitle').focus();
+  $('spTest').scrollIntoView({ block: 'start' }); $('spEnd').focus({ preventScroll: true });  // 폰에서도 시험 글이 위에서부터 보이게
+}
+// 홈을 닫거나 다른 탭으로 가면 재던 것을 버리고 결과 화면으로 되돌린다(못 잰 화면도. 다시 오면 시험 글이 아니라 결과가 보이게)
+const spQuit = () => { spStop(); spSay(''); if (!$('spTest').hidden) spView('dash', true); };
+function spStart() {
+  if (!SR) { spSay(NO_SR); return $('spMsg').scrollIntoView({ block: 'nearest' }); }  // 폰에서는 안내가 단추보다 한참 아래라 보이게
+  stopHear(); edAudio.pause();  // 들어보기·녹음 소리를 시험 인식기가 듣지 않게
+  spStop();
+  spSay('');
+  const me = sp = { h: newHear(), len: 0, resFinal: 0, pts: [], t0: Date.now(), last: Date.now(), err: false };
+  me.a = spAudio();  // 누른 동작 안에서 연다(AudioContext)
+  const r = me.rec = new SR();
+  r.lang = 'ko-KR'; r.continuous = true; r.interimResults = true;
+  r.onresult = e => {
+    if (sp !== me) return;
+    if (e.results.length < me.resFinal) { hearReset(me.h, me.len); me.len = 0; }  // 세션 안에서 결과 목록이 새로 시작됐다(initRec과 같다)
+    me.resFinal = e.results.length;
+    let t = '';
+    for (let i = 0; i < e.results.length; i++) { t += e.results[i][0].transcript; if (!e.results[i].isFinal && me.resFinal > i) me.resFinal = i; }
+    const nt = norm(t);
+    me.len = nt.length; me.last = Date.now();
+    if (hearStep(me.h, me.len) > 0) me.pts.push([me.last, me.h.n]);
+    me.a.sp = 0;
+    $('spProg').value = Math.min(1, me.h.n / TL);
+    // 끝말까지 들었으면 1.5초 조용할 때 끝낸다. 문장 사이 쉼에 끝나지 않게 끝말을 본다(못 들으면 '다 읽었어요'나 3분 상한)
+    clearTimeout(me.fin);
+    if (nt.endsWith(TEST_END) || me.h.n >= TL) me.fin = setTimeout(() => sp === me && spDone(), SP_FIN);
+  };
+  r.onend = () => {
+    hearReset(me.h, me.len); me.len = 0; me.resFinal = 0;
+    if (sp === me) setTimeout(() => { if (sp === me) try { r.start(); } catch {} }, me.err ? 1000 : 0);  // 크롬이 혼자 끝내도 이어서 듣는다
+    me.err = false;
+  };
+  r.onerror = e => {
+    if (sp !== me || e.error === 'no-speech' || e.error === 'aborted') return;
+    me.err = true;
+    if (e.error === 'audio-capture' && me.a.ctx) return spMute(me.a, '말하는 방식을 재는 마이크가 음성 인식과 부딪쳐서 껐어요.');  // 분석만 끄면 1초 뒤 다시 듣는다
+    spStop(); spView('fail'); spSay(recErr(e.error));
+  };
+  try { r.start(); } catch {}
+  navigator.wakeLock?.request('screen').then(l => sp === me ? me.wl = l : l.release(), () => {});  // 편집 화면에서는 keepAwake가 잡지 않는다
+  me.iv = setInterval(() => {
+    if (Date.now() - me.t0 > SP_MAX) return spDone();
+    // 분석용 마이크가 결과 없이 말소리를 5초 넘게 들으면 둘이 부딪친 것으로 보고 분석만 끈다(발표 화면 감시와 같은 뜻)
+    if (me.a.iv && me.a.sp > SP_STARVE) spMute(me.a, '말하는 방식을 재는 마이크가 음성 인식과 부딪쳐서 껐어요.');
+  }, 1000);
+  // 분석기가 잡음 바닥을 잡게 1.5초 조용히 기다린 뒤 글을 밝힌다
+  $('spProg').value = 0; $('spText').classList.add('wait');
+  $('spHint').textContent = '잠깐 조용히 기다려 주세요…';
+  me.go = setTimeout(() => { $('spText').classList.remove('wait'); $('spHint').textContent = '평소 발표하듯 소리 내어 읽어 주세요. 다 읽으면 저절로 끝나요.'; }, SP_QUIET);
+  spView('run');
+}
+// 저장하지 않고 멈춘다. 멈춘 기록을 돌려준다(spDone이 계산한다)
+function spStop() {
+  const me = sp;
+  if (!me) return null;
+  sp = null;
+  clearInterval(me.iv); clearTimeout(me.fin); clearTimeout(me.go);
+  try { me.rec.abort(); } catch {}
+  me.wl?.release().catch(() => {});
+  spMute(me.a);
+  $('spText').classList.remove('wait'); $('spHint').textContent = '';
+  return me;
+}
+// 말하는 방식을 잴 수 없는 까닭(잴 수 있으면 '')
+const spNo = () => devKind() !== 'desktop' ? 'PC Chrome에서 읽으면 높낮이·쉼·목소리 크기·문장 끝도 봐요.'
+  : !audioWant('practice') ? '홈 › 설정에서 목소리 분석을 켜면 높낮이·쉼·목소리 크기·문장 끝도 봐요.' : '';
+// PC Chrome에서 목소리 분석을 켰으면 마이크를 하나 더 열어 frames로 잰다(글 전체가 연습 결과의 구간 하나). 못 켜면 { why }. sp: 결과 없이 들은 말소리 ms
+function spAudio() {
+  const no = spNo();
+  if (no) return { why: no };
+  const a = { F: frames(1), sp: 0 };
+  try { a.ctx = new AudioContext(); a.ctx.resume().catch(() => {}); } catch { return { why: '이 브라우저에서는 말하는 방식을 재지 못해요.' }; }
+  navigator.mediaDevices.getUserMedia({ audio: MIC }).then(stream => {
+    a.stream = stream;
+    if (!a.ctx) return spMute(a);  // 기다리는 사이 끝났다
+    const an = a.ctx.createAnalyser();
+    an.fftSize = a.ctx.sampleRate > 48000 ? 4096 : 2048;
+    a.ctx.createMediaStreamSource(stream).connect(an);
+    a.agc = stream.getAudioTracks()[0]?.getSettings?.().autoGainControl === true;
+    const buf = new Float32Array(an.fftSize);
+    a.iv = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      if (a.F.push(buf, a.ctx.sampleRate, performance.now()).on) a.sp += 40;
+    }, 40);
+  }, () => spMute(a, '마이크를 열지 못해 말하는 방식은 재지 못했어요.'));
+  return a;
+}
+function spMute(a, why) {
+  if (!a) return;
+  if (why) a.why = why;
+  clearInterval(a.iv); a.iv = null;
+  a.stream?.getTracks().forEach(t => t.stop());
+  a.ctx?.close().catch(() => {}); a.ctx = null;
+}
+function spDone() {
+  const me = spStop();
+  if (!me) return;
+  const res = testRate(me.pts, TL);
+  if (res.why) {
+    spView('fail');
+    return spSay({ cover: '글을 거의 끝까지 읽어야 잴 수 있어요. 다시 읽어 주세요.', short: '조금 더 길게 읽어 주세요.', odd: '소리가 고르게 들리지 않았어요. 조용한 곳에서 다시 읽어 주세요.' }[res.why]);
+  }
+  const a = me.a, v = a.F && !a.why ? voiceSum(a.F.secs(), a.agc || (a.F.drift() ?? 0) > DRIFT) : null, t = Date.now();
+  store.set('ls.rate', JSON.stringify({ s: res.s, m: res.m, by: 'test', t }));
+  store.set('ls.readTest', JSON.stringify({ t, r: res.r, v, why: v ? '' : a.why || '목소리를 충분히 받지 못해 말하는 방식은 재지 못했어요.' }));
+  updEst(); renderCards(); renderHome(); spView('dash');  // 시간 줄·문단 카드·발표 카드의 예상도 새 속도로
+  spSay('내 속도를 쟀어요. 예상 시간과 AI 대본 길이를 이 속도로 계산해요.');
+}
+function renderSpeed() {
+  const lr = getJ('ls.rate'), last = getJ('ls.readTest'), r = rate(), day = t => new Date(t).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+  $('spSrc').textContent = lr?.by === 'test' ? `읽기 시험 · ${day(lr.t)}` : lr?.s ? '최근 연습에서 잰 빠르기' : '아직 안 쟀어요 · 보통 빠르기로 계산해요';
+  $('spR').replaceChildren(String(Math.round(r * 60)), mk('small', ' 음절/분'));
+  $('spMark').style.left = `${Math.min(100, Math.max(0, (r - TEST_LO) / (TEST_HI - TEST_LO) * 100))}%`;
+  $('spPace').textContent = { 느림: '느린 편이에요', 보통: '보통 빠르기예요', 빠름: '빠른 편이에요' }[paceWord(r)] + (r > PACE_NEWS ? ' · 뉴스 아나운서보다 빨라요' : '');
+  $('spGo').textContent = last ? '다시 재기' : '1분 읽고 내 속도 재기';
+  $('spGo').className = last ? '' : 'cta';
+  $('spCards').hidden = !last?.v;
+  $('spCards').replaceChildren(...(last?.v ? voiceCards(last.v).map(statBox) : []));
+  $('spWhy').textContent = !last ? spNo() || '읽기 시험을 하면 높낮이·쉼·목소리 크기·문장 끝도 봐요.' : last.v ? `${day(last.t)} 읽기 시험에서 쟀어요. 기준은 추정이라 참고만 해 주세요.` : last.why;
+}
+// 빠르기 눈금: 띠 폭을 결과 창 기준값(느림 4.0, 빠름 5.5)에 맞춘다
+[PACE_SLOW - TEST_LO, PACE_FAST - PACE_SLOW, TEST_HI - PACE_FAST].forEach((w, i) => { $('spScale').children[i].style.flexGrow = w; });
+$('spText').textContent = READ_TEST;
+$('est').onclick = $('spOpen').onclick = openSpeed;
+$('spGo').onclick = spStart;
+$('spEnd').onclick = () => sp ? spDone() : spStart();
+$('spBack').onclick = () => { spStop(); spSay(''); spView('dash'); };
 
 // ---- 연습 녹음: 목소리 분석 스트림을 그대로 녹음한다(마이크를 더 열지 않는다). 리딩·연습에서 '가'의 '연습 녹음'이 켜져 있을 때만 ----
 // 시작~정지 한 번이 조각 하나다. requestData()나 timeslice를 쓰면 Chrome이 WebM 길이를 0.001초로 적어 되감기가 안 되므로 정지할 때 한 번에 받는다.
@@ -1255,6 +1407,13 @@ function startFromSection(i) {
   jump(SU.slice(0, i).reduce((x, u, j) => x + u.len[shr.on && U ? shr.lv[j] ?? 0 : 0], 0));
 }
 
+// 숫자 카드 하나(연습 결과와 내 읽기 속도): 이름, 값(단위), 아래 글(over면 주황)
+function statBox(c) {
+  const box = mk('div', '', 'stat'), v = mk('div', c.value, 'v');
+  if (c.unit) v.append(mk('small', c.unit));
+  box.append(mk('div', c.label, 'k'), v, mk('div', c.note, c.over ? 'note over' : 'note'));
+  return box;
+}
 function renderCheck() {
   $('checkNoSr').hidden = !!SR;
   $('cRunBox').hidden = $('cDel').hidden = !SR;
@@ -1268,13 +1427,7 @@ function renderCheck() {
   const sum = sumLines(run, prev, goal);
   if (!run.audio) sum.push(devKind() === 'desktop' ? (run.kind === 'live' ? '실전은 목소리 분석 없이 재요.' : '목소리 분석 없이 쟀어요. 홈 › 설정에서 켜면 높낮이·쉼·목소리 크기도 봐요.')
     : '이 브라우저에서는 높낮이·쉼·목소리 크기를 재지 않아요. PC Chrome에서 연습하면 볼 수 있어요.');
-  $('cStats').replaceChildren(...statCards(run, prev, goal).map(c => {
-    const box = mk('div', '', 'stat'), n = mk('div', c.note, c.over ? 'note over' : 'note');
-    const v = mk('div', c.value, 'v');
-    if (c.unit) v.append(mk('small', c.unit));
-    box.append(mk('div', c.label, 'k'), v, n);
-    return box;
-  }));
+  $('cStats').replaceChildren(...statCards(run, prev, goal).map(statBox));
   renderCompare(run);
   renderEdits(run);
   const ns = $('cSug').children.length, sn = $('cStats').querySelector('.stat:nth-child(4) .note');
@@ -1291,16 +1444,20 @@ function renderCheck() {
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
   renderKeys(run);
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
+  // 고칠 점마다 기준 한 줄과, 녹음이 있으면 지적한 구간 듣기 단추
   const rule = tips(run, goal).map(x => {
     const li = mk('li', x.text);
     if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
+    const r = ruleOf(x.k);
+    if (r) li.append(mk('span', `기준: ${r.rule}`, 'crit'));
+    clipRow(li, run, x.s);
     return li;
   });
   const ai = run.ai, at = ai?.tips.length ? ai.tips : null;  // 고칠 점만 온 답이면 규칙 팁을 그대로 보인다
   $('cTipsH').textContent = at ? 'AI 코칭' : '다음에 해 볼 것';
   $('cAiSum').textContent = ai ? ai.summary : rule.length ? '' : '규칙으로 찾은 고칠 점이 없어요.';  // 번호 없는 한 줄
   $('cAiSum').hidden = !$('cAiSum').textContent;
-  $('cTips').replaceChildren(...(at ? at.map(x => mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`)) : rule));
+  $('cTips').replaceChildren(...(at ? at.map(x => clipRow(mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`), run, x.sec ? [x.sec - 1] : [])) : rule));
   $('cRule').hidden = !at || !rule.length;
   $('cRuleList').replaceChildren(...(at ? rule : []));
   // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(연보라 띠 기대 시간, 진한 보라 걸린 시간), 정도 낱말, 숫자 보기
@@ -1383,6 +1540,25 @@ function listenBtn(label, f) {
   b.onclick = e => { e.stopPropagation(); f(); };
   return b;
 }
+// 지적한 구간 듣기 줄: 녹음이 있고 읽은 구간이면 구간마다 '▶ 3번 구간'. 많으면 앞 CLIP_N곳과 '외 N곳'. li를 돌려준다
+const CLIP_N = 5;
+function clipRow(li, run, s) {
+  const a = run.rec ? s.filter(i => run.secs[i]?.wall > 0) : [];
+  if (!a.length) return li;
+  const row = mk('span', '', 'clips');
+  for (const i of a.slice(0, CLIP_N)) {
+    const b = listenBtn(`${i + 1}번 구간 녹음 듣기`, () => playClip(run.t0, m => m[2] === i));
+    b.lastChild.textContent = `${i + 1}번 구간`;
+    row.append(b);
+  }
+  if (a.length > CLIP_N) row.append(mk('span', `외 ${a.length - CLIP_N}곳`, 'small'));
+  li.append(row);
+  return li;
+}
+// 평가 기준 목록(dt 이름, dd 기준). keys가 있으면 그것만
+function critList(keys) { return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => [mk('dt', r.name), mk('dd', r.rule)]); }
+$('cCritList').replaceChildren(...critList());
+$('spCrit').replaceChildren(...critList(['fast', 'flat', 'run', 'vol', 'fall']));  // 홈 '내 말하기'의 말하는 방식
 // 발표 준비의 문단 q가 든 구간 번호들(0부터, 지금 대본의 SU)
 const secsOfPara = q => SU.flatMap((u, j) => u.s.some(x => x.p === q) ? [j] : []);
 // 그 연습 때의 평가 기준이 지금 발표 준비의 것과 같으면 그 발표 준비, 아니면 null(기준 번호가 다른 기준을 가리킬 수 있다)
@@ -2545,7 +2721,7 @@ function newPres() {
 
 // ---- 내 발표 (시안의 홈): 대본마다 카드 하나, 아래에 최근 연습. 머리줄의 '말랑'을 누르면 열린다 ----
 const homeOpen = () => !$('home').hidden;
-function closeHome() { $('home').hidden = true; document.body.classList.remove('home'); $('homeBtn').setAttribute('aria-expanded', 'false'); }
+function closeHome() { spQuit(); $('home').hidden = true; document.body.classList.remove('home'); $('homeBtn').setAttribute('aria-expanded', 'false'); }
 function openHome() {
   if (!editing()) setMode(true);
   renderHome(); setHomeTab('main');
@@ -2558,7 +2734,8 @@ function pick(id) {
   goTab($('text').value.trim() ? 'practice' : 'script');
 }
 function renderHome() {
-  const grid = $('hGrid'), all = [];
+  const grid = $('hGrid'), all = [], r = rate();
+  renderSpeed();
   grid.replaceChildren(...lib.list.map(e => {
     const text = (store.get(sk('script', e.id)) || '').trim(), g = Math.round((+store.get(sk('target', e.id)) || 0) * 60);
     const rs = readRuns(store.get(sk('runs', e.id))), last = rs.at(-1);
@@ -2573,7 +2750,7 @@ function renderHome() {
       : last.wall > g + 15 ? mk('span', `최근 ${mmss(last.wall)} · ${mmss(last.wall - g)} 초과`, 'badge over')
       : mk('span', `최근 ${mmss(last.wall)} · 시간 안`, 'badge ok');
     const info = mk('div'), ft = mk('div', '', 'ft');
-    info.append(mk('div', e.name, 'nm'), mk('div', `${g ? '목표 ' + mmss(g) : '목표 없음'}${rs.length ? ` · 연습 ${rs.length}회` : ''}`, 'mt'));
+    info.append(mk('div', e.name, 'nm'), mk('div', `${text ? `예상 ${mmss(Math.round(spoken(text) / r))} · ` : ''}${g ? '목표 ' + mmss(g) : '목표 없음'}${rs.length ? ` · 연습 ${rs.length}회` : ''}`, 'mt'));
     ft.append(badge, mk('span', !text ? '대본 쓰기' : last ? '이어서 연습' : '연습하러 가기', 'go'));
     b.append(th, info, ft);
     b.onclick = () => pick(e.id);
@@ -2593,6 +2770,7 @@ function renderHome() {
 }
 // 홈 탭: 내 발표 / 연습 기록 / 설정
 function setHomeTab(t) {
+  if (t !== 'main') spQuit();
   for (const b of document.querySelectorAll('.htabs [data-t]')) b.setAttribute('aria-selected', b.dataset.t === t);
   for (const d of document.querySelectorAll('#home [data-tp]')) d.hidden = d.dataset.tp !== t;
   if (t === 'runs') {
@@ -2617,6 +2795,7 @@ $('hsAudioOn').onchange = () => {
   store.set('ls.audio', JSON.stringify({ ...getJ('ls.audio'), r: on }));
   on ? store.del('ls.rec') : store.set('ls.rec', '0');
   if (on && key) { const b = getJ('ls.audioBlock') || {}; delete b[key]; store.set('ls.audioBlock', JSON.stringify(b)); }
+  renderSpeed();  // 내 말하기의 '설정에서 켜면…' 줄을 바로 바꾼다
 };
 $('hsSm').onclick = () => fontSize(-2);
 $('hsBg').onclick = () => fontSize(2);
@@ -2632,7 +2811,11 @@ addEventListener('storage', e => {
   } catch {}
 });
 $('hNew').onclick = newPres;
-addEventListener('keydown', e => { if (e.key === 'Escape' && homeOpen() && !document.querySelector('dialog[open]')) { closeHome(); goTab(tab); $('homeBtn').focus(); } });  // 포커스가 사라지면 Tab이 엉뚱한 곳에서 시작한다
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !homeOpen() || document.querySelector('dialog[open]')) return;
+  if (sp || !$('spTest').hidden) return $('spBack').click();  // 읽는 중이면 시험만 그만둔다
+  closeHome(); goTab(tab); $('homeBtn').focus();  // 포커스가 사라지면 Tab이 엉뚱한 곳에서 시작한다
+});  // 포커스가 사라지면 Tab이 엉뚱한 곳에서 시작한다
 
 // 앱으로 설치: Chrome이 설치할 수 있다고 알려 줄 때만 홈 설정에 버튼을 보인다 (배너나 재촉은 없다). 설치한 앱 창에서는 숨긴다.
 let installEv = null;
@@ -2672,7 +2855,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 발표 준비 전에도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=20').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=21').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다

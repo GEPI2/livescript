@@ -26,7 +26,7 @@ export const MOCK = `
 window.__finals = [];
 window.SpeechRecognition = window.webkitSpeechRecognition = class {
   constructor() { window.__rec = this; }
-  start() { window.__finals = []; setTimeout(() => this.onstart && this.onstart(), 0); }
+  start() { window.__rec = this; window.__finals = []; setTimeout(() => this.onstart && this.onstart(), 0); }  // 인식기가 여럿이면(읽기 시험) 마지막으로 켠 것이 듣는다
   stop() { setTimeout(() => this.onend && this.onend(), 0); }
   abort() { this.stop(); }
 };

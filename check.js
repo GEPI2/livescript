@@ -131,6 +131,44 @@ export function speechRate(w) {
   const L = w.at(-1), E = L && w.find(r => L[0] - r[0] <= RATE_WIN);
   return E && L[0] - E[0] >= RATE_MIN ? (L[1] - E[1]) / (L[0] - E[0]) : null;
 }
+
+// ---- 읽기 시험: 정해진 글을 한 번 소리 내어 읽고 말 빠르기와 말하는 방식을 잰다 ----
+// 숫자·영어 없이 한글만(읽는 법이 사람마다 달라 음절 수가 흔들리지 않게). 정규화 255음절, 초당 5음절이면 51초. 끝말 '감사합니다'로 다 읽었는지 본다
+export const READ_TEST = '안녕하세요. 오늘은 제가 요즘 아끼는 습관 하나를 소개하려고 합니다. 아침에 일어나면 창문을 열고, 천천히 세 번 숨을 쉬는 일입니다. 별것 아닌 것처럼 들리실 수도 있습니다. 하지만 이 작은 습관 덕분에 하루가 꽤 달라졌습니다. 먼저, 머리가 맑아집니다. 휴대폰부터 보던 시간이 오늘 할 일을 차분하게 떠올리는 시간으로 바뀌었습니다. 다음으로, 마음이 느긋해집니다. 서두르지 않으니 실수가 줄었고, 사람들에게 건네는 말도 부드러워졌습니다. 여러분은 하루를 어떻게 시작하시나요? 거창한 계획이 아니어도 괜찮습니다. 내일 아침, 딱 한 번만 창문을 열어 보세요. 작은 변화가 큰 차이를 만든다는 것을 느끼실 겁니다. 들어 주셔서 감사합니다.';
+export const TEST_END = '감사합니다', TEST_COVER = 0.8, TEST_LO = 3, TEST_HI = 7;  // 80% 넘게 들어야 재고, 초당 3~7음절 밖이면 잘못 들은 것으로 본다
+// pts: 들은 음절이 늘 때마다 [ms, 들은 음절]. 첫 결과부터 마지막으로 늘어난 때까지의 기울기라 앞뒤 인식 지연이 서로 지워지고 읽기 전후 기다림도 빠진다.
+// 3초 넘는 틈은 3초로 친다(쉼을 넣은 낭독 속도, R0와 같은 뜻). L: 시험 글 음절 수. 반환 { r, s: 말한 초, m: 음절 } | { why: 'cover' | 'short' | 'odd' }
+export function testRate(pts, L) {
+  let talk = 0;
+  for (let i = 1; i < pts.length; i++) talk += Math.min(P_MAX, (pts[i][0] - pts[i - 1][0]) / 1000);
+  const n = pts.at(-1)?.[1] ?? 0, m = n - (pts[0]?.[1] ?? 0), r = talk > 0 ? m / talk : 0;
+  return n < TEST_COVER * L ? { why: 'cover' } : talk < RUN_TALK ? { why: 'short' } : r < TEST_LO || r > TEST_HI ? { why: 'odd' } : { r, s: talk, m };
+}
+// 읽기 시험의 frames(1).secs()를 카드 값으로(칸이 여럿이면 합치고 높낮이 폭은 칸 폭의 중앙값. 칸마다 [p10, p90]이라 더할 수 없다).
+// 시험 글 하나는 연습 결과의 구간 하나와 같은 크기라 칸 하나로 잰다. nodb: 자동 음량 보정이나 마이크 음량 변화로 dB를 견줄 수 없음(크기·문장 끝을 빼요).
+// 유성 프레임이 3초도 없으면(마이크가 0만 주거나 소리가 작음) null
+export function voiceSum(S, nodb) {
+  const s = S.filter(x => x && x.p25 != null);
+  if (!s.some(x => x.st || x.vol != null)) return null;
+  const sum = k => s.reduce((a, x) => a + (x[k] || 0), 0), ws = s.filter(x => x.st).map(x => x.st[1] - x.st[0]), vs = s.map(x => x.vol).filter(v => v != null);
+  return { w: ws.length ? median(ws) : null, p: sum('p25') + sum('p1'), p1: sum('p1'), run: Math.max(...s.map(x => x.run || 0)),
+    vol: nodb || !vs.length ? null : median(vs), ends: nodb ? 0 : sum('ends'), fall: nodb ? 0 : sum('fall'), nodb: !!nodb };
+}
+// 말하는 방식 카드 넷(statCards 모양). 기준값은 연습 결과와 같다(추정이라 화면에 '참고용'을 붙인다)
+export function voiceCards(v) {
+  const pw = v.w == null ? null : pitchWord(v.w), flat = pw === '좁음', some = v.ends >= 3 && v.fall >= FALL_P * v.ends, fell = some && v.fall >= 3;  // 흐림 3번 미만은 '조금'
+  return [
+    { label: '높낮이', value: pw ?? '—', over: flat,
+      note: pw == null ? '목소리를 충분히 받지 못했어요' : flat ? '조금 단조롭게 들려요. 중요한 말에서 높여 보세요.' : pw === '넓음' ? '오르내림이 커서 생동감 있어요' : '자연스럽게 오르내려요' },
+    { label: '쉼', value: String(v.p), unit: '번', over: v.run > LONG_RUN,
+      note: `1초 넘게 쉰 곳 ${v.p1}번 · 가장 길게 ${Math.round(v.run)}초 이어 말함` + (v.run > LONG_RUN ? '. 쉼표에서 쉬어 보세요.' : '') },
+    { label: '목소리 크기', value: v.vol == null ? '—' : v.vol < LOW_VOL ? '작음' : '충분', over: v.vol != null && v.vol < LOW_VOL,
+      note: v.vol == null ? (v.nodb ? '마이크 음량이 바뀌어 재지 않았어요' : '목소리를 충분히 받지 못했어요')
+        : v.vol < LOW_VOL ? `주변 소리보다 ${Math.round(v.vol)}dB만 커요. 조금 더 크게 말해 보세요.` : `주변 소리보다 ${Math.round(v.vol)}dB 커요` },
+    { label: '문장 끝', value: v.ends < 3 ? '—' : fell ? '흐려짐' : some ? '조금 흐림' : '또렷함', over: fell,
+      note: v.ends < 3 ? (v.nodb ? '마이크 음량이 바뀌어 재지 않았어요' : '문장 끝을 충분히 재지 못했어요') : `문장 끝 ${v.ends}번 가운데 ${v.fall}번 작아졌어요` },
+  ];
+}
 // 판정하지 않는 때(판정과 지속 시간을 멈춘다). now, lastMove, recOff는 ms, rest는 남은 글자
 export const paceHold = ({ sec, off, qa, now, lastMove, rest, r0, recOn, recOff }) =>
   sec < HOLD_START || !!off || !!qa || now - lastMove < HOLD_MOVE || rest / (r0 > 0 ? r0 : R0) < HOLD_END || (!recOn && now - recOff > REC_GAP);
@@ -752,6 +790,23 @@ export function tips(run, goal, n = 3) {
   if (goal && full && run.wall < OK_LO * goal) out.push({ k: 'short', s: [], text: `목표보다 ${mmss(goal - run.wall)} 짧아요. 천천히 읽거나 설명을 더해 보세요.` });
   return out.slice(0, n);
 }
+// 평가 기준(화면에 그대로 보인다). 숫자는 위 상수에서 와서 판정과 늘 같다. k는 tips()의 종류(ruleOf가 묶는다)
+const pc = x => Math.round(x * 100);
+export const RULES = [
+  { k: 'over', name: '걸린 시간', rule: `목표보다 ${OK_HI}초 넘게 길면 넘었다고 해요. 끝까지 읽었는데 목표의 ${pc(OK_LO)}%보다 짧으면 짧다고 해요.` },
+  { k: 'fast', name: '빠르기', rule: `1분에 ${PACE_SLOW * 60}~${PACE_FAST * 60}음절이면 보통, ${PACE_FAST * 60}음절 넘으면 빨라요. 구간마다 재고, ${PACE_TALK}초 넘게 말한 구간만 봐요.` },
+  { k: 'jump', name: '갑자기 빨라짐', rule: `구간 빠르기가 읽은 구간 가운데값의 ${JUMP}배를 넘으면 알려요(구간이 셋 이상일 때).` },
+  { k: 'key', name: '꼭 말할 문장', rule: `받아 적은 말에 그 문장이 절반 넘게 없으면 빼먹었다고 해요. 앞 쉼 ${KEY_PRE}초 이상, 머문 시간 ${KEY_DW}배, 소리 +${KEY_DB}dB, 높이 +${KEY_ST}반음 가운데 2개 이상이면 살려 말한 거예요.` },
+  { k: 'fall', name: '문장 끝', rule: `쉬기 직전 ${TAIL_MS / 1000}초가 그 말보다 ${FALL_DB}dB 넘게 작으면 흐려진 거예요. 문장 끝의 ${pc(FALL_P)}% 이상, 3번 이상이면 알려요.` },
+  { k: 'vol', name: '목소리 크기', rule: `주변 소리보다 ${LOW_VOL}dB 넘게 크지 않으면 작아요. 다른 구간 가운데값보다 ${QUIET_DB}dB 넘게 작으면 작아졌다고 해요.` },
+  { k: 'tone', name: '힘', rule: '발표 준비에서 힘 있게 말할 곳으로 정한 구간이 다른 구간보다 작고 낮게 들리면 알려요. 차분하게 말할 곳은 그 반대예요.' },
+  { k: 'flat', name: '높낮이', rule: `구간 안 높낮이 폭이 ${NARROW}반음 미만이면 좁고, ${WIDE}반음 넘으면 넓어요.` },
+  { k: 'run', name: '쉼', rule: `${P_SHORT}초 넘게 멈추면 쉼으로 세요. 쉬지 않고 ${LONG_RUN}초 넘게 말하면 알려요.` },
+  { k: 'read', name: '말투 신호', rule: `최근 ${READ_WIN}초를 대본과 ${pc(READ_P)}% 넘게 똑같이, 높낮이 폭 ${FLAT}반음 미만으로 읽으면 신호예요. 판정은 아니에요.` },
+];
+const RULE_K = { short: 'over', 'key-skip': 'key', 'key-weak': 'key', emph: 'key', low: 'vol', quiet: 'vol' };
+export const ruleOf = k => RULES.find(r => r.k === (RULE_K[k] ?? k)) ?? null;
+
 // 지난 연습의 고칠 점(화면에 보인 3개)이 이번에 나아졌나: [{ k, text: 지난번 글, v: 'done' 고쳤어요 | 'still' 아직이에요 | 'unread' 이번에 그 구간을 읽지 않음 }].
 // 같은 종류의 팁이 이번에도 같은 구간(발표 전체 팁이면 그냥)에 나왔으면 아직이다. 대본 구간 수가 달라졌으면 종류만 본다
 export function fixedTips(run, prev, goal) {
@@ -769,8 +824,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=20');
-  const { readScript } = await import('./lib.js?v=20');
+  const { units } = await import('./shrink.js?v=21');
+  const { readScript } = await import('./lib.js?v=21');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -1404,6 +1459,34 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.match(secRows(tr(fl), null, 0)[2].words, /힘 있게 말할 곳인데 차분하게 들림/);
   assert.ok(secRows(tr(fl), null, 0)[0].nums.includes('발표 준비의 계획: 힘 있게'));
   assert.equal(tk(fl.map(s => ({ ...s, pe: null }))).tone, undefined, '계획이 없으면 말하지 않는다');
+
+  // 읽기 시험: 글, 빠르기(기다림 제외·틈 상한·덜 읽음·짧음·이상값), 말하는 방식
+  const TL = norm(READ_TEST).length;
+  assert.ok(TL >= 220 && TL <= 280 && !/[0-9A-Za-z]/.test(READ_TEST) && norm(READ_TEST).endsWith(TEST_END), `시험 글 ${TL}음절, 한글만, '감사합니다'로 끝`);
+  const tp = (n, step, from = 1000) => Array.from({ length: n }, (_, i) => [from + i * step, Math.round(((i + 1) / n) * 250)]);
+  near(testRate(tp(100, 500, 3000), 255).r, (250 - 3) / 49.5, 1e-9, '첫 결과 전 3초 기다림은 빠진다');
+  const gap = tp(100, 500); gap.slice(50).forEach(x => { x[0] += 10000; });
+  near(testRate(gap, 255).s, 49.5 - 0.5 + 3, 1e-9, '10초 틈은 3초로 친다');
+  assert.equal(testRate(tp(100, 500).map(([t, n]) => [t, Math.round(n / 2)]), 255).why, 'cover', '절반만 읽음');
+  assert.equal(testRate(tp(30, 500), 255).why, 'short', '말한 시간 20초 미만');
+  assert.equal(testRate(tp(100, 300), 255).why, 'odd', '초당 8음절 넘음은 잘못 들은 것');
+  assert.equal(testRate([], 255).why, 'cover', '들은 것 없음');
+  assert.equal(voiceSum([{ ...NO_AUD }], false), null, '프레임 없음');
+  assert.equal(voiceSum([{ st: null, p25: 0, p1: 0, run: 0, vol: null, ends: 0, fall: 0 }], false), null, '0 샘플만 받은 칸(유성 없음)');
+  const vz = voiceSum([{ st: [10, 13], p25: 5, p1: 2, run: 9, vol: 15, ends: 6, fall: 4 }, { st: [9, 14], p25: 3, p1: 1, run: 14, vol: 17, ends: 5, fall: 2 }, { ...NO_AUD }], false);
+  assert.deepEqual(vz, { w: 4, p: 11, p1: 3, run: 14, vol: 16, ends: 11, fall: 6, nodb: false }, '칸 합치기(폭은 중앙값)');
+  assert.deepEqual(voiceCards(vz).map(c => [c.value, c.over]), [['좁음', true], ['11', true], ['작음', true], ['흐려짐', true]], '단조롭고 작고 흐린 목소리');
+  const vn = voiceSum([{ st: [8, 16], p25: 4, p1: 1, run: 8, vol: 30, ends: 6, fall: 0 }], true);
+  assert.deepEqual(voiceCards(vn).map(c => [c.value, c.over]), [['보통', false], ['5', false], ['—', false], ['—', false]], '음량이 바뀌면 크기·문장 끝은 빼요');
+  assert.match(voiceCards(vn)[2].note, /마이크 음량/);
+  assert.equal(voiceCards({ ...vn, nodb: false, vol: 30, ends: 5, fall: 2 })[3].value, '조금 흐림', '흐림 3번 미만이면 조금');
+  assert.match(voiceCards(vz)[2].note, /dB만 커요/, '작으면 \'커요\'만 쓰지 않는다');
+
+  // 평가 기준: 팁마다 기준이 있고, 숫자는 상수에서 온다
+  for (const k of ['over', 'fast', 'key-skip', 'key-weak', 'jump', 'fall', 'low', 'quiet', 'tone', 'emph', 'flat', 'run', 'read', 'short']) assert.ok(ruleOf(k), `${k}의 기준`);
+  assert.match(ruleOf('fast').rule, /^1분에 240~330음절이면 보통, 330음절 넘으면/);
+  assert.match(ruleOf('fall').rule, /0\.3초가 그 말보다 10dB.*30% 이상/);
+  assert.ok(RULES.every(r => !/NaN|undefined|\d\.\d{3}/.test(r.rule)), '기준 글에 계산 찌꺼기가 없다');
 
   console.log(`check.js ok (yin 프레임 250개 ${tYin.toFixed(0)}ms)`);
 }

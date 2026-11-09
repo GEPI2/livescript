@@ -809,8 +809,13 @@ export const TIP_TAG = {
   over: `목표 +${OK_HI}초 넘음`, short: `목표의 ${pc(OK_LO)}% 미만`, fast: `${PACE_FAST * 60}음절/분 넘음`, jump: `평소의 ${JUMP}배 넘음`,
   'key-skip': '절반 넘게 빠짐', 'key-weak': '강조 단서 2개 미만', emph: `+${EMPH_DB}dB·+${EMPH_ST}반음 안 됨`,
   fall: `끝 ${FALL_DB}dB↓ ${pc(FALL_P)}% 이상`, low: `주변보다 ${LOW_VOL}dB 미만`, quiet: `다른 구간보다 ${QUIET_DB}dB↓`,
-  tone: '정한 힘과 반대', flat: `높낮이 ${NARROW}반음 미만`, run: `${LONG_RUN}초 넘게 안 쉼`, read: `대본 그대로 ${pc(READ_P)}%`,
+  tone: '정한 힘과 반대', flat: `폭 ${NARROW}반음 미만`, run: `${LONG_RUN}초 넘게 안 쉼`, read: `대본 그대로 ${pc(READ_P)}%`,
 };
+// 고칠 점의 머리줄 { name: 기준 이름, tag }. 없으면 null
+const TIP_RULE = { short: 'over', 'key-skip': 'key', 'key-weak': 'key', emph: 'key', low: 'vol', quiet: 'vol' };
+export const tipRule = k => { const r = RULES.find(x => x.k === (TIP_RULE[k] ?? k)); return r && TIP_TAG[k] ? { name: r.name, tag: TIP_TAG[k] } : null; };
+// 팁 글을 [무엇(첫 문장), 어떻게(나머지)]로 나눈다. 숫자 안의 점(0.5초)은 뒤에 빈칸이 없어서 나누지 않는다
+export const splitTip = t => { const i = t.search(/[.?!]\s/); return i < 0 ? [t, ''] : [t.slice(0, i + 1), t.slice(i + 2).trim()]; };
 
 // 지난 연습의 고칠 점(화면에 보인 3개)이 이번에 나아졌나: [{ k, text: 지난번 글, v: 'done' 고쳤어요 | 'still' 아직이에요 | 'unread' 이번에 그 구간을 읽지 않음 }].
 // 같은 종류의 팁이 이번에도 같은 구간(발표 전체 팁이면 그냥)에 나왔으면 아직이다. 대본 구간 수가 달라졌으면 종류만 본다
@@ -829,8 +834,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=22');
-  const { readScript } = await import('./lib.js?v=22');
+  const { units } = await import('./shrink.js?v=23');
+  const { readScript } = await import('./lib.js?v=23');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -1488,7 +1493,10 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.match(voiceCards(vz)[2].note, /dB만 커요/, '작으면 \'커요\'만 쓰지 않는다');
 
   // 평가 기준 태그: 팁마다 하나, 짧게(한 줄), 숫자는 상수에서 온다
-  for (const k of ['over', 'fast', 'key-skip', 'key-weak', 'jump', 'fall', 'low', 'quiet', 'tone', 'emph', 'flat', 'run', 'read', 'short']) assert.ok(TIP_TAG[k], `${k}의 기준 태그`);
+  for (const k of ['over', 'fast', 'key-skip', 'key-weak', 'jump', 'fall', 'low', 'quiet', 'tone', 'emph', 'flat', 'run', 'read', 'short']) assert.ok(tipRule(k)?.name && tipRule(k).tag, `${k}의 기준`);
+  assert.deepEqual(tipRule('quiet'), { name: '목소리 크기', tag: '다른 구간보다 6dB↓' });
+  assert.deepEqual(splitTip('문장 끝 8번 가운데 3번 소리가 작아졌어요(2, 3번 구간). 마지막 낱말까지 또렷하게 말해 보세요.'), ['문장 끝 8번 가운데 3번 소리가 작아졌어요(2, 3번 구간).', '마지막 낱말까지 또렷하게 말해 보세요.']);
+  assert.deepEqual(splitTip('앞 쉼 0.5초가 없어요'), ['앞 쉼 0.5초가 없어요', '']);
   assert.equal(TIP_TAG.fast, '330음절/분 넘음'); assert.equal(TIP_TAG.fall, '끝 10dB↓ 30% 이상');
   const allTags = [...Object.values(TIP_TAG), ...RULES.flatMap(r => r.tags)];
   assert.ok(allTags.every(t => t.length <= 14 && !/NaN|undefined|\d\.\d{3}/.test(t)), `태그는 짧고 계산 찌꺼기가 없다 ${allTags.filter(t => t.length > 14)}`);

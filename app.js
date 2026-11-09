@@ -1,17 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=22';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=22';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, cleanParaSlide } from './lib.js?v=22';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=22';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=22';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=22';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=22';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=22';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=23';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=23';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, cleanParaSlide } from './lib.js?v=23';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=23';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=23';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=23';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=23';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=23';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, TIP_TAG } from './check.js?v=22';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip } from './check.js?v=23';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1444,17 +1444,16 @@ function renderCheck() {
   $('cTone').replaceChildren(...(tone.length ? [mk('h3', '읽는 말투'), ...tone.map((t, i) => mk('p', t, i ? 'small' : ''))] : []));
   renderKeys(run);
   // 다음에 해 볼 것. AI 결과가 있으면 그 자리를 AI 팁으로 바꾸고 규칙으로 찾은 것은 접어 둔다.
-  // 고칠 점마다 아래 줄에 기준 태그 하나와, 녹음이 있으면 지적한 구간 듣기 단추
   const rule = tips(run, goal).map(x => {
-    const li = mk('li', x.text);
-    if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(' ', b); }
-    return clipRow(li, run, x.s, TIP_TAG[x.k]);
+    const [what, how] = splitTip(x.text), li = tipLi(run, what, how, x.s, tipRule(x.k));
+    if (x.k === 'over' && !shr.auto && prepFits(loadPrep(), $('text').value)) { const b = mk('button', '자동 줄이기 켜기'); b.onclick = shrinkFromCheck; li.append(b); }
+    return li;
   });
   const ai = run.ai, at = ai?.tips.length ? ai.tips : null;  // 고칠 점만 온 답이면 규칙 팁을 그대로 보인다
   $('cTipsH').textContent = at ? 'AI 코칭' : '다음에 해 볼 것';
   $('cAiSum').textContent = ai ? ai.summary : rule.length ? '' : '규칙으로 찾은 고칠 점이 없어요.';  // 번호 없는 한 줄
   $('cAiSum').hidden = !$('cAiSum').textContent;
-  $('cTips').replaceChildren(...(at ? at.map(x => clipRow(mk('li', (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + `${x.what} ${x.how}`), run, x.sec ? [x.sec - 1] : [])) : rule));
+  $('cTips').replaceChildren(...(at ? at.map(x => tipLi(run, (x.sec && !x.what.includes(`${x.sec}번`) ? `${x.sec}번 구간: ` : '') + x.what, x.how, x.sec ? [x.sec - 1] : [])) : rule));
   $('cRule').hidden = !at || !rule.length;
   $('cRuleList').replaceChildren(...(at ? rule : []));
   // 구간: 첫 줄(번호·첫 글, 걸린 시간·판정), 막대(연보라 띠 기대 시간, 진한 보라 걸린 시간), 정도 낱말, 숫자 보기
@@ -1537,27 +1536,31 @@ function listenBtn(label, f) {
   b.onclick = e => { e.stopPropagation(); f(); };
   return b;
 }
-// 고칠 점 아래 줄: 기준 태그(있으면)와, 녹음이 있고 읽은 구간이면 구간마다 '▶ 3번 구간'. 많으면 앞 CLIP_N곳과 '외 N곳'. li를 돌려준다
+// 고칠 점 하나: 머리줄 [기준 이름] 기준 …(규칙으로 찾은 것만), 무엇(진하게), 어떻게(흐리게), 녹음이 있으면 지적한 구간 듣기 줄
+function tipLi(run, what, how, s, r) {
+  const li = mk('li', '', 'tip');
+  if (r) { const h = mk('p', '', 'tip-h'); h.append(mk('b', r.name), mk('span', `기준 ${r.tag}`)); li.append(h); }
+  li.append(mk('p', what, 'tip-t'));
+  if (how) li.append(mk('p', how, 'tip-a'));
+  return clipRow(li, run, s);
+}
+// 지적한 구간 듣기 줄: 녹음이 있고 읽은 구간이면 '▶ 듣기', 여럿이면 구간마다 '▶ 3번 구간'. 많으면 앞 CLIP_N곳과 '외 N곳'. li를 돌려준다
 const CLIP_N = 5;
-const tagEl = (t, k) => { const e = mk('span', '', 'tag'); if (k) e.append(mk('b', k), ' '); e.append(t); return e; };
-function clipRow(li, run, s, tag) {
+function clipRow(li, run, s) {
   const a = run.rec ? s.filter(i => run.secs[i]?.wall > 0) : [];
-  if (!a.length && !tag) return li;
+  if (!a.length) return li;
   const row = mk('span', '', 'clips');
-  if (tag) row.append(tagEl(tag, '기준'));
   for (const i of a.slice(0, CLIP_N)) {
     const b = listenBtn(`${i + 1}번 구간 녹음 듣기`, () => playClip(run.t0, m => m[2] === i));
-    b.lastChild.textContent = `${i + 1}번 구간`;
+    if (a.length > 1) b.lastChild.textContent = `${i + 1}번 구간`;  // 하나면 '듣기'(위 글에 구간 번호가 있다)
     row.append(b);
   }
   if (a.length > CLIP_N) row.append(mk('span', `외 ${a.length - CLIP_N}곳`, 'small'));
   li.append(row);
   return li;
 }
-// 평가 기준 목록(dt 이름, dd 태그들). keys가 있으면 그것만
-function critList(keys) {
-  return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => { const dd = mk('dd'); dd.append(...r.tags.map(t => tagEl(t))); return [mk('dt', r.name), dd]; });
-}
+// 평가 기준 목록(dt 이름, dd 기준을 '·'로 이은 한 줄). keys가 있으면 그것만
+function critList(keys) { return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => [mk('dt', r.name), mk('dd', r.tags.join(' · '))]); }
 $('cCritList').replaceChildren(...critList());
 $('spCrit').replaceChildren(...critList(['fast', 'flat', 'run', 'vol', 'fall']));  // 홈 '내 말하기'의 말하는 방식
 // 발표 준비의 문단 q가 든 구간 번호들(0부터, 지금 대본의 SU)
@@ -2856,7 +2859,7 @@ $('scriptFile').onchange = async e => {
   importScript(await f.text(), f.name);
 };
 // 예시 대본: 같은 출처의 파일을 가져오기와 같은 길로 연다. 발표 준비 전에도 자동 줄이기, 따라가기, 질문 판정을 바로 볼 수 있게 자동 줄이기를 켜 둔다.
-$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=22').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => fetch('sample.livescript.json?v=23').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다

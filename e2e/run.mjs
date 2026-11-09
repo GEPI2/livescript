@@ -408,7 +408,8 @@ t('결과: 연습을 정지하면 대본과 들은 말로 AI 코칭을 바로 �
   assert.ok(u.includes('<대본과한말>\n1번 구간\n대본: ' + SENTS[0]), '읽은 구간의 대본');
   assert.ok(u.includes('한 말: 그러니까 ') || u.includes(' 그러니까 '), '들은 말');
   assert.equal(await p.textContent('#cAiSum'), coach.summary);
-  assert.match(await p.textContent('#cTips li'), /^2번 구간: '그러니까'로 문장을 시작하는 말버릇이 있었어요\. 첫 낱말 앞에서/);
+  assert.match(await p.textContent('#cTips li .tip-t'), /^2번 구간: '그러니까'로 문장을 시작하는 말버릇이 있었어요\.$/);
+  assert.match(await p.textContent('#cTips li .tip-a'), /^첫 낱말 앞에서/, 'AI 팁도 무엇과 어떻게를 나눠 보인다');
   assert.deepEqual(p.errors, []);
 });
 t('결과: 회차별 시간 막대와 구간부터 연습 단추', async () => {
@@ -492,10 +493,11 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   // 고칠 점마다 기준 한 줄, 지적한 구간은 녹음으로 다시 듣는다(가짜 마이크는 한 음 높이라 높낮이 폭이 좁다고 나온다)
   const tipN = await p.locator('#cTips li').count();
   assert.ok(tipN >= 1, '고칠 점');
-  assert.equal(await p.locator('#cTips li .clips .tag').count(), tipN, '고칠 점마다 기준 태그 하나');
-  assert.match(await p.locator('#cTips li .tag').first().textContent(), /^기준 \S/);
-  assert.equal(await p.locator('#cTips li .tag').evaluateAll(es => es.every(e => e.getBoundingClientRect().height < 30)), true, '태그는 줄을 바꾸지 않는다');
-  assert.ok(await p.locator('#cCritList dd .tag').count() >= 15, '평가 기준 목록도 태그');
+  assert.equal(await p.locator('#cTips li .tip-h').count(), tipN, '고칠 점마다 머리줄(기준 이름 · 기준)');
+  assert.match(await p.locator('#cTips li .tip-h').first().textContent(), /^\S+( \S+)*기준 \S/);
+  assert.equal(await p.locator('#cTips li .tip-t').count(), tipN, '무엇이 문제였는지 한 줄');
+  assert.equal(await p.locator('#cTips li .tip-h').evaluateAll(es => es.every(e => e.getBoundingClientRect().height < 30)), true, '머리줄은 줄을 바꾸지 않는다');
+  assert.match(await p.textContent('#cCritList dd'), / · /, '평가 기준 목록은 · 로 이은 한 줄');
   await p.evaluate(() => { document.getElementById('cCrit').open = true; }); await p.locator('#cTipsH').scrollIntoViewIfNeeded();
   await p.screenshot({ path: OUT + '/rec-tips.png' });
   const vp = p.viewportSize(); await p.setViewportSize({ width: 375, height: 812 }); await p.locator('#cTipsH').scrollIntoViewIfNeeded();

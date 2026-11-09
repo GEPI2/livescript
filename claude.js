@@ -1,7 +1,7 @@
 // Claude 호출. 브라우저는 키 없이 서비스의 AI 중계(worker/)를 부르고, 키와 요금은 서비스가 맡는다.
-import { cleanPack, CATS } from './qa.js?v=21';
-import { cleanAi } from './adlib.js?v=21';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=21';
+import { cleanPack, CATS } from './qa.js?v=22';
+import { cleanAi } from './adlib.js?v=22';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=22';
 
 // 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
 export const API = 'https://livescript-ai.gepi.workers.dev/v1/messages';
@@ -810,9 +810,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=21');
-  const { readScript: readEx } = await import('./lib.js?v=21');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=21');
+  const { units } = await import('./shrink.js?v=22');
+  const { readScript: readEx } = await import('./lib.js?v=22');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=22');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));

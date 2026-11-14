@@ -1,7 +1,7 @@
 // Claude 호출. 브라우저는 키 없이 서비스의 AI 중계(worker/)를 부르고, 키와 요금은 서비스가 맡는다.
-import { cleanPack, CATS } from './qa.js?v=23';
-import { cleanAi } from './adlib.js?v=23';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=23';
+import { cleanPack, CATS } from './qa.js?v=24';
+import { cleanAi } from './adlib.js?v=24';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=24';
 
 // 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
 export const API = 'https://livescript-ai.gepi.workers.dev/v1/messages';
@@ -496,8 +496,8 @@ ${talk.length ? `
 - edits는 빈 배열로 둔다(대본 글을 받지 않았다).`}
 - 받은 숫자 밖의 숫자를 지어내지 않는다. 감정이나 성격을 판단하지 않는다. 사투리나 억양은 재지 않으므로 말하지 않는다.
 - what에는 숫자로 본 점을, how에는 다음 연습에서 할 행동 하나를 쓴다. 모두 해요체 한국어로 쓴다.
-- summary는 한 문장이다.${fixed.length ? `
-- <지난연습고칠점>에서 '고쳤어요'인 것은 summary에서 짧게 알려 주고, '아직이에요'인 것은 tips에서 먼저 다룬다.` : ''}
+- summary는 맨 위에 크게 보이는 한 줄 총평이다. 30자 안쪽으로, 가장 먼저 할 일 하나나 가장 잘한 점 하나만 말한다(예: 조금 더 천천히 말해 보세요 / 시간도 빠르기도 좋았어요). 숫자와 구간 번호는 tips에 쓴다.${fixed.length ? `
+- <지난연습고칠점>에서 '고쳤어요'인 것은 summary의 한 줄로 삼아도 되고, '아직이에요'인 것은 tips에서 먼저 다룬다.` : ''}
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
 {"summary":"...","tips":[{"sec":2,"what":"...","how":"..."}],"edits":[]}`;
@@ -810,9 +810,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=23');
-  const { readScript: readEx } = await import('./lib.js?v=23');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=23');
+  const { units } = await import('./shrink.js?v=24');
+  const { readScript: readEx } = await import('./lib.js?v=24');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=24');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));
@@ -873,7 +873,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(coachPrompt(cr, prev, ct, 180, { secs: [] }).text, cp.text, '들은 말이 없으면 숫자만');
   assert.ok(tp.system.includes('글자 하나 바꾸지 않고 그대로 옮긴 것') && !tp.system.includes('지난연습고칠점'), '고칠 점은 from·to·why');
   const fx = coachPrompt(cr, prev, ct, 180, says, null, [{ text: '1번 구간이 빨랐어요.', v: 'done' }, { text: '2번 구간 목소리가 작아졌어요.', v: 'still' }]);
-  assert.ok(fx.user.includes('<지난연습고칠점>\n- 고쳤어요: 1번 구간이 빨랐어요.\n- 아직이에요: 2번 구간 목소리가 작아졌어요.\n</지난연습고칠점>') && fx.system.includes("'고쳤어요'인 것은 summary에서"), '지난 연습 고칠 점');
+  assert.ok(fx.user.includes('<지난연습고칠점>\n- 고쳤어요: 1번 구간이 빨랐어요.\n- 아직이에요: 2번 구간 목소리가 작아졌어요.\n</지난연습고칠점>') && fx.system.includes("'고쳤어요'인 것은 summary의 한 줄로"), '지난 연습 고칠 점');
   assert.ok(!/undefined|NaN|null/.test(tp.text));
   mock(ok(JSON.stringify(coach)));
   await coachRun(cr, prev, ct, { goal: 180, says });

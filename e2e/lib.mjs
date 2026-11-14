@@ -60,6 +60,6 @@ export async function page(browser, o = {}) {
   p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|favicon/.test(m.text())) p.errors.push(m.text()); });
   return p;
 }
-// 첫 화면은 홈이다. home: false(기본)면 홈을 닫고 편집 화면에서 시작한다
-export const open = async (p, q = '', { home = false } = {}) => { await p.goto(BASE + q); await p.waitForFunction(() => document.body.classList.contains('ready') || !document.getElementById('text').readOnly); await p.waitForTimeout(300); if (!home) await p.evaluate(() => document.getElementById('home').hidden || document.getElementById('homeBtn').click()); };
+// 첫 화면은 홈이다. home: false(기본)면 Esc로 홈을 닫고 편집 화면에서 시작한다(로고는 늘 홈을 연다)
+export const open = async (p, q = '', { home = false } = {}) => { await p.goto(BASE + q); await p.waitForFunction(() => document.body.classList.contains('ready') || !document.getElementById('text').readOnly); await p.waitForTimeout(300); if (!home) await p.evaluate(() => document.getElementById('home').hidden || dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))); };
 export const sample = async p => { await p.click('#eSample'); await p.waitForTimeout(600); await p.locator('#toastX').click().catch(() => {}); };

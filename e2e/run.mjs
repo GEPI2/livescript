@@ -86,6 +86,15 @@ t('편집: 발표 준비가 없으면 단계 버튼이 잠기고 안내가 보�
   assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
   assert.equal(await p.locator('[data-pane="prep"]').isVisible(), true);
 });
+t('편집: 발표 준비를 마치면 단계 버튼이 바로 켜진다', async () => {
+  const p = await page(browser); await open(p);
+  await p.click('#ePaste'); await p.fill('#text', '안녕하세요. 짧은 대본이에요.');
+  await p.waitForTimeout(400);
+  await mockAi(p, () => ({ paras: [{ p: 1, imp: 2, keep: [1], drop: [], role: '도입', tone: '또렷하게', e: 2 }], keys: [], crit: [], kw: [] }));
+  await p.click('#prepGo');
+  await p.waitForFunction(() => /^발표 준비를 저장했어요/.test(document.getElementById('aiMsg').textContent));
+  assert.equal(await p.locator('#modeSeg button:disabled').count(), 0, '창을 닫거나 화면을 옮기지 않아도 켜진다');
+});
 t('편집: 핵심만을 고르면 자동 줄이기가 꺼져 있어도 발표 화면이 짧아진다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   await p.uncheck('#shrinkOn');
@@ -489,6 +498,10 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   await p.locator('#cSecs .sec .sh button.play').nth(1).click(); await p.waitForTimeout(600);
   const at = await p.evaluate(() => { const a = document.getElementById('cAudio'); return [+a.dataset.to, a.currentTime, a.paused]; });
   assert.ok(at[0] > at[1] - 0.5 && at[1] > 1 && !at[2], `둘째 구간부터 듣고, 그 구간 끝에서 멈출 자리를 둔다 ${at}`);
+  const lb = p.locator('#cSecs .sec .sh button.play').nth(1);
+  assert.equal(await lb.getAttribute('aria-pressed'), 'true', '재생 중인 듣기 단추는 눌린 모양(멈춤 아이콘)');
+  await lb.click(); await p.waitForTimeout(300);
+  assert.deepEqual([await p.evaluate(() => document.getElementById('cAudio').paused), await lb.getAttribute('aria-pressed')], [true, null], '다시 누르면 멈추고 표시가 돌아온다');
   await p.screenshot({ path: OUT + '/rec-result.png' });
   // 고칠 점마다 기준 한 줄, 지적한 구간은 녹음으로 다시 듣는다(가짜 마이크는 한 음 높이라 높낮이 폭이 좁다고 나온다)
   const tipN = await p.locator('#cTips li').count();
@@ -663,7 +676,10 @@ t('편집: 발표 시간은 한 줄이고, 예상을 누르면 홈의 내 말하
   assert.equal(await p.locator('#home').isVisible(), true, 'Esc는 시험만 그만두고 홈은 그대로');
   assert.equal(await p.locator('#spDash').isVisible(), true);
   await p.click('#homeBtn');
-  assert.equal(await p.locator('#est').isVisible(), true, '홈 단추를 다시 누르면 보던 편집 화면');
+  assert.equal(await p.locator('#home').isVisible(), true, '로고는 홈에서 눌러도 홈이다');
+  assert.match(await p.textContent('#homeBack'), /이어서 하기$/);
+  await p.click('#homeBack');
+  assert.equal(await p.locator('#est').isVisible(), true, "'이어서 하기'를 누르면 보던 편집 화면");
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '폰에서 가로로 넘치지 않는다');
   assert.deepEqual(p.errors, []);
 });
@@ -712,7 +728,7 @@ t('읽기 속도: 절반만 읽으면 저장하지 않고, 시험 뒤에도 연�
   assert.equal(await p.textContent('#spMsg'), '', '못 잰 안내도 지운다');
   // 읽는 중에 홈을 닫으면 시험을 버린다(그 뒤에 들린 말은 세지 않는다)
   await readTest(p, 10);
-  await p.click('#homeBtn');
+  await p.click('#homeBack');
   await p.evaluate(() => window.__say(document.getElementById('spText').textContent)); await p.clock.runFor(3000);
   assert.equal(await lsGet(p, 'ls.rate'), null, '닫은 뒤에는 재지 않는다');
   await p.click('[data-tab="practice"]'); await p.clock.runFor(500);
@@ -982,24 +998,93 @@ t('탭: 메뉴 없이 대본·연습·실전·Q&A 탭으로 화면이 바뀌고,
   assert.deepEqual(p.errors, []);
 });
 
+// ---- 다듬기: 빈 발표 숨김, 예시는 하나만, [확인 필요] 창의 두 단추 ----
+t('홈: 손대지 않은 빈 대본은 카드로 안 보이고, 예시는 다시 눌러도 하나다', async () => {
+  const p = await page(browser); await open(p, '', { home: true });
+  assert.equal(await p.locator('#hGrid .pcard').count(), 1, "처음에는 '＋ 새 발표 만들기'뿐");
+  await p.click('#hSample'); await p.waitForTimeout(700);
+  await p.click('#homeBtn'); await p.click('#hSample'); await p.waitForTimeout(500);
+  assert.match(await p.textContent('#toastT'), /^받아 둔 예시 대본을 열었어요/);
+  await p.click('#homeBtn');
+  assert.deepEqual(await p.locator('#hGrid .pcard .nm').allTextContents(), ['예시: 말랑 소개'], '예시 (2)가 생기지 않는다');
+  assert.deepEqual(p.errors, []);
+});
+t('대본: [확인 필요]가 남으면 창에서 확인하러 가거나 바로 연습한다', async () => {
+  const p = await page(browser); await open(p);
+  await p.click('#ePaste'); await p.fill('#text', '안녕하세요. 첫 문단이에요.\n\n이용자는 [확인 필요]명입니다. 둘째 문단이에요.'); await p.waitForTimeout(400);
+  await p.click('[data-tab="practice"]');
+  assert.equal(await p.locator('#markDlg').evaluate(d => d.open), true);
+  assert.match(await p.textContent('#markMsg'), /\[확인 필요\]가 1곳 남아 있어요/);
+  await p.click('#markGo'); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#markDlg').evaluate(d => d.open), false);
+  assert.equal(await p.evaluate(() => { const t = document.activeElement; return t.value.slice(t.selectionStart, t.selectionEnd); }), '[확인 필요]', '둘째 문단 카드가 열리고 그 자리가 골라져 있다');
+  await p.keyboard.press('Escape');
+  await p.click('[data-tab="live"]');
+  assert.equal(await p.textContent('#markSkip'), '바로 실전');
+  await p.keyboard.press('Escape');
+  await p.click('[data-tab="practice"]'); await p.click('#markSkip'); await p.waitForTimeout(600);
+  assert.equal(await p.getAttribute('[data-tab="practice"]', 'aria-selected'), 'true', '바로 연습');
+  assert.equal(await p.textContent('#qaBtn'), '질의응답');
+  assert.deepEqual(p.errors, []);
+});
+
+// ---- 안내: 누른 단추에서 먼 줄에만 뜨던 글은 토스트로도 뜬다 ----
+t('안내: 빈 질문 내보내기, 20초 안에 정지, 실전 피드백 켜기는 토스트로 알린다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  const toast = () => p.textContent('#toastT');
+  await p.click('[data-tab="practice"]'); await p.waitForTimeout(600);
+  await p.click('#mic'); await p.waitForTimeout(300); await p.click('#mic'); await p.waitForTimeout(300);
+  assert.match(await toast(), /^잠깐 멈췄어요\. '● 연습'을 누르면 읽던 곳부터 이어 가요\. 20초 넘게/);
+  assert.equal(await p.locator('#checkDlg').evaluate(d => d.open), false, '20초 안이면 결과 창은 없다');
+  await p.click('[data-tab="live"]'); await p.waitForTimeout(600);
+  await p.click('#fbBtn');
+  assert.match(await toast(), /^피드백 켬: 꼭 말할 문장 밑줄/);
+  await p.click('#fbBtn');
+  assert.equal(await toast(), '피드백 끔: 대본만 보여요.');
+  const q = await page(browser); await open(q);
+  await q.click('#ePaste'); await q.fill('#text', '안녕하세요. 질문이 없는 대본이에요.'); await q.waitForTimeout(400);
+  await q.click('[data-tab="qa"]'); await q.waitForTimeout(300);
+  await q.click('#exportPack');
+  assert.equal(await q.textContent('#toastT'), '내보낼 질문이 없어요.');
+  assert.equal(await q.locator('#toast').isVisible(), true, '목록 위 줄까지 올라가지 않아도 보인다');
+  assert.deepEqual(p.errors, []);
+});
+
 // ---- 내 발표(홈) ----
-t('홈: 첫 화면은 내 발표 카드다. 대본이 있어도 새로고침하면 홈에서 시작한다', async () => {
+t('홈: 첫 화면은 내 발표 카드다. 새로고침하면 보던 발표와 탭으로 돌아온다', async () => {
   const p = await page(browser); await open(p, '', { home: true });
   assert.equal(await p.locator('#home').isVisible(), true);
   assert.equal(await p.evaluate(() => document.body.classList.contains('editing')), true);
   assert.equal(await p.evaluate(() => document.activeElement.id), 'homeH');
-  await p.click('#homeBtn'); await sample(p);
+  assert.equal(await p.locator('#homeBack').isHidden(), true, '처음 온 홈에는 돌아갈 발표가 없다');
+  await p.keyboard.press('Escape'); await sample(p);
   await p.reload(); await p.waitForFunction(() => document.body.classList.contains('ready')); await p.waitForTimeout(300);
-  assert.equal(await p.locator('#home').isVisible(), true, '대본이 있어도 발표 화면이 아니라 홈');
+  assert.equal(await p.locator('#home').isHidden(), true, '새로고침하면 홈이 아니라 보던 [대본]');
+  assert.equal(await p.textContent('#ttl'), '예시: 말랑 소개');
+  assert.equal(await p.locator('#cList').isVisible(), true);
+  await p.click('[data-tab="qa"]'); await p.waitForTimeout(300);
+  await p.reload(); await p.waitForFunction(() => document.body.classList.contains('ready')); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#prep').isVisible(), true, '보던 탭([Q&A])으로 돌아온다');
+  await p.click('#homeBtn');
   assert.equal(await p.locator('#hGrid .pcard.on .nm').textContent(), '예시: 말랑 소개');
+  assert.equal(await p.textContent('#homeBack'), "‹ '예시: 말랑 소개' 이어서 하기");
+  await p.reload(); await p.waitForFunction(() => document.body.classList.contains('ready')); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#home').isVisible(), true, '홈에서 새로고침하면 홈');
+  await p.click('#homeBack');
+  assert.equal(await p.locator('#prep').isVisible(), true, "홈에서 새로고침한 뒤에도 '이어서 하기'는 보던 탭([Q&A])");
+  await p.click('#homeBtn');
+  const p2 = await p.context().newPage(); await open(p2, '', { home: true });
+  assert.equal(await p2.locator('#home').isVisible(), true, '새 탭은 홈에서 시작한다');
   assert.deepEqual(p.errors, []);
 });
 t('홈: 말랑을 누르면 발표 카드가 나오고, 카드를 누르면 그 대본으로 간다', async () => {
-  const p = await page(browser); await open(p); await sample(p);
+  const p = await page(browser); await open(p);
+  await p.fill('#create [data-info="topic"]', '첫 발표');  // 손댄 대본만 카드로 보인다
+  await sample(p);
   await p.click('#homeBtn');
   assert.equal(await p.locator('#home').isVisible(), true);
   assert.equal(await p.textContent('#homeH'), '어떤 발표를 준비할까요?');
-  assert.equal(await p.locator('#hGrid .pcard').count(), 3, '대본 둘(처음 빈 대본, 예시) + 새 발표 만들기');
+  assert.equal(await p.locator('#hGrid .pcard').count(), 3, '대본 둘(주제만 적은 대본, 예시) + 새 발표 만들기');
   assert.equal(await p.locator('#hGrid .pcard.on .nm').textContent(), '예시: 말랑 소개');
   assert.match(await p.locator('#hGrid .pcard.on .mt').textContent(), /^예상 \d+:\d\d · 목표 3:00$/);
   assert.match(await p.locator('#hGrid .pcard.on .th').textContent(), /^안녕하세요\. 오늘은/);
@@ -1032,7 +1117,7 @@ t('홈: 새 발표 만들기는 대본을 더하고 이름은 머리줄에서 �
   assert.equal(+(await p.textContent('#hsFs')), fs0 - 2);
   await p.click('.htabs [data-t="main"]');
   await p.click('#hNew'); await p.waitForTimeout(400);
-  assert.equal(await p.textContent('#ttl'), '대본 2');
+  assert.equal(await p.textContent('#ttl'), '대본 1', '손대지 않은 빈 대본이 있으면 새로 만들지 않고 그것을 연다');
   assert.equal(await p.locator('#home').isHidden(), true);
   assert.equal(await p.locator('#create').isVisible(), true);
   p.once('dialog', d => d.accept('발표 둘'));
@@ -1081,7 +1166,10 @@ t('보관함: 다른 탭이 만든 대본은 이 탭이 저장해도 목록에�
   const p = await page(browser); await open(p); await sample(p);
   const p2 = await p.context().newPage(); await p2.goto(BASE); await p2.waitForFunction(() => !document.getElementById('text').readOnly); await p2.waitForTimeout(300);
   await p2.click('#hNew'); await p2.waitForTimeout(400);
+  await p2.fill('#create [data-info="topic"]', '둘째 탭');  // 빈 대본 1을 다시 썼다. 손댔으니 다음 새 발표는 새로 만든다
+  await p2.click('#homeBtn'); await p2.click('#hNew'); await p2.waitForTimeout(400);
   const other = await p2.textContent('#ttl');
+  assert.equal(other, '대본 2');
   // 옛 목록을 든 첫 탭이 글을 고쳐 저장한다 (예전에는 이때 ls.lib이 옛 목록으로 돌아가 '두번째'가 사라졌다)
   await p.evaluate(() => { const ta = document.getElementById('text'); ta.value += ' '; ta.dispatchEvent(new Event('input')); });
   await p.waitForTimeout(300);
@@ -1092,6 +1180,7 @@ t('보관함: 다른 탭이 만든 대본은 이 탭이 저장해도 목록에�
 
 t('보관함: 새 발표는 안 쓰인 가장 작은 번호로, 같은 이름으로 바꾸면 (2)를 붙인다', async () => {
   const p = await page(browser); await open(p);
+  await p.fill('#create [data-info="topic"]', '첫 발표');  // 손댄 대본은 다시 쓰지 않는다
   await p.click('#homeBtn'); await p.click('#hNew'); await p.waitForTimeout(300);
   assert.equal(await p.textContent('#ttl'), '대본 2', '기본 이름');
   p.once('dialog', d => d.accept('대본 1'));

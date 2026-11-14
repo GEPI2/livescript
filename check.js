@@ -232,9 +232,10 @@ export function cueStep(st, inp, now) {
   const clear = () => { if (st.k) { st.k = null; st.end = now; } return null; };
   if (!MODES.includes(inp.mode) || inp.mode === 'read' || !inp.on || inp.hide) return clear();
   if (st.k && !want(st.k)) clear();
-  if (!st.k && !inp.hold) {
-    const k = ['fast', 'slow', 'quiet', 'read'].find(want), same = (k === 'read' ? READ_SAME : CUE_SAME[inp.mode]) * 1000;
-    if (k && now - st.end >= CUE_GAP[inp.mode] * 1000 && !(now - st.last[k] < same)) { st.k = k; st.at = st.last[k] = now; }
+  const k = ['fast', 'slow', 'quiet', 'read'].find(want), up = !!st.k && k !== st.k;  // up: 보이는 것보다 앞 차례 힌트가 생겼다(예: '말하듯이' 중에 빨라짐). 간격 없이 바꾼다
+  if ((!st.k || up) && !inp.hold) {
+    const same = (k === 'read' ? READ_SAME : CUE_SAME[inp.mode]) * 1000;
+    if (k && (up || now - st.end >= CUE_GAP[inp.mode] * 1000) && !(now - st.last[k] < same)) { st.k = k; st.at = st.last[k] = now; }
   }
   return st.k && { k: st.k, word: WORD[st.k], dim: live || now - st.at >= BRIGHT * 1000 };
 }
@@ -834,8 +835,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=23');
-  const { readScript } = await import('./lib.js?v=23');
+  const { units } = await import('./shrink.js?v=24');
+  const { readScript } = await import('./lib.js?v=24');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -1409,6 +1410,10 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.equal(cueStep(newCue(), { mode: 'practice', on: true, quiet: true }, 0)?.word, '크게');
   assert.equal(cueStep(newCue(), { mode: 'live', on: true, quiet: true }, 0), null, '실전에는 없다');
   assert.equal(cueStep(newCue(), { mode: 'practice', on: true, quiet: true, pace: 'fast' }, 0).word, '천천히', '빠르기가 먼저');
+  { const st = newCue();
+    assert.equal(cueStep(st, { mode: 'practice', on: true, read: true }, 0).word, '말하듯이');
+    assert.equal(cueStep(st, { mode: 'practice', on: true, read: true, pace: 'fast' }, 5000).word, '천천히', "'말하듯이'가 떠 있어도 빠르면 바로 '천천히'");
+    assert.equal(cueStep(st, { mode: 'practice', on: true, read: true }, 10000), null, "풀리면 지우고 간격을 둔다"); }
   // 문장별 강조(합성 신호): 꼭 말할 문장(sid 5)을 같은 구간 다른 문장보다 2배 크게(+6dB), 높게(150 → 200Hz, +5반음)
   {
     const F3 = frames(2), put = (x, t0, s, key, sid, off = false) => { for (let t = 43; t * SR / 1000 <= x.length; t += 40) { const e = Math.round(t * SR / 1000); F3.push(x.subarray(e - N, e), SR, t0 + t, s, key, sid, off); } };

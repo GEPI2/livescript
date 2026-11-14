@@ -90,16 +90,38 @@ function lcs(x, y, push) {
 }
 
 // ---- 문단과 문장 ----
-// 문단: 빈 줄로 나눈 덩어리. 빈 줄이 하나도 없는 대본이면 줄마다 한 문단. 반환 [[시작, 끝], ...] (원문 위치, 앞뒤 공백 제외)
+// 슬라이드 머리 줄: 줄 맨 앞의 '3슬라이드', '슬라이드 3', 'Slide 3', '# 제목'. 뒤에 글자가 바로 붙으면('3슬라이드에서는') 본문이다.
+// 붙여넣은 대본에 이런 줄이 둘 이상이면 슬라이드마다 문단 하나로 묶는다(빈 줄마다 쪼개면 카드가 잘게 흩어진다).
+// 3번 묶음: 번호 뒤 구분 기호(없을 수도 있다)
+const HEAD = /^[^\S\n]*(?:#{1,6}[ \t]+(?=\S)|(\d{1,3})[ \t]*슬라이드(?![가-힣A-Za-z0-9])|(?:슬라이드|slide)[ \t]*(\d{1,3})(?![가-힣A-Za-z0-9]))([ \t]*[.,:)\-–—·~]*)[ \t]*/i;
+// 줄 하나가 머리 줄이면 { no: 슬라이드 번호(없으면 0), title: 번호·기호·대괄호를 뺀 제목(없으면 '') }, 아니면 null
+function headLine(line) {
+  const m = HEAD.exec(line);
+  if (!m) return null;
+  let t = line.slice(m[0].length).trim();
+  // 번호 뒤에 구분 기호(. : ) - ·) 없이 문장이 이어지면 본문이다: '3슬라이드 보시면 표가 있습니다.', '슬라이드 3, 4를 함께 보겠습니다.'
+  if ((m[1] ?? m[2]) != null && !/[.:)\-–—·]/.test(m[3]) && !/^\[[^\]]*\]$/.test(t) && /[.!…。]["'”’)\]]*$/.test(t)) return null;  // 대괄호 제목('2슬라이드 [배경 등...]')은 머리 줄
+  if (/^\[[^\]]*\]$/.test(t)) t = t.slice(1, -1).trim();
+  if (/^[\d\s.,~\-–—]*$/.test(t)) t = '';  // '슬라이드 3-4', 'Slide 3.5'처럼 번호만 남으면 제목이 없는 것으로
+  return { no: +(m[1] || m[2] || 0), title: t };
+}
+// 문단 첫 줄이 머리 줄이면 { no, title }, 아니면 null
+export const slideHead = para => headLine(para.trimStart().split('\n', 1)[0]);
+// 문단: 빈 줄로 나눈 덩어리. 빈 줄이 하나도 없는 대본이면 줄마다 한 문단. 슬라이드 머리 줄이 둘 이상이면 첫 머리 줄부터는 머리 줄마다 한 문단.
+// 반환 [[시작, 끝], ...] (원문 위치, 앞뒤 공백 제외)
 export function paraSpans(text) {
-  const re = /\n\s*\n/.test(text) ? /\n\s*\n/g : /\n/g, out = [];
+  const heads = [];
+  for (let i = 0, e; i < text.length; i = e + 1) { e = text.indexOf('\n', i); if (e < 0) e = text.length; if (headLine(text.slice(i, e))) heads.push(i); }
+  const body = heads.length >= 2 ? text.slice(0, heads[0]) : text;  // 첫 머리 줄 앞(인사말 등)은 예전 규칙대로
+  const re = /\n\s*\n/.test(text) ? /\n\s*\n/g : /\n/g, out = [];  // 빈 줄이 있는 대본인지는 전체로 본다
   let s = 0, m;
   const add = e => {
     const p = text.slice(s, e), t = p.trim();
     if (t) { const a = s + p.search(/\S/); out.push([a, a + t.length]); }
   };
-  while ((m = re.exec(text))) { add(m.index); s = m.index + m[0].length; }
-  add(text.length);
+  while ((m = re.exec(body))) { add(m.index); s = m.index + m[0].length; }
+  add(body.length);
+  if (heads.length >= 2) heads.forEach((h, k) => { s = h; add(heads[k + 1] ?? text.length); });
   return out;
 }
 
@@ -165,12 +187,13 @@ const BYE = s => /^(이 (대본이|원고가) )?도움이 (되길|되기를|되�
 const BOT = s => /대본|원고|말투/.test(s) || /^(좀 |조금 )?(더 |짧게 |길게 )+(줄이|늘리|다듬|고치|고쳐|바꾸|바꿔|수정)/.test(s);
 
 // AI가 쓴 대본이나 챗봇에서 붙여넣은 대본을 다듬는다: 코드 블록 표시, 마크다운 제목 줄, 굵게 표시, 빈 줄 여러 개, 앞뒤 인사말
-export function cleanScript(t) {
+// keepHead: '# 제목' 줄을 지우지 않는다(원래 대본이 '# ' 줄을 슬라이드 머리 줄로 쓰고 있을 때. 지우면 그 카드가 앞 슬라이드에 합쳐진다)
+export function cleanScript(t, keepHead = false) {
   t = String(t).normalize('NFC').replace(/\r\n?/g, '\n');
   const f = t.match(/```[^\n]*\n([\s\S]*?)```/);
   if (f) t = f[1];
   // 구분선(---, ***, ___)만 있는 줄은 소리 내어 읽지 않으므로 지운다
-  t = t.replace(/^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$/gm, '').replace(/^#{1,6}\s.*$/gm, '').replace(/\*\*|__/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  t = t.replace(/^[ \t]*([-*_])([ \t]*\1){2,}[ \t]*$/gm, '').replace(keepHead ? /(?!)/ : /^#{1,6}\s.*$/gm, '').replace(/\*\*|__/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   const first = t.split('\n', 1)[0];
   if (first.length <= 60 && first.length < t.length && PRE(first)) t = t.slice(first.length).trim();
   const ps = t.split('\n\n'), last = ps.at(-1), ss = (last.match(/[^.!?\n]+[.!?]*/g) || []).map(x => x.trim());  // '...'만 있는 문단은 문장이 없다
@@ -263,6 +286,27 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(paras('첫 줄\n둘째 줄. 셋째'), [['첫 줄'], ['둘째 줄.', '셋째']], '빈 줄이 없으면 줄마다 문단');
   assert.deepEqual(paras('가'.normalize('NFD') + '나.'), [['가나.']], 'NFD');
   assert.deepEqual(paras('  \n\n '), []);
+  // 슬라이드 머리 줄이 둘 이상이면 슬라이드마다 문단 하나(안의 빈 줄은 그대로), 첫 머리 줄 앞은 예전 규칙
+  const SL = '인사말입니다.\n\n1슬라이드. 표지\n안녕하세요.\n\n2슬라이드 [2. Tier 1 → 2 → 3 적용 분석]\n\n[TIER 1 : 구조적 압력]\n먼저 압력입니다.\n\n둘째 문단.\n\nSlide 3: 마무리\n감사합니다.';
+  assert.deepEqual(paraSpans(SL).map(([a, b]) => SL.slice(a, b).split('\n')[0]), ['인사말입니다.', '1슬라이드. 표지', '2슬라이드 [2. Tier 1 → 2 → 3 적용 분석]', 'Slide 3: 마무리']);
+  assert.equal(paras(SL)[2].length, 5, '둘째 슬라이드: 머리 줄, [TIER 1…], 먼저…, 둘째 문단.');
+  assert.deepEqual(paraSpans(SL).map(([a, b]) => slideHead(SL.slice(a, b))), [null, { no: 1, title: '표지' }, { no: 2, title: '2. Tier 1 → 2 → 3 적용 분석' }, { no: 3, title: '마무리' }]);
+  assert.deepEqual(slideHead('# 도입\n글'), { no: 0, title: '도입' });
+  assert.deepEqual([slideHead('4슬라이드'), slideHead('3슬라이드에서는 표를 봅니다.'), slideHead('[확인 필요] 숫자'), slideHead('슬라이드를 넘기겠습니다.')], [{ no: 4, title: '' }, null, null, null]);
+  assert.equal(paraSpans('1슬라이드. 하나뿐\n\n본문 하나.\n\n본문 둘.').length, 3, '머리 줄이 하나뿐이면 예전처럼 빈 줄마다');
+  assert.equal(paraSpans('3슬라이드에서는 표를 봅니다.\n\n4슬라이드에서는 그림을 봅니다.\n\n끝.').length, 3, '본문 문장은 머리 줄이 아니다');
+  assert.equal(paraSpans('# 하나\n가.\n나.\n# 둘\n다.').length, 2, '빈 줄이 없어도 머리 줄마다');
+  // 본문 문장은 머리 줄이 아니다(번호 뒤에 구분 기호 없이 문장으로 끝남). 구분 기호가 있으면 문장으로 끝나도 머리 줄
+  assert.deepEqual(['3슬라이드 보시면 표가 있습니다.', '슬라이드 3, 4를 함께 보겠습니다.', 'Slide 3 shows the result.', '1 슬라이드 분량입니다. 짧아요.'].map(slideHead), [null, null, null, null]);
+  assert.deepEqual(['1슬라이드. 표지입니다.', 'Slide 3: 마무리입니다.', '2슬라이드 무엇이 문제인가?', '# 제목입니다.'].map(x => slideHead(x)?.title), ['표지입니다.', '마무리입니다.', '무엇이 문제인가?', '제목입니다.']);
+  assert.deepEqual(['1슬라이드, 표지', '슬라이드 3-4', 'Slide 3.5', '3슬라이드 -- 제목', '1슬라이드 - 3가지 이유', '슬라이드 3: 4차 산업혁명'].map(x => slideHead(x).title), ['표지', '', '', '제목', '3가지 이유', '4차 산업혁명']);
+  assert.equal(paraSpans('안녕하세요.\n\n3슬라이드 보시면 표가 있습니다.\n\n표 설명.\n\n7슬라이드 보시면 그림이 있습니다.\n\n끝.').length, 5, '말로 읽는 문장 둘로는 묶지 않는다');
+  assert.equal(paraSpans('1슬라이드\n가.\n\n　2슬라이드\n나.\n\n3슬라이드\n다.').length, 3, '줄 앞 전각 공백');
+  assert.equal(paraSpans('# 가\n글.\n\n' + ' '.repeat(35) + '3슬라이드에서는 표를 봅니다.\n\n다음.').length, 3, '깊게 들여 쓴 본문');
+  assert.equal(paraSpans('안녕하세요. 발표자입니다.\n오늘 주제는 말랑입니다.\n1슬라이드\n내용.\n\n더.\n2슬라이드\n끝.').length, 3, '빈 줄이 있는 대본이면 머리 줄 앞 인사말은 줄마다 나누지 않는다');
+  assert.equal(cleanScript('# 소개\n첫째.\n\n둘째.', true), '# 소개\n첫째.\n\n둘째.', '머리 줄을 남기라고 하면 # 줄을 지우지 않는다');
+  assert.equal(cleanScript('# 소개\n첫째.'), '첫째.');
+  assert.equal(slideHead('2슬라이드 [배경 등...]').title, '배경 등...', '대괄호 제목은 마침표로 끝나도 머리 줄');
   const T = '첫 문단.\n\n둘째 문단 가운데.\n\n셋째 문단.';
   const at = w => T.indexOf(w);
   assert.deepEqual(paraRange(T, at('가운데'), at('가운데') + 3), [at('둘째'), at('셋째') - 2], '한 문단');

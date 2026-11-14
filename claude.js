@@ -1,7 +1,7 @@
 // Claude 호출. 브라우저는 키 없이 서비스의 AI 중계(worker/)를 부르고, 키와 요금은 서비스가 맡는다.
-import { cleanPack, CATS } from './qa.js?v=24';
-import { cleanAi } from './adlib.js?v=24';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=24';
+import { cleanPack, CATS } from './qa.js?v=25';
+import { cleanAi } from './adlib.js?v=25';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=25';
 
 // 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
 export const API = 'https://livescript-ai.gepi.workers.dev/v1/messages';
@@ -152,7 +152,7 @@ export function editPrompt({ script, part = '', instr, rate, chars }) {
 
 규칙
 - 발표자의 지시대로 고친다. 지시와 상관없는 문장은 글자 하나 바꾸지 않고 그대로 둔다.
-- 문단 나눔(빈 줄)과 말투를 지킨다. 원래 있던 [확인 필요]는 그대로 둔다.
+- 문단 나눔(빈 줄)과 말투를 지킨다. 원래 있던 [확인 필요]는 그대로 둔다. 원래 있던 슬라이드 머리 줄('3슬라이드 …', '# 제목' 같은 줄)도 지우거나 바꾸지 않고 그대로 둔다.
 ${SPOKEN}
 - 말 속도는 초당 약 ${Math.round(rate * 10) / 10}자다. 시간으로 지시하면(예: 30초 줄이기) 이 속도로 글자 수를 어림한다.
 - ${part ? '<고칠부분>만 고쳐서 그 부분만 답한다. <대본>은 앞뒤 흐름을 보라고 주는 것이다.' : '고친 대본 전체를 답한다.'}`;
@@ -810,9 +810,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=24');
-  const { readScript: readEx } = await import('./lib.js?v=24');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=24');
+  const { units } = await import('./shrink.js?v=25');
+  const { readScript: readEx } = await import('./lib.js?v=25');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=25');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));

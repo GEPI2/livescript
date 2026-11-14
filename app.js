@@ -1,17 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=24';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=24';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, cleanParaSlide } from './lib.js?v=24';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=24';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=24';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=24';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=24';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=24';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=25';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=25';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=25';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=25';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=25';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=25';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=25';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=25';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip } from './check.js?v=24';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=25';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1617,7 +1617,7 @@ function renderKeys(run) {
   box.append(...fix.map(row));
   if (rest.length) { const dt = mk('details'); dt.append(mk('summary', fix.length ? `나머지 ${rest.length}개 보기` : `모두 보기(${rest.length}개)`), ...rest.map(row)); box.append(dt); }
   if (p) {
-    const text = $('text').value, same = run.h === hashText(text) && prepFits(p, text), rb = mk('div', '', 'rub');
+    const text = $('text').value, same = run.h === hashText(text) && SU.length === run.secs.length && prepFits(p, text), rb = mk('div', '', 'rub');
     rb.append(mk('h4', '평가 기준'));
     p.rub.forEach((name, i) => {
       const c = p.crit?.[i], K = kr.rows.filter(k => k.r === i + 1);
@@ -1640,7 +1640,7 @@ function renderEdits(run) {
     const k = `ai:${run.t0}:${hashText(`${e.sec}|${e.why}|${e.from ?? ''}|${e.to ?? e.how}`)}`;  // 차례가 아니라 내용으로(다시 받은 코칭의 다른 고칠 점을 숨기지 않게)
     if (ign.includes(k)) continue;
     // 구간 자리: 대본이 그대로이거나, 고쳤어도 구간 수가 같으면(앞 고칠 점을 바꾼 뒤) 그 구간
-    const why = (e.sec ? `${e.sec}번 구간 · ` : '') + e.why, u = () => e.sec && (run.h === hashText($('text').value) || SU.length === run.secs.length) ? SU[e.sec - 1] : null;
+    const why = (e.sec ? `${e.sec}번 구간 · ` : '') + e.why, u = () => e.sec && SU.length === run.secs.length ? SU[e.sec - 1] : null;  // 구간 수가 같을 때만(글이 같아도 문단 묶는 규칙이 바뀌면 구간이 달라진다)
     $('cSug').append(e.from ? sugCard(why, e.from, e.to, () => applyEdit(e, k, u()), () => ignoreSug(k))
       : sugCard(why, '', '', () => fixWith(u(), e.how), () => ignoreSug(k), e.sec ? `${e.sec}번 구간 고치기` : '대본 고치기'));
   }
@@ -1700,7 +1700,7 @@ function shrinkFromCheck() {
 function critFor(run) {
   const p = rubPrep(run);
   if (!p) return null;
-  const text = $('text').value, same = run.h === hashText(text) && prepFits(p, text);  // 문단 번호가 지금 구간과 맞을 때만
+  const text = $('text').value, same = run.h === hashText(text) && SU.length === run.secs.length && prepFits(p, text);  // 문단 번호가 지금 구간과 맞을 때만
   return p.rub.map((name, i) => { const c = p.crit?.[i]; return { name, kind: c?.kind ?? '기타', secs: c?.kind !== '내용' ? [] : same ? [...new Set(c.ps.flatMap(secsOfPara))].sort((a, b) => a - b).map(j => j + 1) : null }; });
 }
 function setCoachAi(t, ai) {
@@ -2809,7 +2809,7 @@ function renderHome() {
   grid.replaceChildren(...lib.list.filter(e => !blank(e)).map(e => {
     const text = (store.get(sk('script', e.id)) || '').trim(), g = Math.round((+store.get(sk('target', e.id)) || 0) * 60);
     const rs = readRuns(store.get(sk('runs', e.id))), last = rs.at(-1);
-    for (const r of rs) all.push({ e, r });
+    for (const r of rs) all.push({ e, r, goal: g });
     const b = mk('button', '', e.id === lib.cur ? 'pcard on' : 'pcard');
     const th = mk('div', text ? text.slice(0, 60) + (text.length > 60 ? '…' : '') : '아직 비어 있어요', text ? 'th' : 'th none');
     th.setAttribute('aria-hidden', 'true');  // 카드 이름은 발표 이름부터 읽히게 (미리보기는 눈으로만)
@@ -2829,6 +2829,15 @@ function renderHome() {
   const add = mk('button', '＋ 새 발표 만들기', 'pcard new');
   add.onclick = newPres;
   grid.append(add);
+  // 내 말하기의 자주 받는 지적(모든 발표의 연습에서 고칠 점을 기준별로 센다)
+  const often = oftenTips(all);
+  $('spOften').hidden = !often.length;
+  $('spOftenL').replaceChildren(...often.map(o => {
+    const li = mk('li'), bar = mk('i');
+    bar.style.setProperty('--w', `${Math.round(o.n / o.of * 100)}%`);
+    li.append(mk('b', o.name), bar, mk('span', `연습 ${o.of}번 중 ${o.n}번`));
+    return li;
+  }));
   const top = all.sort((x, y) => y.r.t0 - x.r.t0).slice(0, 3);
   $('hRunsH').hidden = !top.length;
   $('hRuns').replaceChildren(...top.map(({ e, r }) => {
@@ -2937,7 +2946,7 @@ function openDemo() {
   tell('받아 둔 예시 대본을 열었어요. 새로 받으려면 이 발표를 지우고 다시 눌러 주세요.');
   return true;
 }
-$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=24').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=25').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다
@@ -2955,9 +2964,16 @@ const hardIgnore = () => { try { const v = JSON.parse(store.get(sk('hardIgnore')
 const paraSlide = () => { try { return cleanParaSlide(JSON.parse(store.get(sk('paraSlide')))); } catch { return {}; } };
 function slidesOf(text = $('text').value, ps = paraSpans(text)) {
   const n = slideRec?.slides.length || 0, pick = paraSlide();
-  return ps.map(([a, b], i) => n && Math.min(n, pick[headOf(text.slice(a, b))] || i + 1));
+  return ps.map(([a, b], i) => { const t = text.slice(a, b); return n && Math.min(n, pick[headOf(t)] || slideHead(t)?.no || i + 1); });  // 고른 쪽 > 머리 줄의 번호('3슬라이드') > 문단 순서
 }
-const titleOf = t => { const w = headOf(t); return w.length > 14 ? w.slice(0, 13) + '…' : w; };
+const MDHEAD = /^[^\S\n]*#{1,6}[ \t]+\S/m;  // 대본이 '# 제목' 줄을 슬라이드 머리 줄로 쓰고 있다(AI가 고친 글에서 그 줄을 지우지 않는다)
+// 카드·목차 제목: 슬라이드 머리 줄로 시작하면 그 제목(없으면 그 아래 첫 글), 아니면 문단 첫 글. 넘치면 CSS가 줄인다
+const titleOf = t => {
+  const h = slideHead(t);
+  if (h?.title) return h.title.replace(/\s+/g, ' ').slice(0, 40);
+  const w = headOf(h ? t.trimStart().split('\n').slice(1).join(' ') : t) || headOf(t);  // 머리 줄뿐이면 그 줄 그대로
+  return w.length > 14 ? w.slice(0, 13) + '…' : w;
+};
 // 연습 때 막힌 낱말(compare.js hardWords): 저장된 연습의 대본·들은 말을 다시 맞춘다. 연습 기록이 그대로면 다시 계산하지 않는다
 let hardMemo = { raw: null, list: [] };
 function hardList() {
@@ -2977,6 +2993,9 @@ function renderCards() {
   const pp = loadPrep(), fit = prepFits(pp, text) ? pp : null, why = new Map((pp?.keys ?? []).map(k => [k.t, k]));  // 역할 칩, 꼭 말할 문장의 까닭
   const sn = slidesOf(text, ps);
   if (cardAt >= ps.length) cardAt = cardNew ? ps.length : -1;
+  const hs = ps.map(([a, b]) => slideHead(text.slice(a, b))).filter(Boolean), byHead = hs.length >= 2;  // 슬라이드 머리 줄로 묶인 대본
+  const newHead = !byHead ? '' : hs.some(h => h.no) ? `${Math.max(...hs.map(h => h.no)) + 1}슬라이드\n` : `# 슬라이드 ${hs.length + 1}\n`;  // '# '만으로는 머리 줄이 아니다(제목이 있어야 한다)
+  $('cAdd').textContent = byHead ? '＋ 슬라이드 추가' : '＋ 문단 추가';
   $('cNav').replaceChildren();
   $('cList').replaceChildren(...[...ps.map(([a, b], i) => ({ a, b, i })), ...(cardNew ? [{ a: text.trimEnd().length + 2, b: text.trimEnd().length + 2, i: ps.length }] : [])].map(({ a, b, i }) => {
     const t = text.slice(a, b), on = i === cardAt, card = mk('article', '', on ? 'pc on' : 'pc');
@@ -2991,7 +3010,8 @@ function renderCards() {
     card.append(ph);
     if (on) {
       const ta = mk('textarea', '', 'pta');
-      ta.value = t; ta.dataset.a = a; ta.setAttribute('aria-label', `${i + 1}번 문단 고치기`); ta.placeholder = '여기에 문단을 쓰세요';
+      // 슬라이드로 묶인 대본에 더하는 카드는 다음 머리 줄을 채워 연다(없으면 마지막 슬라이드에 묶인다)
+      ta.value = t || (cardNew && i === ps.length ? newHead : ''); ta.dataset.a = a; ta.setAttribute('aria-label', `${i + 1}번 문단 고치기`); ta.placeholder = '여기에 문단을 쓰세요';
       cardSpan = { a, b };
       ta.addEventListener('input', e => { if (!e.isComposing) cardInput(ta); });
       ta.addEventListener('compositionend', () => cardInput(ta));
@@ -3024,13 +3044,14 @@ function renderCards() {
 // 열린 카드의 '이 문단에 띄울 슬라이드'. 고르면 저장하고 칩만 바꾼다(카드를 다시 그리지 않아 포커스가 남는다). '자동'은 고른 것을 지운다
 function slidePick(ta, i, chip) {
   const n = slideRec.slides.length, sel = document.createElement('select'), l = mk('label', '이 문단에 띄울 슬라이드 ', 'small pslidesel');
-  sel.append(...slideOpts(`자동 (${Math.min(n, i + 1)})`, Math.min(n, paraSlide()[headOf(ta.value)] || 0)));
+  const auto = () => Math.min(n, slideHead(ta.value)?.no || i + 1);  // slidesOf와 같은 순서: 머리 줄의 번호 > 문단 순서
+  sel.append(...slideOpts(`자동 (${auto()})`, Math.min(n, paraSlide()[headOf(ta.value)] || 0)));
   sel.onchange = () => {
     const m = paraSlide(), h = headOf(ta.value);  // 글을 고쳤을 수 있으니 고를 때의 머리글로
     if (!h) return;
     if (+sel.value) m[h] = +sel.value; else delete m[h];
     if (Object.keys(m).length) store.set(sk('paraSlide'), JSON.stringify(m)); else store.del(sk('paraSlide'));
-    chip.textContent = `슬라이드 ${Math.min(n, +sel.value || i + 1)}`;
+    chip.textContent = `슬라이드 ${Math.min(n, +sel.value || auto())}`;
   };
   l.append(sel);
   return l;
@@ -3127,15 +3148,20 @@ function cardSel(ta) {
   updAlt(); updMust(ta);
 }
 const cardPos = ta => cardSpan.a + ta.selectionStart;
+// 열린 카드가 든 문단 번호. 시작 자리로 찾고, 없으면(끝에 더한 글이 앞 문단에 묶였을 때) 카드 글과 겹치는 문단
+function cardPara(text) {
+  const ps = paraSpans(text), i = ps.findIndex(([a]) => a === cardSpan.a);
+  return i < 0 ? ps.findIndex(([a, b]) => a < cardSpan.b && b > cardSpan.a) : i;  // 빈 카드(아직 글이 없음)는 -1
+}
 // 커서가 든 문장(#text 위치) [시작, 끝]
 function sentAtCaret(ta) {
-  const text = $('text').value, i = paraSpans(text).findIndex(([a]) => a === cardSpan.a), ss = sentSpans(text)[i] || [], c = cardPos(ta);
+  const text = $('text').value, i = cardPara(text), ss = sentSpans(text)[i] || [], c = cardPos(ta);
   return ss.find(([a, b]) => c >= a && c <= b + 1) ?? ss.findLast(([a]) => a <= c) ?? null;
 }
 function updMust(ta) {
   const card = ta.closest('.pc'), btn = card?.querySelector('.mustb');
   if (!btn) return;
-  const text = $('text').value, s = sentAtCaret(ta), ms = must(), i = paraSpans(text).findIndex(([a]) => a === cardSpan.a);
+  const text = $('text').value, s = sentAtCaret(ta), ms = must(), i = cardPara(text);
   const n = (sentSpans(text)[i] || []).filter(([a, b]) => ms.includes(text.slice(a, b))).length;
   btn.setAttribute('aria-pressed', !!s && ms.includes(text.slice(...s)));
   btn.lastChild.textContent = n ? ` ${n}개` : '';
@@ -3203,7 +3229,7 @@ document.addEventListener('pointerdown', e => {
   if (cardAt < 0 || !editing() || e.target.closest('.pc.on, dialog, #cNav, header, footer, aside')) return;
   cardAt = -1; cardNew = false; renderCards();
 });
-$('cAdd').onclick = () => { cardNew = true; cardAt = paraSpans($('text').value).length; renderCards.focus = [0, 0]; renderCards(); };
+$('cAdd').onclick = () => { cardNew = true; cardAt = paraSpans($('text').value).length; renderCards.focus = [1e9, 1e9]; renderCards(); };  // 채워 둔 머리 줄 뒤에 커서
 
 async function importScript(raw, fname, demo = false) {
   let r;
@@ -3463,7 +3489,7 @@ function jobFor(tab) {
     // '5분으로 줄여'처럼 목표 길이를 말한 지시는 막지 않는다.
     const chars = spoken(part || text), m = instr.match(/(\d+(?:\.\d+)?)\s*(초|분)\s*(?:정도|만큼|쯤)?\s*줄/);
     if (m) need(m[1] * (m[2] === '분' ? 60 : 1) * r < chars * 0.8, `고칠 글이 예상 ${mmss(Math.round(chars / r))}밖에 안 돼서 ${m[1]}${m[2]} 줄이기는 어려워요. 문단을 더 고르거나 지시를 바꿔 주세요.`);
-    return { tab, prompt: editPrompt({ script: text, part, instr, rate: r, chars }), done: t => showRes({ tab, text: cleanScript(t), base: text, range, src: 'AI 고침' }) };
+    return { tab, prompt: editPrompt({ script: text, part, instr, rate: r, chars }), done: t => showRes({ tab, text: cleanScript(t, MDHEAD.test(part || text)), base: text, range, src: 'AI 고침' }) };
   }
   // 발표 준비: 문단·문장은 lib.js paras(), 키워드는 match.js anchors()로 뽑아 보낸다
   const ps = paras(text), flat = ps.flat(), words = [];
@@ -3511,11 +3537,13 @@ function loadPrep() {
   } catch { return null; }
 }
 // 오타 하나를 고쳐도 문단과 문장 수가 같으면 문장 번호가 그대로 맞으므로 계속 쓴다
-const prepFits = (p, text) => !!p && (p.h === hashText(text) || (!!p.n && p.n.join() === paras(text).map(x => x.length).join()));
+// 문단마다 문장 수(n)가 같아야 맞다. 글이 같아도 문단 나누는 규칙이 바뀌면(슬라이드 머리 줄로 묶기) 문단 번호가 어긋난다. n이 없는 옛 준비는 글이 같을 때만
+const prepFits = (p, text) => !!p && (p.n ? p.n.join() === paras(text).map(x => x.length).join() : p.h === hashText(text) && p.paras?.length === paras(text).length);
 function updPrepState() {
   const p = loadPrep(), text = $('text').value, fits = prepFits(p, text);
   $('prepState').textContent = !p ? '아직 하지 않았어요.'
-    : p.h === hashText(text) ? `${when(p.t)}에 지금 대본으로 했어요.`
+    : fits && p.h === hashText(text) ? `${when(p.t)}에 지금 대본으로 했어요.`
+    : !fits && p.h === hashText(text) ? `${when(p.t)}에 했는데 문단을 묶는 방식이 바뀌었어요. 줄이기 정보를 쓰려면 다시 해 주세요.`
     : fits ? `${when(p.t)}에 했고, 그 뒤 고친 곳이 있지만 문단과 문장 수가 같아서 그대로 써요.`
     : `${when(p.t)}에 했는데 그 뒤로 대본이 바뀌었어요. 줄이기 정보를 쓰려면 다시 해 주세요. (키워드의 다른 말은 그대로 써요)`;
   renderPrepFlow(p, fits, text);
@@ -3622,7 +3650,7 @@ function fixJob(longer) {
   const r = aiRes, T = Math.round(target * 60 * rate()), len = spoken(r.full);
   const instr = `전체 길이를 약 ${T}자로 ${longer ? '늘려' : '줄여'} 주세요. 지금은 약 ${len}자입니다. 문단 수와 순서는 그대로 두세요.` +
     (longer ? ' 늘릴 때는 설명이나 예시를 더하고, 자료에 없는 사실은 [확인 필요]로 표시하세요.' : ' 줄일 때는 덜 중요한 설명과 예시부터 뺍니다.');
-  return { tab: aiTab, prompt: editPrompt({ script: r.full, instr, rate: rate(), chars: len }), done: t => showRes({ ...r, text: cleanScript(t), range: null }) };
+  return { tab: aiTab, prompt: editPrompt({ script: r.full, instr, rate: rate(), chars: len }), done: t => showRes({ ...r, text: cleanScript(t, MDHEAD.test(r.full)), range: null }) };
 }
 for (const [id, longer] of [['aiShorter', false], ['aiLonger', true]])
   $(id).onclick = () => {

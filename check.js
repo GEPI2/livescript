@@ -815,6 +815,12 @@ export const TIP_TAG = {
 // 고칠 점의 머리줄 { name: 기준 이름, tag }. 없으면 null
 const TIP_RULE = { short: 'over', 'key-skip': 'key', 'key-weak': 'key', emph: 'key', low: 'vol', quiet: 'vol' };
 export const tipRule = k => { const r = RULES.find(x => x.k === (TIP_RULE[k] ?? k)); return r && TIP_TAG[k] ? { name: r.name, tag: TIP_TAG[k] } : null; };
+// 자주 받는 지적: 모든 발표의 연습 [{ r, goal(초) }]에서 고칠 점(화면에 보인 3개)을 기준 이름별로 센다. [{ name, n: 나온 연습 수, of: 연습 수 }] 많은 순 3개
+export function oftenTips(all) {
+  const c = new Map();
+  for (const { r, goal } of all) for (const name of new Set(tips(r, goal).map(t => tipRule(t.k)?.name).filter(Boolean))) c.set(name, (c.get(name) || 0) + 1);
+  return [...c].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, n]) => ({ name, n, of: all.length }));
+}
 // 팁 글을 [무엇(첫 문장), 어떻게(나머지)]로 나눈다. 숫자 안의 점(0.5초)은 뒤에 빈칸이 없어서 나누지 않는다
 export const splitTip = t => { const i = t.search(/[.?!]\s/); return i < 0 ? [t, ''] : [t.slice(0, i + 1), t.slice(i + 2).trim()]; };
 
@@ -835,8 +841,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=24');
-  const { readScript } = await import('./lib.js?v=24');
+  const { units } = await import('./shrink.js?v=25');
+  const { readScript } = await import('./lib.js?v=25');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -1343,6 +1349,10 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   assert.deepEqual(fixedTips(tr([ok3, qk, ok3]), fA, 0).map(x => [x.k, x.v]), [['fast', 'done']], '다른 구간이 빨라진 것은 이 팁을 고친 것으로 본다');
   assert.deepEqual(fixedTips(tr([{ wall: 0 }, ok3, ok3], { pct: 60 }), fA, 0).map(x => [x.k, x.v]), [['fast', 'unread']]);
   assert.deepEqual(fixedTips(fA, null, 0), []);
+  // 자주 받는 지적: 기준 이름별로 나온 연습 수, 많은 순
+  const ofl = tr([{ wall: 30, talk: 20, heard: 60, st: [1, 2] }, ok3, ok3]);
+  assert.deepEqual(oftenTips([{ r: fA, goal: 0 }, { r: fA, goal: 0 }, { r: ofl, goal: 0 }]), [{ name: '빠르기', n: 2, of: 3 }, { name: '높낮이', n: 1, of: 3 }]);
+  assert.deepEqual(oftenTips([{ r: tr([ok3, ok3, ok3]), goal: 0 }]), [], '지적이 없으면 빈 목록');
   const vr = secRows(tr([{ vol: 40, ends: 3, fall: 2 }, { vol: 41 }, { vol: 30.4 }]), null, 0);
   assert.match(vr[0].words, /끝 흐림 2번/); assert.match(vr[2].words, /목소리 작아짐/); assert.doesNotMatch(vr[0].words, /목소리 작아짐/);
   assert.ok(vr[2].nums.includes('목소리 크기: 주변 소리보다 30dB 큼') && vr[0].nums.includes('문장 끝 3번 가운데 2번 작아짐'));

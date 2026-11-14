@@ -534,6 +534,14 @@
   .spv .stat { padding: 12px 14px; border: 0; border-radius: var(--radius-lg); background: var(--surface-muted); }
   .spv .stat .v { font-size: 20px; }
   .spv p { margin: 8px 0 0; }
+  /* 자주 받는 지적: 기준 이름 · 막대 · n/m회 */
+  #spOften { margin-top: 14px; }
+  #spOftenL { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+  #spOftenL li { display: grid; grid-template-columns: 6em minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
+  #spOftenL b { font-weight: 600; }
+  #spOftenL i { height: 8px; border-radius: 4px; background: var(--surface-muted); overflow: hidden; }
+  #spOftenL i::before { content: ''; display: block; height: 100%; width: var(--w); border-radius: 4px; background: var(--accent-strong); }
+  #spOftenL span { color: var(--ink-muted); font-size: 13px; }
   .scale { position: relative; display: flex; gap: 3px; height: 8px; margin: 14px 0 26px; }
   .scale b { position: relative; border-radius: 4px; background: var(--warning-tint); }
   .scale b:nth-child(2) { background: var(--success-tint); }
@@ -745,6 +753,7 @@
             <div class="k">말하는 방식</div>
             <div id="spCards" hidden></div>
             <p class="small" id="spWhy"></p>
+            <div id="spOften" hidden><div class="k">자주 받는 지적</div><ol id="spOftenL"></ol></div>
             <details class="critbox"><summary>평가 기준</summary><dl id="spCrit"></dl><p class="small">기준값은 추정이라 참고만 해 주세요.</p></details>
           </div>
         </div>
@@ -1035,7 +1044,7 @@
   <div class="row rfoot"><button id="cDel">기록 모두 지우기</button></div>
 </dialog>
 
-<script src="match.js?v=24"></script>
-<script type="module" src="app.js?v=24"></script>
+<script src="match.js?v=25"></script>
+<script type="module" src="app.js?v=25"></script>
 </body>
 </html>

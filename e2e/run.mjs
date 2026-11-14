@@ -1028,6 +1028,40 @@ t('대본: [확인 필요]가 남으면 창에서 확인하러 가거나 바로 
   assert.deepEqual(p.errors, []);
 });
 
+t('대본: 슬라이드 머리 줄이 있는 대본을 붙여넣으면 슬라이드마다 카드 하나, 제목은 머리 줄에서', async () => {
+  const p = await page(browser); await open(p);
+  await p.click('#ePaste');
+  await p.fill('#text', '1슬라이드. 표지\n안녕하세요. 발표를 시작하겠습니다.\n\n2슬라이드 [1. 서비스 소개]\n\n[핵심]\n첫째 문단입니다.\n\n둘째 문단입니다.\n\n3슬라이드\n마지막 장입니다. 감사합니다.');
+  await p.waitForTimeout(400);
+  assert.deepEqual(await p.locator('#cList .pc .pn').allTextContents(), ['1 · 표지', '2 · 1. 서비스 소개', '3 · 마지막 장입니다. 감사합…'], '머리 줄 제목, 제목이 없으면 그 아래 첫 글');
+  assert.deepEqual(await p.locator('#cNav a span').allTextContents(), ['1 표지', '2 1. 서비스 소개', '3 마지막 장입니다. 감사합…']);
+  await p.locator('#cList .pc').nth(1).click(); await p.waitForTimeout(300);
+  assert.equal((await p.locator('#cList .pta').inputValue()).split('\n').length, 6, '둘째 슬라이드 카드에 그 슬라이드의 문단이 모두 들어 있다');
+  await p.keyboard.press('Escape');
+  // 슬라이드로 묶인 대본에서는 '문단 추가'가 다음 머리 줄을 채운 '슬라이드 추가'다(그냥 붙이면 마지막 슬라이드에 묶인다)
+  assert.equal(await p.textContent('#cAdd'), '＋ 슬라이드 추가');
+  await p.click('#cAdd'); await p.waitForTimeout(200);
+  assert.equal(await p.locator('#cList .pta').inputValue(), '4슬라이드\n');
+  assert.deepEqual([await p.getAttribute('#cList .pta', 'aria-label'), await p.getAttribute('#cList .pta', 'placeholder')], ['4번 문단 고치기', '여기에 문단을 쓰세요']);
+  await p.locator('#cList .pc.on .mustb').click();
+  assert.equal(await p.textContent('#toastT'), '표시할 문장에 커서를 두세요.', '아직 글이 없는 새 카드에서는 앞 슬라이드의 문장을 표시하지 않는다');
+  await p.keyboard.type('새 장입니다.'); await p.waitForTimeout(200);
+  await p.locator('#cList .pc.on .mustb').click();
+  assert.equal(await p.locator('#cList .pc.on .mustb').getAttribute('aria-pressed'), 'true', '더한 카드에서도 꼭 말할 문장이 된다');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  assert.deepEqual(await p.locator('#cList .pc .pn').allTextContents(), ['1 · 표지', '2 · 1. 서비스 소개', '3 · 마지막 장입니다. 감사합…', '4 · 새 장입니다.']);
+  await p.click('[data-tab="practice"]'); await p.waitForTimeout(700);
+  assert.equal(await p.getAttribute('[data-tab="practice"]', 'aria-selected'), 'true');
+  assert.deepEqual(p.errors, []);
+  // 머리 줄이 하나뿐이거나 본문 문장이면 예전처럼 빈 줄마다 카드
+  const q = await page(browser); await open(q);
+  await q.click('#ePaste'); await q.fill('#text', '3슬라이드에서는 표를 봅니다.\n\n4슬라이드에서는 그림을 봅니다.\n\n끝입니다.'); await q.waitForTimeout(400);
+  assert.equal(await q.locator('#cList .pc').count(), 3);
+  assert.equal(await q.textContent('#cAdd'), '＋ 문단 추가');
+  await q.evaluate(() => { const t = document.getElementById('text'); t.value = '안녕하세요.\n\n3슬라이드 보시면 표가 있습니다.\n\n표 설명입니다.\n\n7슬라이드 보시면 그림이 있습니다.\n\n끝입니다.'; t.dispatchEvent(new Event('input', { bubbles: true })); }); await q.waitForTimeout(400);
+  assert.equal(await q.locator('#cList .pc').count(), 5, '말로 읽는 문장은 머리 줄이 아니다');
+});
+
 // ---- 안내: 누른 단추에서 먼 줄에만 뜨던 글은 토스트로도 뜬다 ----
 t('안내: 빈 질문 내보내기, 20초 안에 정지, 실전 피드백 켜기는 토스트로 알린다', async () => {
   const p = await page(browser); await open(p); await sample(p);
@@ -1108,6 +1142,8 @@ t('홈: 새 발표 만들기는 대본을 더하고 이름은 머리줄에서 �
   await p.click('#checkClose'); await p.click('#homeBtn');
   assert.match(await p.locator('#hGrid .pcard.on .badge').textContent(), /^최근 3:\d\d · 0:\d\d 초과$/);
   assert.equal(await p.locator('#hRuns button').count(), 1);
+  assert.match(await p.locator('#spOftenL li').first().textContent(), /^걸린 시간연습 1번 중 1번$/, '내 말하기의 자주 받는 지적');
+  await p.locator('#spDash').screenshot({ path: OUT + '/often.png' });
   await p.click('.htabs [data-t="runs"]');
   assert.equal(await p.locator('#hRunsAll button').count(), 1);
   await p.click('.htabs [data-t="set"]');

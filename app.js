@@ -1,17 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=25';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=25';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=25';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=25';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=25';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=25';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=25';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=25';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=26';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=26';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=26';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=26';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=26';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=26';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=26';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=26';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=25';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=26';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1588,7 +1588,7 @@ function clipRow(li, run, s) {
 // 평가 기준 목록(dt 이름, dd 기준을 '·'로 이은 한 줄). keys가 있으면 그것만
 function critList(keys) { return RULES.filter(r => !keys || keys.includes(r.k)).flatMap(r => [mk('dt', r.name), mk('dd', r.tags.join(' · '))]); }
 $('cCritList').replaceChildren(...critList());
-$('spCrit').replaceChildren(...critList(['fast', 'flat', 'run', 'vol', 'fall']));  // 홈 '내 말하기'의 말하는 방식
+$('spCrit').replaceChildren(...critList(['fast', 'flat', 'run', 'vol', 'fall', 'emph']));  // 홈 '내 말하기'의 말하는 방식
 // 발표 준비의 문단 q가 든 구간 번호들(0부터, 지금 대본의 SU)
 const secsOfPara = q => SU.flatMap((u, j) => u.s.some(x => x.p === q) ? [j] : []);
 // 그 연습 때의 평가 기준이 지금 발표 준비의 것과 같으면 그 발표 준비, 아니면 null(기준 번호가 다른 기준을 가리킬 수 있다)
@@ -2830,12 +2830,13 @@ function renderHome() {
   add.onclick = newPres;
   grid.append(add);
   // 내 말하기의 자주 받는 지적(모든 발표의 연습에서 고칠 점을 기준별로 센다)
-  const often = oftenTips(all);
-  $('spOften').hidden = !often.length;
+  const often = oftenTips(all), tl = trendLine(all);
+  $('spOften').hidden = !often.length && !tl;
+  $('spTrendS').textContent = tl;
   $('spOftenL').replaceChildren(...often.map(o => {
     const li = mk('li'), bar = mk('i');
     bar.style.setProperty('--w', `${Math.round(o.n / o.of * 100)}%`);
-    li.append(mk('b', o.name), bar, mk('span', `연습 ${o.of}번 중 ${o.n}번`));
+    li.append(mk('b', o.name), bar, mk('span', `${o.n}/${o.of}`));
     return li;
   }));
   const top = all.sort((x, y) => y.r.t0 - x.r.t0).slice(0, 3);
@@ -2846,6 +2847,13 @@ function renderHome() {
     b.onclick = () => { pick(e.id, false); openCheck(r.t0); };  // 결과를 보러 가는 길에는 [확인 필요]를 묻지 않는다(창이 겹친다)
     return b;
   }));
+}
+// 내 말하기의 추이 한 줄: 모든 발표의 최근 연습 8회 중 처음과 지금. 고칠 점은 화면에 3개만 보이므로 전부(99) 센다
+function trendLine(all) {
+  const seq = [...all].sort((x, y) => x.r.t0 - y.r.t0).slice(-8);
+  if (seq.length < 2) return '';
+  const t = seq.map(x => tips(x.r, x.goal, 99).length), v = seq.map(x => HIST.rate.f(x.r)).filter(x => x != null);
+  return [`고칠 점 ${t[0]} → ${t.at(-1)}개`, v.length > 1 && `빠르기 ${Math.round(v[0])} → ${Math.round(v.at(-1))}`].filter(Boolean).join(' · ');
 }
 // 홈 탭: 내 발표 / 연습 기록 / 설정
 function setHomeTab(t) {
@@ -2946,7 +2954,7 @@ function openDemo() {
   tell('받아 둔 예시 대본을 열었어요. 새로 받으려면 이 발표를 지우고 다시 눌러 주세요.');
   return true;
 }
-$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=25').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=26').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다

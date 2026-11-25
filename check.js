@@ -798,7 +798,8 @@ export const RULES = [
   { k: 'over', name: '걸린 시간', tags: [`목표 +${OK_HI}초 넘음`, `목표의 ${pc(OK_LO)}% 미만`] },
   { k: 'fast', name: '빠르기', tags: [`보통 ${PACE_SLOW * 60}~${PACE_FAST * 60}음절/분`, `${PACE_TALK}초 넘게 말한 구간만`] },
   { k: 'jump', name: '갑자기 빨라짐', tags: [`평소의 ${JUMP}배 넘음`] },
-  { k: 'key', name: '꼭 말할 문장', tags: ['절반 넘게 빠지면 빼먹음', `앞 쉼 ${KEY_PRE}초`, `${KEY_DW}배 천천히`, `+${KEY_DB}dB`, `+${KEY_ST}반음`, '단서 2개면 살림'] },
+  { k: 'key', name: '꼭 말할 문장', tags: ['절반 넘게 빠지면 빼먹음'] },
+  { k: 'emph', name: '강조', tags: [`앞 쉼 ${KEY_PRE}초`, `${KEY_DW}배 천천히`, `+${KEY_DB}dB`, `+${KEY_ST}반음`, '단서 2개면 살림'] },
   { k: 'fall', name: '문장 끝', tags: [`끝 ${TAIL_MS / 1000}초 ${FALL_DB}dB↓`, `${pc(FALL_P)}%·3번 이상`] },
   { k: 'vol', name: '목소리 크기', tags: [`주변보다 ${LOW_VOL}dB 미만`, `다른 구간보다 ${QUIET_DB}dB↓`] },
   { k: 'tone', name: '힘', tags: ['정한 힘과 반대로 들림'] },
@@ -813,7 +814,7 @@ export const TIP_TAG = {
   tone: '정한 힘과 반대', flat: `폭 ${NARROW}반음 미만`, run: `${LONG_RUN}초 넘게 안 쉼`, read: `대본 그대로 ${pc(READ_P)}%`,
 };
 // 고칠 점의 머리줄 { name: 기준 이름, tag }. 없으면 null
-const TIP_RULE = { short: 'over', 'key-skip': 'key', 'key-weak': 'key', emph: 'key', low: 'vol', quiet: 'vol' };
+const TIP_RULE = { short: 'over', 'key-skip': 'key', 'key-weak': 'emph', low: 'vol', quiet: 'vol' };
 export const tipRule = k => { const r = RULES.find(x => x.k === (TIP_RULE[k] ?? k)); return r && TIP_TAG[k] ? { name: r.name, tag: TIP_TAG[k] } : null; };
 // 자주 받는 지적: 모든 발표의 연습 [{ r, goal(초) }]에서 고칠 점(화면에 보인 3개)을 기준 이름별로 센다. [{ name, n: 나온 연습 수, of: 연습 수 }] 많은 순 3개
 export function oftenTips(all) {
@@ -841,8 +842,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=25');
-  const { readScript } = await import('./lib.js?v=25');
+  const { units } = await import('./shrink.js?v=26');
+  const { readScript } = await import('./lib.js?v=26');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 

@@ -523,7 +523,7 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
   await p.evaluate(() => document.getElementById('cAudio').pause());
   await cb.first().click(); await p.waitForTimeout(600);
   assert.equal(await p.evaluate(() => !document.getElementById('cAudio').paused && +document.getElementById('cAudio').dataset.to > 0), true, '누르면 그 구간만 들려 준다');
-  assert.equal(await p.locator('#cCritList dt').count(), 10, '평가 기준 전체 목록');
+  assert.equal(await p.locator('#cCritList dt').count(), 11, '평가 기준 전체 목록');
   // 녹음 아래 구간 띠: 누르면 그 자리부터 듣고, 듣는 구간 줄에 불이 들어온다
   assert.ok(await p.locator('#cMarks button').count() >= 2, '구간 띠');
   await p.locator('#cMarks button').nth(1).click(); await p.waitForTimeout(800);
@@ -666,7 +666,7 @@ t('편집: 발표 시간은 한 줄이고, 예상을 누르면 홈의 내 말하
   assert.equal(await p.textContent('#spGo'), '1분 읽고 내 속도 재기');
   assert.equal(await p.locator('#spCards').isHidden(), true, '재기 전에는 말하는 방식 카드가 없다');
   assert.match(await p.textContent('#spWhy'), /목소리 분석을 켜면|PC Chrome에서/, '잴 수 없는 기기에는 재기 전부터 까닭을 말한다(시험은 분석을 꺼 둔다)');
-  assert.deepEqual(await p.locator('#spCrit dt').allTextContents(), ['빠르기', '문장 끝', '목소리 크기', '높낮이', '쉼'], '말하는 방식의 평가 기준');
+  assert.deepEqual(await p.locator('#spCrit dt').allTextContents(), ['빠르기', '강조', '문장 끝', '목소리 크기', '높낮이', '쉼'], '말하는 방식의 평가 기준');
   await p.setViewportSize({ width: 375, height: 812 }); await p.waitForTimeout(200);
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.getElementById('home').scrollWidth <= innerWidth), true, '폰에서 홈이 가로로 넘치지 않는다');
   await p.setViewportSize({ width: 375, height: 553 }); await p.click('#spGo'); await p.waitForTimeout(300);
@@ -1142,7 +1142,7 @@ t('홈: 새 발표 만들기는 대본을 더하고 이름은 머리줄에서 �
   await p.click('#checkClose'); await p.click('#homeBtn');
   assert.match(await p.locator('#hGrid .pcard.on .badge').textContent(), /^최근 3:\d\d · 0:\d\d 초과$/);
   assert.equal(await p.locator('#hRuns button').count(), 1);
-  assert.match(await p.locator('#spOftenL li').first().textContent(), /^걸린 시간연습 1번 중 1번$/, '내 말하기의 자주 받는 지적');
+  assert.match(await p.locator('#spOftenL li').first().textContent(), /^걸린 시간1\/1$/, '내 말하기의 자주 받는 지적');
   await p.locator('#spDash').screenshot({ path: OUT + '/often.png' });
   await p.click('.htabs [data-t="runs"]');
   assert.equal(await p.locator('#hRunsAll button').count(), 1);

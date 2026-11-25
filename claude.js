@@ -1,7 +1,7 @@
 // Claude 호출. 브라우저는 키 없이 서비스의 AI 중계(worker/)를 부르고, 키와 요금은 서비스가 맡는다.
-import { cleanPack, CATS } from './qa.js?v=26';
-import { cleanAi } from './adlib.js?v=26';
-import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=26';
+import { cleanPack, CATS } from './qa.js?v=27';
+import { cleanAi } from './adlib.js?v=27';
+import { bands, cleanAiCoach, NAME, PACE_TALK, finished, energy, keyStates } from './check.js?v=27';
 
 // 배포한 Worker 주소 (worker/wrangler.toml). 바꾸면 index.html CSP의 connect-src도 같이 바꾼다
 export const API = 'https://livescript-ai.gepi.workers.dev/v1/messages';
@@ -166,7 +166,7 @@ ${instr}
   return { system, user, text: system + '\n\n' + user };
 }
 
-// ---- 발표 준비: 문단마다 줄일 때 쓸 정보(새 문장은 쓰지 않고 원문 문장 번호만), 흐름(하는 일·톤·힘), 핵심 문장, 평가 기준, 키워드마다 다른 말 ----
+// ---- 발표 준비: 문단 제목, 문단마다 줄일 때 쓸 정보(새 문장은 쓰지 않고 원문 문장 번호만), 흐름(하는 일·톤·힘), 핵심 문장, 평가 기준, 키워드마다 다른 말 ----
 export const PREP_SCHEMA = {
   type: 'object',
   properties: {
@@ -179,11 +179,12 @@ export const PREP_SCHEMA = {
           imp: { type: 'integer', enum: [1, 2, 3] },
           keep: { type: 'array', items: { type: 'integer' } },
           drop: { type: 'array', items: { type: 'integer' } },
+          title: { type: 'string' },
           role: { type: 'string' },
           tone: { type: 'string' },
           e: { type: 'integer', enum: [1, 2, 3] },
         },
-        required: ['p', 'imp', 'keep', 'drop', 'role', 'tone', 'e'],
+        required: ['p', 'imp', 'keep', 'drop', 'title', 'role', 'tone', 'e'],
         additionalProperties: false,
       },
     },
@@ -241,6 +242,7 @@ export function prepPrompt(ps, rub = []) {
   - keep: 시간이 없어도 꼭 남길 문장 번호 1~2개. 문장 번호는 문단 안에서 1부터 센다.
   - drop: 늦어지면 빼도 되는 문장 번호. keep에 넣은 번호는 넣지 않는다. 없으면 빈 배열.
   - 다음 문장이 '그래서', '이처럼', '앞서 말씀드린'처럼 앞 문장을 가리키면 그 앞 문장은 drop에 넣지 않는다.
+  - title: 그 문단이 무슨 내용인지 알 수 있는 제목. 15자 안쪽 명사구(예: 인사 및 제품 소개, 발표 흐름 소개, 설문 결과와 원인). 대본 첫머리를 그대로 옮기지 않는다.
   - role: 그 문단이 발표에서 하는 일. 도입, 문제, 근거, 사례, 해결, 정리, 마무리처럼 6자 안쪽 낱말 하나.
   - tone: 그 문단을 어떻게 말할지 15자 안쪽(예: 밝게 인사하듯, 진지하게 천천히). 대본 낱말을 옮기지 않는다.
   - e: 1 차분하게, 2 보통, 3 힘 있게. 발표 안에서 견줘 정하고, 3은 문단 수의 30%를 넘지 않는다.
@@ -258,7 +260,7 @@ export function prepPrompt(ps, rub = []) {
   - 조사는 붙이지 않는다. 뜻이 넓어 다른 문장에도 나올 법한 말은 쓰지 않는다. 마땅한 다른 말이 없는 키워드는 kw에 쓰지 않는다.
 
 답은 아래 형식의 JSON 하나로만 한다. 앞뒤 설명이나 코드 블록 표시는 붙이지 않는다.
-{"paras":[{"p":1,"imp":2,"keep":[1],"drop":[3],"role":"도입","tone":"밝게 인사하듯","e":2}],"keys":[{"p":2,"s":1,"why":"발표의 결론","r":1}],"crit":[{"r":1,"kind":"내용","ps":[2],"at":0,"how":""}],"kw":[{"k":"휴대폰","v":["핸드폰"]}]}`;
+{"paras":[{"p":1,"imp":2,"keep":[1],"drop":[3],"title":"인사 및 제품 소개","role":"도입","tone":"밝게 인사하듯","e":2}],"keys":[{"p":2,"s":1,"why":"발표의 결론","r":1}],"crit":[{"r":1,"kind":"내용","ps":[2],"at":0,"how":""}],"kw":[{"k":"휴대폰","v":["핸드폰"]}]}`;
   const body = ps.map((p, i) => `[문단 ${i + 1}]\n` + p.map((s, j) => `${j + 1}. ${s.m ? '★' : ''}${s.t}` + (s.kw.length ? `\n   키워드: ${s.kw.join(', ')}` : '')).join('\n')).join('\n\n');
   const user = `<평가기준>\n${rub.length ? rub.map((x, i) => `${i + 1}. ${x}`).join('\n') : '(없음)'}\n</평가기준>\n<대본>\n${body}\n</대본>\n\n위 대본의 문단 ${ps.length}개를 모두 정해 주세요.`;
   return { system, user, text: system + '\n\n' + user };
@@ -268,7 +270,7 @@ export function prepPrompt(ps, rub = []) {
 const BACKREF = /^["'“‘(]?(그래서|그러므로|따라서|그러니까|그 결과|이처럼|이렇게|이와 같이|이러한|이런|이 때문에|이는|이것은|그것은|즉|앞서|앞에서)(?![가-힣])/;
 
 // 발표 준비 결과 검사. ps: 문단마다 문장 글 목록 (lib.js paras()), rub: 보낸 평가 기준 목록.
-// 반환 { paras: [{ imp, keep, drop, role, tone, e }] (문장 번호는 0부터, e는 1~3 | null), kw: { 키워드: [다른 말] }, keys: [{ p, s, why, r }] (0부터, r 0 없음),
+// 반환 { paras: [{ imp, keep, drop, title, role, tone, e }] (문장 번호는 0부터, e는 1~3 | null), kw: { 키워드: [다른 말] }, keys: [{ p, s, why, r }] (0부터, r 0 없음),
 //   crit: 평가 기준마다 [{ kind, ps: 다루는 문단(0부터), at: 고칠 문단(0부터, -1 없음), how }], rub }
 // 흐름·핵심 문장·평가 기준이 없는 답(옛 답)도 받는다. 핵심 문장은 keep에 넣고 drop에서 뺀다(줄여도 남게)
 export function cleanPrep(obj, ps, rub = []) {
@@ -285,7 +287,7 @@ export function cleanPrep(obj, ps, rub = []) {
     if (!keep.length) keep.push([...Array(n).keys()].find(k => !drop.includes(k)) ?? 0);
     drop = drop.filter(k => !keep.includes(k));
     o += n;
-    return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop, role: line(it.role, 8), tone: line(it.tone, 20), e: [1, 2, 3].includes(it.e) ? it.e : null };
+    return { imp: [1, 2, 3].includes(it.imp) ? it.imp : 2, keep, drop, title: line(it.title, 20), role: line(it.role, 8), tone: line(it.tone, 20), e: [1, 2, 3].includes(it.e) ? it.e : null };
   });
   const keys = [];
   for (const k of Array.isArray(obj.keys) ? obj.keys : []) {
@@ -737,7 +739,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
     { p: 2, imp: 7, keep: [], drop: [1] },
     { p: 3, imp: 1, keep: [], drop: [1, 2] },
   ], kw: [{ k: '도입', v: ['인트로', ' 인트로 ', '도입', '', 3, '아주아주아주아주아주아주아주긴다른말입니다'] }, { k: '에이아이', v: [] }, null] }, PS);
-  const nf = { role: '', tone: '', e: null };  // 흐름이 없는 옛 답
+  const nf = { title: '', role: '', tone: '', e: null };  // 흐름이 없는 옛 답
   assert.deepEqual(prep.paras[0], { imp: 3, keep: [0], drop: [3], ...nf }, 'keep은 빼지 않고, 다음 문장이 그래서로 시작하면 앞 문장(2)도 안 뺀다, 범위 밖 번호는 버림');
   assert.deepEqual(prep.paras[1], { imp: 2, keep: [0], drop: [], ...nf }, '이상한 중요도는 2, 한 문장 문단은 남김');
   assert.deepEqual(prep.paras[2], { imp: 1, keep: [1], drop: [0], ...nf }, '다음 문단 첫 문장(이처럼)이 가리키는 끝 문장은 안 뺀다, keep이 비면 빼지 않는 문장 하나');
@@ -747,11 +749,11 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const RUB = ['문제를 분명히 말했나', '근거가 구체적인가', '목소리와 속도'];
   assert.deepEqual(rubOf(' 1. 문제를 분명히 말했나\n\n- 근거가 구체적인가 \n3) 목소리와  속도\n' + '가'.repeat(80)), [...RUB, '가'.repeat(60)], '번호·기호를 떼고 빈 줄은 뺀다');
   assert.equal(rubOf(Array(15).fill('기준').join('\n')).length, 10);
-  const fp = cleanPrep({ paras: [{ p: 1, imp: 1, keep: [1], drop: [2, 4], role: ' 도입 ', tone: '밝게 인사하듯 '.repeat(5), e: 3 }, { p: 2, imp: 2, keep: [1], drop: [], role: '근거', tone: '진지하게', e: 7 }],
+  const fp = cleanPrep({ paras: [{ p: 1, imp: 1, keep: [1], drop: [2, 4], title: ' 인사 및  제품 소개 ', role: ' 도입 ', tone: '밝게 인사하듯 '.repeat(5), e: 3 }, { p: 2, imp: 2, keep: [1], drop: [], role: '근거', tone: '진지하게', e: 7 }],
     keys: [{ p: 1, s: 4, why: '결론', r: 2 }, { p: 1, s: 1, why: '같은 문단 둘째', r: 1 }, { p: 9, s: 1, why: '없는 문단', r: 1 }, { p: 2, s: 1, why: '왜 '.repeat(30), r: 7 }],
     crit: [{ r: 2, kind: '내용', ps: [2, 2, 1, 9], at: 2, how: '근거 문장을 더해 주세요' }, { r: 1, kind: '내용', ps: [], at: 1, how: '문제 문장을 더해 주세요' }, { r: 3, kind: '전달', ps: [1], at: 1, how: '천천히' }],
     kw: [] }, PS.slice(0, 2), RUB);
-  assert.deepEqual(fp.paras[0], { imp: 1, keep: [0, 3], drop: [], role: '도입', tone: '밝게 인사하듯 밝게 인사하듯 밝게 인', e: 3 }, '핵심 문장(4)은 keep에 넣고 drop에서 뺀다(2는 다음 문장이 그래서), 톤 20자');
+  assert.deepEqual(fp.paras[0], { imp: 1, keep: [0, 3], drop: [], title: '인사 및 제품 소개', role: '도입', tone: '밝게 인사하듯 밝게 인사하듯 밝게 인', e: 3 }, '핵심 문장(4)은 keep에 넣고 drop에서 뺀다(2는 다음 문장이 그래서), 톤 20자');
   assert.equal(fp.paras[1].e, null, '이상한 힘은 null');
   assert.deepEqual(fp.keys, [{ p: 0, s: 3, why: '결론', r: 2 }, { p: 1, s: 0, why: '왜 '.repeat(20).trim(), r: 0 }], '한 문단에 하나, 없는 문단·기준은 버림, 까닭 40자');
   assert.deepEqual(fp.crit, [{ kind: '내용', ps: [], at: 0, how: '문제 문장을 더해 주세요' }, { kind: '내용', ps: [0, 1], at: 1, how: '근거 문장을 더해 주세요' }, { kind: '전달', ps: [], at: -1, how: '' }], '번호로 맞추고 전달 기준은 문단·고칠 점 없음');
@@ -810,9 +812,9 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   // 발표 점검 코칭: 예시 대본으로 잰 기록을 보내도 대본 글은 한 조각도 들어가지 않는다
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=26');
-  const { readScript: readEx } = await import('./lib.js?v=26');
-  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=26');
+  const { units } = await import('./shrink.js?v=27');
+  const { readScript: readEx } = await import('./lib.js?v=27');
+  const { buildRun, newAcc, tips: ruleTips } = await import('./check.js?v=27');
   const ex = readEx(readFileSync(new URL('./sample.livescript.json', import.meta.url), 'utf8'), 'sample.livescript.json');
   const SU = units(ex.text, [], t => norm(t).length), acc = newAcc(SU.length);
   acc.forEach((a, i) => Object.assign(a, { wall: 25 + 4 * i, talk: 23 + 3 * i, off: i === 2 ? 18 : 0, chars: SU[i].len[0] - 5, heard: SU[i].len[0] + 2 * i, anch: i % 3, gaps: i % 2 }));

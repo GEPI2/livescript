@@ -192,7 +192,6 @@
   body.cards #text { display: none; }
   #cards { display: none; }
   body.cards.editing #cards { display: flex; align-items: flex-start; gap: var(--space-24); padding: 88px var(--space-16) 96px; }
-  #cNav { display: none; }
   #cMain { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-16); }
   #cList { display: flex; flex-direction: column; gap: var(--space-16); }
   .pc { position: relative; padding: var(--space-20) 22px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); cursor: text; }
@@ -218,14 +217,29 @@
   .hardpop .row button { min-height: 40px; padding: 0 14px; border-radius: var(--radius-pill); border-color: var(--accent-border); background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
   .hardpop .row button.no { border: 0; background: transparent; color: var(--ink-muted); font-weight: 400; }
   #cAdd { align-self: flex-start; }
-  #cNav a { display: block; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--ink-muted); font-size: 12px; text-decoration: none; }
-  #cNav a i { display: block; aspect-ratio: 16 / 9; padding: 4px 6px; overflow: hidden; border-radius: 6px; background: var(--border); font-style: normal; font-size: 12px; line-height: 1.3; color: var(--ink-muted); }
-  #cNav a span { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #cNav a[aria-current=true] { border: 2px solid var(--accent); padding: 5px; color: var(--accent-strong); font-weight: 600; }
-  #cNav a[aria-current=true] i { background: var(--accent-tint); }
+  /* 목차: 접히면 번호 줄(44px), 펼치면 번호와 제목(240px). 고정하지 않으면 카드 위에 겹쳐 펼친다 */
+  #cNav { position: fixed; z-index: 2; left: 12px; top: 88px; width: 44px; max-height: calc(100dvh - 176px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); transition: width .15s; }
+  #cNav:hover, #cNav:has(:focus-visible), #cNav.open, body.tocpin #cNav { width: 240px; }
+  #cNav:hover, #cNav:has(:focus-visible), #cNav.open { box-shadow: var(--shadow-popover); }
+  body.tocpin #cNav { box-shadow: none; }
+  .tochd { display: flex; align-items: center; gap: 6px; padding: 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .tochd button { flex: none; min-height: 34px; min-width: 34px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-size: 13px; font-weight: 600; }
+  .tochd b { flex: 1; font-size: 13px; }
+  #tocPin[aria-pressed=true] { background: var(--accent-tint); color: var(--accent-strong); }
+  #cToc { overflow-y: auto; padding: 4px; }
+  #cNav a { display: flex; gap: 8px; padding: 7px 6px; border-radius: var(--radius-md); color: var(--ink-muted); font-size: 13px; line-height: 1.35; text-decoration: none; white-space: nowrap; }
+  #cNav a:hover { background: var(--surface-muted); color: var(--ink); }
+  #cNav a b { flex: none; width: 22px; text-align: center; font-weight: 600; }
+  #cNav a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #cNav a[aria-current=true] { background: var(--accent-tint); color: var(--accent-strong); font-weight: 600; }
+  @media (min-width: 700px) {
+    body.cards.editing #cards { padding-left: 68px; }
+    body.cards.editing.tocpin #cards { padding-left: 264px; }
+  }
+  @media (max-width: 699px) { #cNav { display: none !important; } }  /* 폰은 카드 폭을 다 쓴다 */
   @media (min-width: 1100px) {
-    body.cards.editing #cards { gap: var(--space-24); margin: 0 calc(var(--ed-pad) + 284px) 0 var(--ed-pad); padding: 88px 0 40px; }
-    #cNav { position: sticky; top: 88px; flex: 0 0 150px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 112px); overflow-y: auto; }
+    body.cards.editing #cards { gap: var(--space-24); margin: 0 calc(var(--ed-pad) + 284px) 0 max(68px, var(--ed-pad)); padding: 88px 0 40px; }
+    body.cards.editing.tocpin #cards { margin-left: max(264px, var(--ed-pad)); padding-left: 0; }
   }
   a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px var(--space-14); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font-weight: 600; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
   /* 새 발표 만들기·Q&A 준비: 머리줄 아래 한 단 화면. 입력칸은 창(dialog)과 같은 모양 */
@@ -684,7 +698,8 @@
 <textarea class="e-only s-only" id="text" readonly placeholder="여기에 대본을 붙여넣어 주세요. 자동으로 저장돼요."></textarea>
 <!-- 문단 카드(시안의 대본 편집): 글이 있으면 #text 대신 문단마다 카드. 글은 그대로 #text에 있고 카드에서 고치면 그 문단 자리만 바뀐다 -->
 <div class="e-only s-only" id="cards" hidden>
-  <nav id="cNav" aria-label="문단 목록"></nav>
+  <!-- 목차: 왼쪽에 번호만 작게, 올리거나(호버·포커스) ☰를 누르면 제목까지 펼친다. 📌로 펼친 채 고정(ls.tocPin) -->
+  <nav id="cNav" aria-label="목차"><div class="tochd"><button id="tocBtn" aria-expanded="false" aria-label="목차 펼치기">☰</button><b>목차</b><button id="tocPin" aria-pressed="false" title="목차 고정">고정</button></div><div id="cToc"></div></nav>
   <div id="cMain">
     <div id="cList"></div>
     <button id="cAdd">＋ 문단 추가</button>
@@ -1044,7 +1059,7 @@
   <div class="row rfoot"><button id="cDel">기록 모두 지우기</button></div>
 </dialog>
 
-<script src="match.js?v=26"></script>
-<script type="module" src="app.js?v=26"></script>
+<script src="match.js?v=27"></script>
+<script type="module" src="app.js?v=27"></script>
 </body>
 </html>

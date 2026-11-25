@@ -1,17 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=26';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=26';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=26';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=26';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=26';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=26';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=26';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=26';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=27';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=27';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=27';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=27';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=27';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=27';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=27';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=27';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=26';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=27';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1979,7 +1979,8 @@ $('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) goTa
 let prepCtl = null;
 async function autoPrep() {
   const text = $('text').value;
-  if (prepCtl || aiCtl || !text.trim() || prepFits(loadPrep(), text)) return;  // AI 창에서 하던 일이 있으면 다음에 들어올 때 한다
+  const pp = loadPrep();
+  if (prepCtl || aiCtl || !text.trim() || prepFits(pp, text) && pp.paras.some(x => x.title)) return;  // AI 창에서 하던 일이 있으면 다음에 들어올 때 한다. 문단 제목이 없는 옛 준비는 한 번 다시 한다
   let job;
   try { job = jobFor('prep'); } catch { return; }
   const ctl = prepCtl = new AbortController(), id = lib.cur;
@@ -2954,7 +2955,7 @@ function openDemo() {
   tell('받아 둔 예시 대본을 열었어요. 새로 받으려면 이 발표를 지우고 다시 눌러 주세요.');
   return true;
 }
-$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=26').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=27').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다
@@ -2982,6 +2983,8 @@ const titleOf = t => {
   const w = headOf(h ? t.trimStart().split('\n').slice(1).join(' ') : t) || headOf(t);  // 머리 줄뿐이면 그 줄 그대로
   return w.length > 14 ? w.slice(0, 13) + '…' : w;
 };
+// 카드·목차 제목: 직접 쓴 슬라이드 제목 > 발표 준비(AI)가 지은 문단 제목 > 문단 첫 글
+const cardTitle = (t, ai) => (!slideHead(t)?.title && ai) || titleOf(t);
 // 연습 때 막힌 낱말(compare.js hardWords): 저장된 연습의 대본·들은 말을 다시 맞춘다. 연습 기록이 그대로면 다시 계산하지 않는다
 let hardMemo = { raw: null, list: [] };
 function hardList() {
@@ -2990,6 +2993,12 @@ function hardList() {
   const ig = hardIgnore();
   return hardMemo.list.filter(h => !ig.includes(h.k));
 }
+// 목차: ☰는 펼치고 접기(터치), 고정은 이 기기에 기억한다(ls.tocPin)
+const tocPin = on => { document.body.classList.toggle('tocpin', on); $('tocPin').setAttribute('aria-pressed', on); };
+tocPin(store.get('ls.tocPin') === '1');
+const tocOpen = on => { $('cNav').classList.toggle('open', on); $('tocBtn').setAttribute('aria-expanded', on); };
+$('tocBtn').onclick = () => tocOpen(!$('cNav').classList.contains('open'));
+$('tocPin').onclick = () => { const on = !document.body.classList.contains('tocpin'); store.set('ls.tocPin', on ? '1' : '0'); tocPin(on); tocOpen(false); };
 const autosize = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
 
 function renderCards() {
@@ -3004,13 +3013,15 @@ function renderCards() {
   const hs = ps.map(([a, b]) => slideHead(text.slice(a, b))).filter(Boolean), byHead = hs.length >= 2;  // 슬라이드 머리 줄로 묶인 대본
   const newHead = !byHead ? '' : hs.some(h => h.no) ? `${Math.max(...hs.map(h => h.no)) + 1}슬라이드\n` : `# 슬라이드 ${hs.length + 1}\n`;  // '# '만으로는 머리 줄이 아니다(제목이 있어야 한다)
   $('cAdd').textContent = byHead ? '＋ 슬라이드 추가' : '＋ 문단 추가';
-  $('cNav').replaceChildren();
+  $('cToc').replaceChildren();
   $('cList').replaceChildren(...[...ps.map(([a, b], i) => ({ a, b, i })), ...(cardNew ? [{ a: text.trimEnd().length + 2, b: text.trimEnd().length + 2, i: ps.length }] : [])].map(({ a, b, i }) => {
     const t = text.slice(a, b), on = i === cardAt, card = mk('article', '', on ? 'pc on' : 'pc');
     card.id = 'p' + (i + 1); card.dataset.i = i;
     card.setAttribute('aria-label', `${i + 1}번 문단`);
     const ph = mk('div', '', 'ph');
-    ph.append(mk('span', `${i + 1} · ${titleOf(t) || '새 문단'}`, 'pn'));
+    const ai = fit?.paras[i]?.title || '';
+    card.dataset.ai = ai;  // 글을 고치는 동안에도 제목을 지킨다(cardInput)
+    ph.append(mk('span', `${i + 1} · ${cardTitle(t, ai) || '새 문단'}`, 'pn'));
     const role = fit?.paras[i]?.role;
     if (role) { const c = mk('span', role, 'prole'); c.title = [fit.paras[i].tone, fit.paras[i].e && `힘: ${PE[fit.paras[i].e]}`].filter(Boolean).join(' · '); ph.append(c); }
     const chip = sn[i] ? mk('span', `슬라이드 ${sn[i]}`, 'pslide') : null;  // 끝에 더한 빈 카드(i = 문단 수)는 없다
@@ -3035,12 +3046,11 @@ function renderCards() {
       card.addEventListener('click', e => { if (!e.target.closest('.hard, .hardpop')) cardOpen(i, e); });
       card.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === card) { e.preventDefault(); cardOpen(i); } });
     }
-    const n = mk('a'), th = mk('i', t.slice(0, 40));
-    th.setAttribute('aria-hidden', 'true');  // 작은 미리보기는 아래 '번호 제목'과 같은 글이라 읽어 주지 않는다
-    n.href = '#p' + (i + 1); n.append(th, mk('span', `${i + 1} ${titleOf(t)}`));
+    const n = mk('a');
+    n.href = '#p' + (i + 1); n.append(mk('b', i + 1), mk('span', cardTitle(t, ai) || '새 문단'));
     if (on) n.setAttribute('aria-current', 'true');
-    n.onclick = e => { e.preventDefault(); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); cardOpen(i); };
-    $('cNav').append(n);
+    n.onclick = e => { e.preventDefault(); tocOpen(false); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); cardOpen(i); };
+    $('cToc').append(n);
     return card;
   }));
   $('cAdd').hidden = cardNew;
@@ -3146,7 +3156,7 @@ function cardInput(ta) {
   ta.dataset.a = cardSpan.a;
   const card = ta.closest('.pc');
   card.querySelector('.pe').textContent = `예상 ${est(ta.value)}`;
-  card.querySelector('.pn').textContent = `${+card.dataset.i + 1} · ${titleOf(ta.value) || '새 문단'}`;
+  card.querySelector('.pn').textContent = `${+card.dataset.i + 1} · ${cardTitle(ta.value, card.dataset.ai) || '새 문단'}`;
   updMust(ta);
 }
 // 카드 글칸의 선택을 숨은 #text에 옮겨서 '다른 말'과 AI 문단 고치기가 그대로 읽는다
@@ -3521,7 +3531,7 @@ function jobFor(tab) {
   };
 }
 
-// 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop, role, tone, e }] (문장 번호 0부터, lib.js paras() 기준), kw, n: 문단마다 문장 수,
+// 저장된 발표 준비 결과 { h: 만든 대본의 해시, t, paras: [{ imp, keep, drop, title, role, tone, e }] (문장 번호 0부터, lib.js paras() 기준), kw, n: 문단마다 문장 수,
 //   keys: 핵심 문장 [{ p, s, t: 문장 글, why, r }], rub: 그때 보낸 평가 기준, crit: 기준마다 { kind, ps, at, how } }
 // paras는 늦어지면 줄이기(shrink.js)가 쓴다. 문장 번호만 쓰므로 대본이 같거나(h) 문단과 문장 수가 같을 때(n)만 쓴다. keys는 글로 맞춘다.
 function loadPrep() {
@@ -3532,7 +3542,7 @@ function loadPrep() {
     p.kw = Object.fromEntries(Object.entries(p.kw && typeof p.kw === 'object' ? p.kw : {}).filter(([, v]) => Array.isArray(v) && v.every(x => typeof x === 'string')));
     const ints = v => Array.isArray(v) ? v.filter(Number.isInteger) : [];  // shrink.js units()가 받는 모양
     const str = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
-    p.paras = p.paras.map(x => ({ imp: [1, 2, 3].includes(x?.imp) ? x.imp : 2, keep: ints(x?.keep), drop: ints(x?.drop), role: str(x?.role, 8), tone: str(x?.tone, 20), e: [1, 2, 3].includes(x?.e) ? x.e : null }));
+    p.paras = p.paras.map(x => ({ imp: [1, 2, 3].includes(x?.imp) ? x.imp : 2, keep: ints(x?.keep), drop: ints(x?.drop), title: str(x?.title, 20), role: str(x?.role, 8), tone: str(x?.tone, 20), e: [1, 2, 3].includes(x?.e) ? x.e : null }));
     p.n = Array.isArray(p.n) && p.n.every(Number.isInteger) ? p.n : null;
     p.keys = (Array.isArray(p.keys) ? p.keys : []).filter(k => Number.isInteger(k?.p) && Number.isInteger(k?.s) && typeof k.t === 'string' && k.t)
       .map(k => ({ p: k.p, s: k.s, t: k.t, why: str(k.why, 40), r: Number.isInteger(k.r) && k.r > 0 ? k.r : 0 })).slice(0, 10);

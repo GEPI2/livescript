@@ -560,7 +560,7 @@ t('준비: 평가 기준을 적고 발표 준비를 하면 흐름, 핵심 문장
   const p = await page(browser); await open(p); await sample(p);
   await p.fill('#edAside [data-info="rubric"]', '1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기');
   const ps = paras(SAMPLE.text), roles = ['도입', '문제', '해결'];
-  const ans = { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], role: roles[i % 3], tone: '또렷하게', e: i === 1 ? 3 : 2 })),
+  const ans = { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], title: i ? '' : '인사 및 주제 소개', role: roles[i % 3], tone: '또렷하게', e: i === 1 ? 3 : 2 })),
     keys: [{ p: 2, s: 1, why: '문제 제기', r: 1 }],
     crit: [{ r: 1, kind: '내용', ps: [2], at: 0, how: '' }, { r: 2, kind: '내용', ps: [], at: 3, how: '셋째 문단에 한계를 한 문장 더해 주세요.' }, { r: 3, kind: '전달', ps: [], at: 0, how: '' }], kw: [] };
   const sent = [];
@@ -586,6 +586,9 @@ t('준비: 평가 기준을 적고 발표 준비를 하면 흐름, 핵심 문장
   await p.click('#aiClose');
   assert.equal(await p.locator('#cList .pc .prole').count(), ps.length, '문단마다 역할 칩');
   assert.equal(await p.textContent('#cList .pc:nth-child(2) .prole'), '문제');
+  assert.equal(await p.textContent('#cList .pc:first-child .pn'), '1 · 인사 및 주제 소개', 'AI가 지은 문단 제목');
+  assert.equal(await p.textContent('#cNav a:first-child span'), '인사 및 주제 소개', '목차도 같은 제목');
+  assert.doesNotMatch(await p.textContent('#cList .pc:nth-child(2) .pn'), /^2 · $/, '제목이 없는 문단은 첫 글');
   assert.equal(await p.getAttribute('#cList .pc:nth-child(2) mark.must', 'title'), '문제 제기 · 평가 기준: 문제를 분명히 말했나');
   assert.deepEqual(p.errors, []);
 });
@@ -746,14 +749,29 @@ t('카드: 문단마다 카드와 목록 조각이 있고 번호·예상 시간�
   const n = paraSpans(SAMPLE.text).length;
   assert.equal(await p.locator('#cList .pc').count(), n);
   assert.equal(await p.locator('#cNav a').count(), n);
-  assert.match(await p.textContent('#cList .pc .pn'), /^1 · 안녕하세요/);
+  assert.equal(await p.textContent('#cList .pc .pn'), '1 · 인사 및 서비스 소개', '예시는 발표 준비가 지은 제목');
   assert.match(await p.textContent('#cList .pc .pe'), /^예상 \d+:\d\d$/);
   assert.equal(await p.locator('#text').isHidden(), true, '글이 있으면 종이 칸은 숨는다');
   assert.equal(await p.locator('#cNav').isVisible(), true);
+  const navW = () => p.locator('#cNav').evaluate(e => e.getBoundingClientRect().width);
+  await p.mouse.move(700, 400); await p.waitForTimeout(250);
+  assert.ok(await navW() < 60, '목차는 평소 번호 줄로 접혀 있다');
+  assert.ok(await p.locator('#cNav').boundingBox().then(b => b.x + b.width) <= await p.locator('#cList .pc').first().boundingBox().then(b => b.x), '접힌 목차는 카드를 가리지 않는다');
+  await p.hover('#cNav a:nth-child(3)'); await p.waitForTimeout(250);
+  assert.ok(await navW() > 200, '올리면 제목까지 펼친다');
+  assert.equal(await p.textContent('#cNav a:nth-child(3) span'), '대본 밖 발언 처리');
+  await p.click('#tocPin'); await p.mouse.move(700, 400); await p.waitForTimeout(250);
+  assert.ok(await navW() > 200, '고정하면 펼친 채로');
+  assert.ok(await p.locator('#cNav').boundingBox().then(b => b.x + b.width) <= await p.locator('#cList .pc').first().boundingBox().then(b => b.x), '고정한 목차도 카드를 가리지 않는다');
+  await p.reload(); await p.waitForSelector('#cList .pc'); await p.mouse.move(700, 400); await p.waitForTimeout(250);
+  assert.equal(await p.getAttribute('#tocPin', 'aria-pressed'), 'true', '고정은 기억한다');
+  await p.click('#tocPin'); await p.mouse.move(700, 400); await p.waitForTimeout(250);
+  assert.ok(await navW() < 60, '고정을 풀면 다시 접힌다');
   await p.setViewportSize({ width: 900, height: 800 });
-  assert.equal(await p.locator('#cNav').isHidden(), true, '좁으면 목록은 없다');
-  assert.equal(await p.locator('#cList .pc').first().boundingBox().then(b => b.width > 700), true, '카드는 폭을 다 쓴다');
+  assert.equal(await p.locator('#cNav').isVisible(), true, '태블릿 폭에도 접힌 목차');
+  assert.equal(await p.locator('#cList .pc').first().boundingBox().then(b => b.width > 700), true, '카드는 폭을 거의 다 쓴다');
   await p.setViewportSize({ width: 390, height: 800 });
+  assert.equal(await p.locator('#cNav').isHidden(), true, '폰에는 목차가 없다');
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '휴대폰에서 가로로 넘치지 않는다');
   assert.deepEqual(p.errors, []);
 });
@@ -1034,7 +1052,7 @@ t('대본: 슬라이드 머리 줄이 있는 대본을 붙여넣으면 슬라이
   await p.fill('#text', '1슬라이드. 표지\n안녕하세요. 발표를 시작하겠습니다.\n\n2슬라이드 [1. 서비스 소개]\n\n[핵심]\n첫째 문단입니다.\n\n둘째 문단입니다.\n\n3슬라이드\n마지막 장입니다. 감사합니다.');
   await p.waitForTimeout(400);
   assert.deepEqual(await p.locator('#cList .pc .pn').allTextContents(), ['1 · 표지', '2 · 1. 서비스 소개', '3 · 마지막 장입니다. 감사합…'], '머리 줄 제목, 제목이 없으면 그 아래 첫 글');
-  assert.deepEqual(await p.locator('#cNav a span').allTextContents(), ['1 표지', '2 1. 서비스 소개', '3 마지막 장입니다. 감사합…']);
+  assert.deepEqual(await p.locator('#cNav a span').allTextContents(), ['표지', '1. 서비스 소개', '마지막 장입니다. 감사합…']);
   await p.locator('#cList .pc').nth(1).click(); await p.waitForTimeout(300);
   assert.equal((await p.locator('#cList .pta').inputValue()).split('\n').length, 6, '둘째 슬라이드 카드에 그 슬라이드의 문단이 모두 들어 있다');
   await p.keyboard.press('Escape');

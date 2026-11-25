@@ -68,7 +68,7 @@
   /* 탭마다 보이는 것: 대본(s-only), Q&A 준비(q-only). 연습·실전은 body.editing이 아닐 때(p-only) */
   body:not(.t-script) .s-only, body:not(.t-qa) .q-only { display: none !important; }
   body:not(.cards):not(.pasting) #text { display: none; }
-  body:not(.cards) #edAside { display: none !important; }
+  body:not(.cards) footer.e-only { display: none !important; }
   footer { bottom: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 var(--border); }
   footer.p-only { padding-inline: max(var(--space-24), calc((100% - var(--prompter-max)) / 2 + var(--space-32))); padding-block: 0 max(var(--space-20), env(safe-area-inset-bottom)); box-shadow: none; }  /* 시안: 대본 폭 안에 이전·다음, 구분선 없음 */
   footer.p-only::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--space-24); background: linear-gradient(transparent, var(--bg)); pointer-events: none; }  /* 대본이 줄 위에서 딱 잘리지 않게 */
@@ -136,42 +136,20 @@
   @media (max-width: 600px) { #text { padding-inline: var(--space-16); border-inline: 0; } }
   button.ic { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   @media (max-width: 800px) { #listenBtn span { display: none; } }  /* 좁으면 그림만 (aria-label이 이름) */
-  /* 넓은 화면: 아래 줄(목표·예상·자동 줄이기)과 '시간이 모자랄 때'·'버전 기록'이 오른쪽 카드 줄이 된다(시안). 대본 종이는 그 왼쪽에 카드로 둔다. 좁으면 aside는 없는 것과 같고 아래 줄만 막대로 남는다 */
-  #edAside { display: contents; }
-  .side { display: none; }
-  #prepCard label { display: block; margin: 8px 0; }
-  #prepCard textarea { display: block; width: 100%; min-height: 64px; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; resize: vertical; field-sizing: content; }
-  /* 좁은 화면에서는 오른쪽 카드(발표 준비·시간이 모자랄 때·버전 기록)를 문단 카드 아래에 둔다 */
-  @media (max-width: 1099px) {
-    body.cards.editing #cards { padding-bottom: var(--space-16); }
-    body.cards .side { display: block; max-width: 880px; margin: 0 auto var(--space-16); padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
-    body.cards .side:last-of-type { margin-bottom: 96px; }
-    .side h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
-  }
-  @media (max-width: 912px) { body.cards .side { margin-inline: var(--space-16); } }
+  /* 대본 도구줄: 카드 위에 붙어 다닌다. [AI 점검] [시간 줄이기] [버전 기록]을 누르면 창이 열린다 */
+  #edTools { position: sticky; top: var(--header-height); z-index: 1; flex-wrap: wrap; gap: 8px; margin: 0; padding-block: 8px; background: var(--bg); }
+  #prepGo.need::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  #shrinkBtn.mode { border-color: var(--accent); color: var(--accent-strong); }
+  #shrinkBtn.over { border-color: var(--warning); color: var(--warning); }
+  @media (max-width: 480px) { #shrinkBtn span { display: none; } }
+  #modeSeg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #modeSeg button { min-height: 40px; padding: 0 4px; font-size: 13px; }
+  #modeSeg button:disabled { opacity: .5; }
+  #modeInfo { margin: 8px 0 0; }
+  #shrinkDlg .sw { justify-content: space-between; flex-direction: row-reverse; font-size: 15px; }
   @media (min-width: 1100px) {
     body.editing { --ed-pad: max(var(--space-24), calc((100% - 1232px) / 2)); }
-    body.editing #text { width: min(880px, calc(100% - 2 * var(--ed-pad) - 284px)); height: calc(100dvh - 112px); margin: 88px 0 24px var(--ed-pad); padding: var(--space-24) 28px; border: 1px solid var(--border); border-radius: var(--radius-xl); }  /* 종이도 카드로 */
-    #edAside { position: fixed; z-index: 1; right: var(--ed-pad); top: 88px; bottom: 24px; width: 260px; display: flex; flex-direction: column; gap: var(--space-16); overflow-y: auto; }
-    footer.e-only { position: static; flex-wrap: wrap; gap: 4px var(--space-8); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: none; }  /* 한 줄: [예상 ›][목표 [ ] 분] */
-    footer.e-only #target { width: 3.5em; }
-    footer.e-only #altBtn { flex-basis: 100%; }
-    .side { display: block; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
-    .side h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
-    .side .small { margin: 0 0 12px; }
-    .side .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 8px; }
-    .side .seg button { min-height: 40px; padding: 0 4px; font-size: 13px; }
-    .side .seg button:disabled { opacity: .5; }
-    #modeInfo { margin: 8px 0 0; }
-    .side .sw { margin-top: 6px; justify-content: space-between; flex-direction: row-reverse; font-size: 15px; }  /* 넓으면 자동 줄이기는 늘 이 카드에 있다(placeSw): 시안처럼 글 왼쪽·체크 오른쪽 */
-    #verSide { list-style: none; margin: 0 0 10px; padding: 0; }
-    #verSide li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-    #verSide li:last-child { border-bottom: 0; }
-    #verSide b { display: block; font-weight: 600; }
-    #verSide small { display: block; color: var(--ink-muted); font-size: 13px; }
-    #verSide button { min-height: 36px; padding: 0 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 400; }
-    #verSide .now { color: var(--ink-muted); font-size: 13px; white-space: nowrap; }
-    #verCard .row button { min-height: 40px; font-size: 13px; }
+    body.editing #text { width: min(880px, calc(100% - 2 * var(--ed-pad))); height: calc(100dvh - 112px); margin: 88px auto 24px; padding: var(--space-24) 28px; border: 1px solid var(--border); border-radius: var(--radius-xl); }  /* 종이도 카드로 */
   }
   #target { min-height: 44px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 6px 8px; }
   #target { width: 4.5em; }
@@ -192,7 +170,7 @@
   body.cards #text { display: none; }
   #cards { display: none; }
   body.cards.editing #cards { display: flex; align-items: flex-start; gap: var(--space-24); padding: 88px var(--space-16) 96px; }
-  #cMain { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-16); }
+  #cMain { flex: 1 1 0; min-width: 0; max-width: 880px; margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-16); }
   #cList { display: flex; flex-direction: column; gap: var(--space-16); }
   .pc { position: relative; padding: var(--space-20) 22px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); cursor: text; }
   .pc.on { border: 2px solid var(--accent); padding: 19px 21px; }
@@ -238,7 +216,7 @@
   }
   @media (max-width: 699px) { #cNav { display: none !important; } }  /* 폰은 카드 폭을 다 쓴다 */
   @media (min-width: 1100px) {
-    body.cards.editing #cards { gap: var(--space-24); margin: 0 calc(var(--ed-pad) + 284px) 0 max(68px, var(--ed-pad)); padding: 88px 0 40px; }
+    body.cards.editing #cards { gap: var(--space-24); margin: 0 var(--ed-pad) 0 max(68px, var(--ed-pad)); padding: 88px 0 96px; }
     body.cards.editing.tocpin #cards { margin-left: max(264px, var(--ed-pad)); padding-left: 0; }
   }
   a.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px var(--space-14); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font-weight: 600; text-decoration: none; }  /* 버튼처럼 보이는 링크 (사용 안내서는 새 탭으로 연다) */
@@ -255,7 +233,7 @@
   /* 내 발표(시안의 홈): 대본마다 카드 하나. 머리줄의 '말랑'을 누르면 열린다 */
   button.brand { min-height: 44px; padding: 0 var(--space-8) 0 0; border: 0; background: none; color: var(--ink); }
   #home { position: fixed; inset: var(--header-height) 0 0 0; z-index: 1; overflow: auto; background: var(--bg); }
-  body.home #edAside { display: none !important; }  /* 오른쪽 카드 줄(또는 좁을 때 아래 줄)은 홈에서 가린다 */
+  body.home footer.e-only { display: none !important; }  /* 아래 줄(예상·목표)은 홈에서 가린다 */
   .hw { max-width: var(--content-max); margin: 0 auto; padding: var(--space-40) var(--space-24) var(--space-56); }
   .htop { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-20); }
   .htabs { display: flex; gap: 4px; margin: 0 0 var(--space-24); }
@@ -324,7 +302,6 @@
   .sw input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
   @media (max-width: 420px) {
     #est { line-height: 1.2; }  /* 320px에서는 넘친 시간 (+0:26)이 두 줄로 */
-    footer:has(#altBtn:not([hidden])) .sw { display: none; }  /* 고른 말이 있는 동안만 보이는 '다른 말'에 자리를 준다 */
   }
 
   /* 질의응답: 넓으면 왼쪽에 질문 듣기, 오른쪽에 준비한 답 */
@@ -476,7 +453,7 @@
   .diff { margin: 8px 0; padding: 12px; border-radius: var(--radius-md); background: var(--surface-muted); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.8; }
   dialog del { background: none; color: var(--ink-muted); text-decoration: line-through var(--warning); }
   dialog ins { padding: 0 4px; border-radius: 3px; background: var(--diff-added); color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: 3px; }  /* 색만으로 나누지 않게 밑줄도 */
-  .drop del { text-decoration: line-through 1px; text-decoration-color: currentColor; }  /* 늦으면 뺄 문장: AI 비교의 '지울 말'과 다르게 흐리게 */
+  .strike del { text-decoration: line-through 1px; text-decoration-color: currentColor; }  /* 늦으면 뺄 문장: AI 비교의 '지울 말'과 다르게 흐리게 */
   #cDel { color: var(--warning); }
   .diff button { padding: 0 8px; font-size: 13px; font-weight: 400; color: var(--ink-muted); }
   #prepDiff { max-height: 40vh; overflow: auto; }  /* 대본 전체라 길다. 아래 버튼이 화면 밖으로 밀리지 않게 */
@@ -668,10 +645,27 @@
   .pfb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: var(--space-12); font-size: 13px; color: var(--ink-muted); }
   .pfb .k { font-weight: 600; color: var(--ink); }
   .pc .pplan { margin: 0 0 8px; }
-  #prepFlow .sug { margin: var(--space-12) 0; padding: var(--space-16); border-radius: var(--radius-xl); background: var(--accent-tint); }
-  #prepFlow h3 { margin: 0 0 8px; color: var(--accent-strong); font-size: 15px; }
-  #prepFlow ul { margin: 0 0 8px; padding-left: 1.2em; font-size: 14px; }
+  /* AI 점검: 만들어 두는 것 네 줄(점검 전엔 하는 일, 뒤엔 결과와 바로 가는 단추) */
+  #prepFlow { list-style: none; margin: var(--space-12) 0 0; padding: 0; }
+  #prepFlow .pi { display: grid; grid-template-columns: 22px 1fr auto; gap: 2px 10px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
+  #prepFlow .pi::before { content: ''; grid-row: 1 / span 2; align-self: start; margin-top: 2px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); box-sizing: border-box; }
+  #prepFlow .pi.ok::before { content: '✓'; border: 0; background: var(--accent); color: var(--on-accent); font-size: 12px; line-height: 18px; text-align: center; }
+  #prepFlow .pi.wait::before { opacity: .4; }
+  #prepFlow .pi > b { grid-column: 2; }
+  #prepFlow .pi > span { grid-column: 2; font-size: 14px; color: var(--ink-muted); }
+  #prepFlow .pi > button:not(.go) { grid-column: 3; grid-row: 1 / span 2; }
+  #prepFlow .pi > :is(ul, details, .miss, .go) { grid-column: 2 / -1; justify-self: stretch; }
+  #prepFlow .pi > .go { justify-self: start; margin-top: 8px; }
+  #prepFlow ul { margin: 6px 0 0; padding-left: 1.2em; font-size: 14px; }
+  #prepFlow summary { min-height: 44px; padding: 10px 0; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+  #prepFlow .miss { margin-top: 8px; padding: var(--space-12); border-radius: var(--radius-lg); background: var(--accent-tint); }
+  #prepFlow .miss b { display: block; }
+  #prepFlow .miss p { margin: 4px 0 0; }
+  #prepFlow .miss .go { margin-top: 8px; }
   #prepFlow .go { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+  #prepFlow + .rub { display: block; padding-top: var(--space-12); border-top: 1px solid var(--border); }
+  .rub textarea { margin-top: 6px; }
+  @media (max-width: 699px) { #prepFlow .toc { display: none; } }  /* 폰엔 목차가 없다(#cNav) */
   /* 연습 모드 발표 화면: 꼭 말할 문장에 옅은 밑줄(미리 보이게) */
   body.keymark #prompt .s.key:not(.approx) { text-decoration: underline 2px color-mix(in srgb, var(--accent) 75%, transparent); text-underline-offset: min(8px, .25em); }  /* 어두운 바탕에서 3:1 넘게 */
 </style>
@@ -701,6 +695,7 @@
   <!-- 목차: 왼쪽에 번호만 작게, 올리거나(호버·포커스) ☰를 누르면 제목까지 펼친다. 📌로 펼친 채 고정(ls.tocPin) -->
   <nav id="cNav" aria-label="목차"><div class="tochd"><button id="tocBtn" aria-expanded="false" aria-label="목차 펼치기">☰</button><b>목차</b><button id="tocPin" aria-pressed="false" title="목차 고정">고정</button></div><div id="cToc"></div></nav>
   <div id="cMain">
+    <div class="row" id="edTools" role="group" aria-label="대본 도구"><button class="ic" id="prepGo">AI 점검</button><button id="shrinkBtn" aria-haspopup="dialog">시간 줄이기<span></span></button><button id="verBtn" aria-haspopup="dialog">버전 기록</button></div>
     <div id="cList"></div>
     <button id="cAdd">＋ 문단 추가</button>
     <div class="row sfoot"><button id="mExport">파일로 내보내기</button><button id="mDel">이 발표 지우기</button></div>
@@ -844,32 +839,11 @@
   </div>
 </section>
 
-<aside id="edAside" class="e-only s-only" aria-label="발표 준비">
-<footer class="e-only">
+<footer class="e-only s-only">
   <button id="est" class="grow" type="button" title="내 말하기(읽기 속도) 보기"></button>
   <span class="tgt"><label for="target">목표</label> <input id="target" type="number" min="1" max="600" step="any" inputmode="decimal" autocomplete="off" placeholder="없음"> 분</span>
-  <label class="sw" id="shrinkBox" hidden><input type="checkbox" id="shrinkOn"> 자동 줄이기</label>
   <button id="altBtn" hidden>다른 말</button>
 </footer>
-<section class="side" id="prepCard" aria-labelledby="ppH">
-  <h2 id="ppH">발표 준비</h2>
-  <p class="small" id="prepState"></p>
-  <label class="small">평가 기준 (선택) <textarea data-info="rubric" rows="3" placeholder="한 줄에 하나씩&#10;예: 문제를 분명히 말했나"></textarea></label>
-  <div id="prepFlow"></div>
-  <button id="prepGo">발표 준비 하기</button>
-</section>
-<section class="side" id="shrinkCard" aria-labelledby="shH">
-  <h2 id="shH">시간이 모자랄 때</h2>
-  <p class="small">문단마다 짧은 버전을 미리 만들어 둬요</p>
-  <div class="row seg" id="modeSeg" role="group" aria-label="줄이기 단계"><button data-m="0">원본</button><button data-m="1">조금 짧게</button><button data-m="2">핵심만</button></div>
-  <p class="small" id="modeInfo"></p>
-</section>
-<section class="side" id="verCard" aria-labelledby="verH">
-  <h2 id="verH">버전 기록</h2>
-  <ol id="verSide"></ol>
-  <div class="row"><button id="verSideSave">지금 대본 저장</button><button id="verSideAll">모두 보기</button></div>
-</section>
-</aside>
 <div id="toast" role="status"><span id="toastT">불러오는 중이에요. 오래 걸리면 새로고침해 주세요.</span><button id="toastX" hidden>닫기</button></div>
 <div class="p-only" id="undoBar" role="status" hidden><span>여기로 옮겼어요</span><button id="undoBtn">되돌리기</button></div>
 
@@ -916,9 +890,11 @@
     <label id="onlySelBox"><input type="checkbox" id="onlySel" checked> <span id="selInfo"></span></label>
   </div>
   <div data-pane="prep">
-    <p class="small">문단마다 흐름과 말할 힘, 핵심 문장, 늦어질 때 뺄 문장을 골라 둬요. 발표 중에는 AI를 부르지 않아요.</p>
-    <p class="small drop" id="prepCap" hidden><del>흐린 글</del> = 늦으면 뺄 문장</p>
-    <div class="diff drop" id="prepDiff" hidden></div>
+    <p class="small">연습·발표에 쓸 것을 미리 만들어요. 발표 중엔 AI 없이 이걸로 따라가요.</p>
+    <p class="small" id="prepState"></p>
+    <ol id="prepFlow"></ol>
+    <label class="rub"><b>평가 기준</b> <span class="small">(선택)</span><textarea data-info="rubric" rows="2" aria-label="평가 기준" aria-describedby="rubN" placeholder="한 줄에 하나씩&#10;예: 문제를 분명히 말했나"></textarea></label>
+    <p class="small" id="rubN"></p>
   </div>
   <div class="row">
     <button id="aiGo" class="primary">AI로 쓰기</button>
@@ -938,9 +914,9 @@
 </dialog>
 
 <dialog id="hist" aria-labelledby="histTitle">
-  <h2 id="histTitle">버전</h2>
-  <p class="small">발표를 시작할 때, AI 결과를 적용하기 전, '버전 저장'을 누를 때 대본마다 최근 30개까지 남아요.</p>
-  <div class="row"><button id="verSave" class="primary">버전 저장</button></div>
+  <h2 id="histTitle">버전 기록</h2>
+  <p class="small">발표 시작, AI 적용 전에 저절로 남아요. 최근 30개예요.</p>
+  <div class="row"><button id="verSave" class="primary">지금 대본 저장</button></div>
   <p id="histMsg" role="status"></p>
   <div id="verList"></div>
   <div id="verView" hidden>
@@ -962,6 +938,18 @@
   <div class="row bottom"><span class="grow"></span><button id="markSkip">바로 연습</button><button id="markGo" class="cta" autofocus>확인하러 가기</button></div>
 </dialog>
 
+<dialog id="shrinkDlg" aria-labelledby="shH">
+  <h2 id="shH">시간 줄이기</h2>
+  <p class="small">문단마다 짧은 버전을 골라요. 연습·실전에 바로 써요.</p>
+  <div class="row seg" id="modeSeg" role="group" aria-label="줄이기 단계"><button data-m="0">원본</button><button data-m="1">조금 짧게</button><button data-m="2">핵심만</button></div>
+  <p class="small" id="modeInfo"></p>
+  <button id="shrinkPrep" hidden>AI 점검</button>
+  <label class="sw" id="shrinkBox" hidden><input type="checkbox" id="shrinkOn"> 발표 중 자동 줄이기</label>
+  <p class="small strike" id="prepCap" hidden><del>흐린 글</del> = 빼는 문장</p>
+  <div class="diff strike" id="prepDiff" hidden></div>
+  <div class="row bottom"><span class="grow"></span><button id="shrinkClose">닫기</button></div>
+</dialog>
+
 <dialog id="altDlg" aria-labelledby="altTitle">
   <h2 id="altTitle">다른 말</h2>
   <p class="small" id="altFrom"></p>
@@ -972,8 +960,8 @@
 
 <dialog id="origDlg" aria-labelledby="origTitle">
   <h2 id="origTitle">원래 대본</h2>
-  <p class="small drop"><del>흐린 글</del> = 줄이면서 숨긴 문장</p>
-  <div class="diff drop" id="origText"></div>
+  <p class="small strike"><del>흐린 글</del> = 줄이면서 숨긴 문장</p>
+  <div class="diff strike" id="origText"></div>
   <div class="row bottom"><span class="grow"></span><button id="origClose">닫기</button></div>
 </dialog>
 
@@ -1059,7 +1047,7 @@
   <div class="row rfoot"><button id="cDel">기록 모두 지우기</button></div>
 </dialog>
 
-<script src="match.js?v=28"></script>
-<script type="module" src="app.js?v=28"></script>
+<script src="match.js?v=29"></script>
+<script type="module" src="app.js?v=29"></script>
 </body>
 </html>

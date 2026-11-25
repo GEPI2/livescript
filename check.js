@@ -686,7 +686,7 @@ export function secRows(run, prev, goal) {
       g ? (g === 'more' ? '힘 있게 말할 곳인데 차분하게 들림' : '차분하게 말할 곳인데 힘 있게 들림') : L[i] === 'high' ? '다른 구간보다 힘 있게 들림' : L[i] === 'low' && '다른 구간보다 차분하게 들림'].filter(Boolean).join(' · ');
     const nums = [
       `기대 ${mmss(e.lo)}~${mmss(e.hi)}`,
-      s.pe && `발표 준비의 계획: ${PE[s.pe]}`,
+      s.pe && `AI 점검의 계획: ${PE[s.pe]}`,
       r != null && perMin(r),
       wd != null && `높낮이 폭 ${Math.round(wd)}반음`,
       s.p25 != null && `쉼 ${s.p25 + s.p1}번(1초 넘는 쉼 ${s.p1}번)`,
@@ -842,8 +842,8 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const assert = (await import('node:assert')).default;
   const { readFileSync } = await import('node:fs');
   (await import('node:vm')).runInThisContext(readFileSync(new URL('./match.js', import.meta.url), 'utf8'));
-  const { units } = await import('./shrink.js?v=28');
-  const { readScript } = await import('./lib.js?v=28');
+  const { units } = await import('./shrink.js?v=29');
+  const { readScript } = await import('./lib.js?v=29');
   const len = t => norm(t).length;
   const near = (a, b, tol, m) => assert.ok(Math.abs(a - b) <= tol, `${m}: ${a} (기대 ${b} ±${tol})`);
 
@@ -1483,7 +1483,7 @@ if (import.meta.main ?? (typeof process === 'object' && process.argv[1]?.endsWit
   const fl = [{ rv: -30, pm: 20, st: [10, 16], pe: 3 }, { rv: -30, pm: 20, st: [10, 16], pe: 2 }, { rv: -34, pm: 18, st: [10, 16], pe: 3 }, { rv: -30, pm: 20, st: [10, 16], pe: 2 }];
   assert.equal(tk(fl).tone, '3번 구간은 힘 있게 말할 곳인데 다른 구간보다 차분하게 들렸어요. 조금 더 크고 높게 말해 보세요.');
   assert.match(secRows(tr(fl), null, 0)[2].words, /힘 있게 말할 곳인데 차분하게 들림/);
-  assert.ok(secRows(tr(fl), null, 0)[0].nums.includes('발표 준비의 계획: 힘 있게'));
+  assert.ok(secRows(tr(fl), null, 0)[0].nums.includes('AI 점검의 계획: 힘 있게'));
   assert.equal(tk(fl.map(s => ({ ...s, pe: null }))).tone, undefined, '계획이 없으면 말하지 않는다');
 
   // 읽기 시험: 글, 빠르기(기다림 제외·틈 상한·덜 읽음·짧음·이상값), 말하는 방식

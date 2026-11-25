@@ -73,34 +73,42 @@ t('만들기: 듣는 사람·발표 시간 칩과 말투 세그먼트가 칸과 
   assert.deepEqual(p.errors, []);
 });
 
-// ---- 편집: 시간이 모자랄 때(줄이기 단계), 버전 기록 ----
+// ---- 편집: 시간 줄이기(줄이기 단계), 버전 기록 ----
+// 단계와 자동 줄이기는 도구줄 '시간 줄이기' 창에 있다
+const pickMode = async (p, m) => { await p.click('#shrinkBtn'); await p.click(`#modeSeg [data-m="${m}"]`); await p.click('#shrinkClose'); };
+const noAuto = p => p.evaluate(() => { const c = document.getElementById('shrinkOn'); if (c.checked) c.click(); });
 const present = async p => { await p.click('[data-tab="live"]'); await p.waitForTimeout(800); };
 const toScript = async p => { await p.click('[data-tab="script"]'); await p.waitForTimeout(300); };
-t('편집: 발표 준비가 없으면 단계 버튼이 잠기고 안내가 보인다', async () => {
+t('편집: AI 점검이 없으면 단계 버튼이 잠기고 안내가 보인다', async () => {
   const p = await page(browser); await open(p);
   await p.click('#ePaste'); await p.fill('#text', '안녕하세요. 짧은 대본이에요.');
   await p.waitForTimeout(400);
   assert.equal(await p.locator('#modeSeg button:disabled').count(), 3);
-  assert.equal(await p.textContent('#prepGo'), '발표 준비 하기');
+  assert.equal(await p.textContent('#prepGo'), 'AI 점검');
   await p.click('#prepGo');
   assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
   assert.equal(await p.locator('[data-pane="prep"]').isVisible(), true);
+  assert.equal(await p.textContent('#prepFlow'), '문단 제목목차와 카드 머리에 붙여요.말하는 법문단마다 역할·말투·힘 줄 곳을 정해요.짧은 버전늦어지면 덜 중요한 문장부터 빼요.핵심 문장줄여도 꼭 남길 문장을 골라요.', '점검 전엔 만들어 두는 것 네 줄');
+  assert.equal(await p.locator('#prepFlow .pi.ok').count(), 0);
+  assert.equal(await p.locator('#ai [data-info="rubric"]').isVisible(), true, '평가 기준 칸이 바로 보인다');
+  assert.equal(await p.textContent('#rubN'), '적으면 대본에 빠진 내용을 찾아요.');
+  assert.equal(await p.textContent('#aiGo'), '점검하기', '한 번도 안 했으면 창만 열고 바로 보내지 않는다');
 });
-t('편집: 발표 준비를 마치면 단계 버튼이 바로 켜진다', async () => {
+t('편집: AI 점검을 마치면 단계 버튼이 바로 켜진다', async () => {
   const p = await page(browser); await open(p);
   await p.click('#ePaste'); await p.fill('#text', '안녕하세요. 짧은 대본이에요.');
   await p.waitForTimeout(400);
   await mockAi(p, () => ({ paras: [{ p: 1, imp: 2, keep: [1], drop: [], role: '도입', tone: '또렷하게', e: 2 }], keys: [], crit: [], kw: [] }));
-  await p.click('#prepGo');
-  await p.waitForFunction(() => /^발표 준비를 저장했어요/.test(document.getElementById('aiMsg').textContent));
+  await p.click('#prepGo'); await p.click('#aiGo');
+  await p.waitForFunction(() => /^점검을 마쳤어요/.test(document.getElementById('aiMsg').textContent));
   assert.equal(await p.locator('#modeSeg button:disabled').count(), 0, '창을 닫거나 화면을 옮기지 않아도 켜진다');
 });
 t('편집: 핵심만을 고르면 자동 줄이기가 꺼져 있어도 발표 화면이 짧아진다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn');
+  await noAuto(p);
   assert.equal(await p.getAttribute('#modeSeg [data-m="0"]', 'aria-pressed'), 'true');
   const full = await p.inputValue('#text');
-  await p.click('#modeSeg [data-m="2"]');
+  await pickMode(p, 2);
   assert.match(await p.textContent('#modeInfo'), /^핵심만: 예상 \d+:\d\d \(원본 \d+:\d\d\)$/);
   await present(p);
   assert.ok(await p.locator('#prompt .cut').count() > 0, '줄인 문단 표시');
@@ -108,36 +116,35 @@ t('편집: 핵심만을 고르면 자동 줄이기가 꺼져 있어도 발표 �
   assert.ok(shown < full.length * 0.8, `핵심만은 원문보다 짧다 (${shown} < ${full.length})`);
   // 대본 탭으로 돌아가 원본으로
   await toScript(p);
-  await p.click('#modeSeg [data-m="0"]');
+  await pickMode(p, 0);
   await present(p);
   assert.equal(await p.locator('#prompt .cut').count(), 0);
   assert.deepEqual(p.errors, []);
 });
 t('편집: 고른 단계는 새로고침해도 남는다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.click('#modeSeg [data-m="1"]');
+  await pickMode(p, 1);
   await p.reload(); await p.waitForFunction(() => !document.getElementById('text').readOnly);
   await p.waitForTimeout(300);
   assert.equal(await p.getAttribute('#modeSeg [data-m="1"]', 'aria-pressed'), 'true');
   assert.match(await p.textContent('#modeInfo'), /^조금 짧게:/);
 });
-t('편집: 자동 줄이기 스위치는 넓은 화면에서 시간이 모자랄 때 카드에 있다', async () => {
+t('편집: 자동 줄이기 스위치는 시간 줄이기 창에 있다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  assert.equal(await p.locator('#shrinkCard #shrinkBox').count(), 1);
-  await p.setViewportSize({ width: 900, height: 800 }); await p.waitForTimeout(200);
-  assert.equal(await p.locator('footer.e-only #shrinkBox').count(), 1);
-  await p.setViewportSize({ width: 1280, height: 800 }); await p.waitForTimeout(200);
-  assert.equal(await p.locator('#shrinkCard #shrinkBox').count(), 1);
+  assert.equal(await p.locator('#shrinkDlg #shrinkBox').count(), 1);
 });
-t('편집: 버전 기록 카드에서 저장하고 되돌릴 수 있다', async () => {
+t('편집: 버전 기록 창에서 저장하고 되돌릴 수 있다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   const orig = await p.inputValue('#text');
-  await p.click('#verSideSave');
-  assert.equal(await p.locator('#verSide li').count() >= 1, true);
-  assert.equal(await p.textContent('#verSide li .now'), '지금');
+  await p.click('#verBtn');
+  await p.click('#verSave');
+  assert.ok(await p.locator('#verList .ver').count() >= 1);
+  await p.click('#histClose');
   await p.evaluate(t => { const e = document.getElementById('text'); e.value = t; e.dispatchEvent(new Event('input')); }, orig + '\n\n덧붙인 문단이에요.');
   await p.waitForTimeout(400);
-  await p.locator('#verSide li button', { hasText: '되돌리기' }).first().click();
+  await p.click('#verBtn');
+  await p.locator('#verList .ver').first().click();
+  await p.click('#verRestore');
   await p.waitForTimeout(300);
   assert.equal(await p.inputValue('#text'), orig);
   assert.deepEqual(p.errors, []);
@@ -146,7 +153,7 @@ t('편집: 버전 기록 카드에서 저장하고 되돌릴 수 있다', async 
 // ---- 발표: 원래 대본 보기, 들어보기, 남은 시간 알림 ----
 t('발표: 줄인 문단에 알약과 원래 대본 보기가 있고, 누르면 숨긴 문장이 흐리게 보인다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.click('#modeSeg [data-m="2"]'); await present(p);
+  await pickMode(p, 2); await present(p);
   assert.match(await p.textContent('#prompt .cuthd span'), /^핵심만으로 줄였어요$/);
   await p.locator('#prompt .orig').first().click();
   assert.equal(await p.locator('#origDlg').evaluate(d => d.open), true);
@@ -174,7 +181,7 @@ t('편집: 들어보기가 문장마다 읽어 주고 다시 누르면 멈춘다
 });
 t('발표: 남은 시간 1분 전부터 알림 칩이 나오고 목표가 지나면 사라진다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);  // 시계는 앱이 타이머를 만들기 전에 가짜로 바꾼다
-  await p.uncheck('#shrinkOn');
+  await noAuto(p);
   await p.fill('#target', '3'); await present(p);
   await p.click('#mic'); await p.waitForTimeout(200);
   await p.clock.runFor(100000);
@@ -196,7 +203,7 @@ const askQ = async (p, q) => {
 };
 t('질문: Q&A를 켜고 질문을 따라 말하면 답 카드가 바로 뜨고, 답하는 동안은 잠겼다가 새 질문에 바뀐다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await present(p);
+  await noAuto(p); await present(p);
   await p.click('#qaBtn'); await p.waitForTimeout(300);
   assert.equal(await p.textContent('#mic'), '정지', 'Q&A를 켜면 듣기 시작한다');
   assert.equal(await p.locator('#ask').isHidden(), true);
@@ -224,7 +231,7 @@ t('질문: Q&A를 켜고 질문을 따라 말하면 답 카드가 바로 뜨고,
 });
 t('질문: 해당 없음을 누르면 관련 대본 구간이 나오고, 누르면 그 문장으로 돌아간다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await present(p);
+  await noAuto(p); await present(p);
   await askQ(p, '대본 밖에서 한 말은 어떻게 되나요');
   await p.locator('.chip.none:visible').first().click();
   await p.waitForSelector('#hits:not([hidden]) #hitList .chip');
@@ -241,7 +248,7 @@ t('질문: 해당 없음을 누르면 관련 대본 구간이 나오고, 누르�
 });
 t('질문: [Q&A] 탭에서 분류로 묶인 질문을 펼쳐 핵심 키워드를 고치면 바로 저장되고 카드에 반영된다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn');
+  await noAuto(p);
   await p.click('[data-tab="qa"]'); await p.waitForSelector('#qList .qitem');
   assert.deepEqual(await p.locator('#qList h3').evaluateAll(hs => hs.map(h => h.firstChild.textContent)), ['내용', '근거·숫자', '한계·위험', '활용·계획'], '분류 차례로 묶는다');
   assert.equal(await p.locator('#qList .qitem[open]').count(), 0, '처음엔 접혀 있다');
@@ -282,7 +289,7 @@ t('질문: 질문 만들기 한 번으로 분류된 목록이 생기고, 다시 
 
 t('질문: 발표 자료를 올리면 질문마다 슬라이드를 고르고, 그림을 붙이면 답 카드에 함께 보인다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn');
+  await noAuto(p);
   await p.click('[data-tab="qa"]'); await p.waitForSelector('#qList .qitem');
   await p.setInputFiles('#qaFile', { name: '발표.pdf', mimeType: 'application/pdf', buffer: await pdf(browser) });
   await p.waitForFunction(() => /^발표 자료: 발표\.pdf · 4장/.test(document.getElementById('qaMatT').textContent), null, { timeout: 20000 });
@@ -341,7 +348,7 @@ const mockAi = (p, f) => {
 };
 t('결과: 대본과 다르게 말한 곳을 빼먹음·더함·바꿔 말함으로 보여 준다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p, (i, x) => i === 2 ? '그러니까 ' + x.replace('발표하다 보면', '발표를 하다 보면') : i === 3 ? x.replace('소리 내어 ', '') : x);
   assert.equal(await p.locator('#cStats .stat').count(), 4, '걸린 시간·말 빠르기·대본 밖·대본과 다르게 말한 곳');
   assert.match(await p.textContent('#cStats .stat:nth-child(2) .v'), /^\d+ 음절\/분$/);
@@ -356,7 +363,7 @@ t('결과: 대본과 다르게 말한 곳을 빼먹음·더함·바꿔 말함으
 });
 t('결과: 두 번 이어 바꿔 말하면 대본 수정을 제안하고 바꾸기로 새 버전을 남긴다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p, swapNae);
   assert.equal(await p.locator('#cSug .sug').count(), 0, '한 번만으로는 제안하지 않는다');
   await practiceRun(p, swapNae, false);
@@ -377,7 +384,7 @@ t('결과: 두 번 이어 바꿔 말하면 대본 수정을 제안하고 바꾸�
 });
 t('결과: 그대로 두기를 누르면 같은 제안이 다시 나오지 않는다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p, swapNae); await practiceRun(p, swapNae, false);
   await p.click('#cSug .row button:not(.go)'); await p.waitForTimeout(300);
   assert.equal(await p.locator('#cSug .sug').count(), 0);
@@ -386,7 +393,7 @@ t('결과: 그대로 두기를 누르면 같은 제안이 다시 나오지 않�
 });
 t('결과: 목소리 분석을 켜고 연습하면 기록에 목소리 크기·끝 흐림 칸이 생기고 오류가 없다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await p.evaluate(() => localStorage.setItem('ls.audio', JSON.stringify({ l: false, r: true })));  // 가짜 마이크(삑 소리)로 분석기를 돌린다
   await practiceRun(p);
   const run = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.runs'))))[0]);
@@ -397,7 +404,7 @@ t('결과: 목소리 분석을 켜고 연습하면 기록에 목소리 크기·�
 });
 t('결과: 연습을 정지하면 대본과 들은 말로 AI 코칭을 바로 받는다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 2, what: "'그러니까'로 문장을 시작하는 말버릇이 있었어요.", how: '첫 낱말 앞에서 한 박자 쉬고 바로 시작해 보세요.' }] };
   const sse = [{ type: 'message_start', message: { id: 'm', content: [] } }, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
     { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(coach) } }, { type: 'content_block_stop', index: 0 },
@@ -423,7 +430,7 @@ t('결과: 연습을 정지하면 대본과 들은 말로 AI 코칭을 바로 �
 });
 t('결과: 회차별 시간 막대와 구간부터 연습 단추', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p); await practiceRun(p, (i, x) => x, false);
   assert.equal(await p.locator('#cHist div').count(), 2);
   assert.equal(await p.locator('#cHist .now').count(), 1);
@@ -477,7 +484,7 @@ async function realRun(p, ms = [...Array(6).fill(500), ...Array(7).fill(2600)]) 
 }
 t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남기고, 결과 창에서 구간마다 다시 듣고, 기록을 지우면 같이 지운다', async () => {
   const p = await page(browser); await p.context().addInitScript(SPEECH_MIC); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await p.evaluate(() => localStorage.setItem('ls.audio', JSON.stringify({ l: false, r: true })));  // 가짜 마이크로 분석기와 녹음을 돌린다
   await realRun(p);
   const run = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.runs'))))[0]);
@@ -538,7 +545,7 @@ t('녹음: 목소리 분석을 켜고 연습하면 이 기기에 녹음을 남�
 });
 t('결과: 꼭 말할 문장을 빼먹으면 묶음과 다음에 해 볼 것이 알려 주고, 연습 화면에 밑줄, 편집 카드에 지난 연습 줄이 생긴다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await setMust(p, [SENTS[4], SENTS[9]]);
   await practiceRun(p, (i, x) => i === 9 ? '음 잠깐만요 이건 넘어가고 다음 이야기를 할게요' : x);
   assert.equal(await p.locator('#cKeys').isVisible(), true);
@@ -556,29 +563,48 @@ t('결과: 꼭 말할 문장을 빼먹으면 묶음과 다음에 해 볼 것이 
   assert.match(await p.textContent('#cList .pc.on .pfb'), /^지난 연습/, '열린 카드에 지난 연습 줄');
   assert.deepEqual(p.errors, []);
 });
-t('준비: 평가 기준을 적고 발표 준비를 하면 흐름, 핵심 문장 제안, 다루지 않은 기준이 보이고 카드에 역할 칩이 생긴다', async () => {
+t('준비: 평가 기준을 적고 AI 점검을 하면 핵심 문장 제안, 다루지 않은 기준이 보이고 카드에 역할 칩이 생긴다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.fill('#edAside [data-info="rubric"]', '1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기');
   const ps = paras(SAMPLE.text), roles = ['도입', '문제', '해결'];
   const ans = { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], title: i ? '' : '인사 및 주제 소개', role: roles[i % 3], tone: '또렷하게', e: i === 1 ? 3 : 2 })),
     keys: [{ p: 2, s: 1, why: '문제 제기', r: 1 }],
     crit: [{ r: 1, kind: '내용', ps: [2], at: 0, how: '' }, { r: 2, kind: '내용', ps: [], at: 3, how: '셋째 문단에 한계를 한 문장 더해 주세요.' }, { r: 3, kind: '전달', ps: [], at: 0, how: '' }], kw: [] };
   const sent = [];
   await mockAi(p, b => (sent.push(b), ans));
-  await p.click('#prepGo');  // 누르면 바로 보낸다
-  await p.waitForFunction(() => /^발표 준비를 저장했어요/.test(document.getElementById('aiMsg').textContent));
+  await p.click('#prepGo');  // 예시는 맞는 점검이 있어서 창만 연다. 평가 기준은 창 안에서 적고 '점검하기'
+  assert.equal(sent.length, 0, '맞는 결과가 있으면 AI를 다시 부르지 않는다');
+  assert.equal(await p.locator('#prepFlow .pi.ok').count(), 2, '예시의 옛 점검엔 역할·핵심 문장이 없어 그 두 줄은 체크하지 않는다');
+  assert.equal(await p.textContent('#prepFlow [data-k="tone"] span'), '다시 점검하면 만들어요');
+  await p.evaluate(v => { const e = document.querySelector('#ai [data-info="rubric"]'); e.value = v; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); }, '1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기');
+  assert.equal(await p.textContent('#rubN'), '기준 3개를 읽었어요. 다시 점검하면 반영돼요.');
+  assert.equal(await p.textContent('#aiGo'), '다시 점검하기', '맞는 결과가 있으면 다시 점검');
+  await p.click('#aiGo');
+  await p.waitForFunction(() => /^점검을 마쳤어요/.test(document.getElementById('aiMsg').textContent));
   assert.ok(sent[0].messages[0].content.includes('<평가기준>\n1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기\n</평가기준>'), '평가 기준을 보낸다');
-  await p.click('#aiClose');
-  assert.match(await p.textContent('#prepFlow'), /흐름: 1 도입 \(보통\) → 2 문제 \(힘 있게\) → 3 해결/);
-  assert.equal(await p.textContent('#prepFlow .sug h3'), 'AI가 고른 핵심 문장 1개예요. 꼭 말할 문장으로 표시할까요?');
-  assert.match(await p.textContent('#prepFlow'), /평가 기준 '한계와 개선점' — 다루는 문단이 없어요/);
+  assert.equal(await p.locator('#prepFlow .pi.ok').count(), 5, '점검 뒤엔 네 줄 + 평가 기준 줄에 체크');
+  assert.equal(await p.textContent('#prepFlow [data-k="title"] span'), '문단 1개에 붙였어요');
+  assert.equal(await p.textContent('#prepFlow [data-k="tone"] span'), `문단 ${ps.length}개에 역할·말투를 달았어요 · 힘줄 문단 1개`);
+  assert.match(await p.textContent('#prepFlow [data-k="short"] span'), /^원본 \d+:\d\d → 핵심만 \d+:\d\d$/);
+  assert.equal(await p.textContent('#prepFlow [data-k="keys"] span'), '1개 골랐어요');
+  assert.equal(await p.textContent('#prepFlow [data-k="rub"] span'), '2개 중 1개 다뤘어요 · 말하기 기준 1개는 연습 결과에서 봐요');
+  assert.match(await p.textContent('#prepFlow [data-k="rub"] .miss'), /^'한계와 개선점' 내용이 없어요/);
+  assert.equal(await p.textContent('#prepGo'), 'AI 점검 2', '도구줄 배지: 핵심 문장 1 + 빠진 기준 1');
   assert.equal(await p.locator('#prepFlow').getByText('목소리 크기').count(), 0, '전달 기준은 대본 빈 곳으로 보지 않는다');
-  await p.locator('#prepFlow .sug .go').first().click();
+  assert.equal(await p.textContent('#rubN'), '기준 3개를 읽었어요.');
+  await p.evaluate(() => { const e = document.querySelector('#ai [data-info="rubric"]'); e.value = ''; e.dispatchEvent(new Event('input')); });
+  assert.equal(await p.textContent('#rubN'), '기준을 지웠어요. 다시 점검하면 반영돼요.', '지운 것도 알린다');
+  await p.evaluate(v => { const e = document.querySelector('#ai [data-info="rubric"]'); e.value = v; e.dispatchEvent(new Event('input')); }, '1. 문제를 분명히 말했나\n2. 한계와 개선점\n3. 목소리 크기');
+  await p.click('#prepFlow [data-k="short"] button');
+  assert.equal(await p.locator('#ai').evaluate(d => d.open), false); assert.equal(await p.locator('#shrinkDlg').evaluate(d => d.open), true, '짧은 버전 → 시간 줄이기 창');
+  await p.click('#shrinkClose'); await p.click('#prepGo');
+  assert.equal(sent.length, 1, '맞는 결과가 있으니 다시 열어도 보내지 않는다');
+  await p.click('#prepFlow [data-k="keys"] .go');
   const must = await p.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('ls.must.')))));
   assert.deepEqual(must, [ps[1][0]], '꼭 말할 문장이 됐다');
-  assert.equal(await p.locator('#prepFlow .sug h3').first().textContent(), "평가 기준 '한계와 개선점' — 다루는 문단이 없어요", '표시했으니 제안이 사라졌다');
+  assert.equal(await p.locator('#prepFlow [data-k="keys"] .go').count(), 0, '표시했으니 제안이 사라졌다');
+  assert.equal(await p.textContent('#prepFlow [data-k="keys"] span'), '1개 다 표시했어요');
   await p.screenshot({ path: OUT + '/prep-flow.png' });
-  await p.locator('#prepFlow .sug .go').first().click(); await p.waitForTimeout(300);
+  await p.click('#prepFlow [data-k="rub"] .go'); await p.waitForTimeout(300);
   assert.equal(await p.locator('#ai').evaluate(d => d.open), true);
   assert.equal(await p.inputValue('#instr'), '셋째 문단에 한계를 한 문장 더해 주세요.', '지시로 고치기에 고칠 점');
   assert.equal(await p.isChecked('#onlySel'), true, '그 문단만');
@@ -592,7 +618,7 @@ t('준비: 평가 기준을 적고 발표 준비를 하면 흐름, 핵심 문장
   assert.equal(await p.getAttribute('#cList .pc:nth-child(2) mark.must', 'title'), '문제 제기 · 평가 기준: 문제를 분명히 말했나');
   assert.deepEqual(p.errors, []);
 });
-t('준비: 문단 제목이 없는 옛 발표 준비는 대본을 열면 한 번 다시 해서 카드·목차에 제목이 생긴다', async () => {
+t('준비: 문단 제목이 없는 옛 AI 점검은 대본을 열면 한 번 다시 해서 카드·목차에 제목이 생긴다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   const ps = paras(SAMPLE.text), sent = [];
   await mockAi(p, b => (sent.push(b), { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], title: `새 제목 ${i + 1}`, role: '근거', tone: '또렷하게', e: 2 })), keys: [], crit: [], kw: [] }));
@@ -607,7 +633,7 @@ t('준비: 문단 제목이 없는 옛 발표 준비는 대본을 열면 한 번
 });
 t('결과: AI 코칭의 대본 고칠 점은 까닭과 바뀌는 곳을 보이고 바로 바꾼다. 옛 모양(지시)은 그 구간을 고른 채 AI로 고치기를 연다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   const from = '크롬은 구글 서버로, 사파리는 애플 서버로 보냅니다.', to = '크롬은 구글 서버로 보냅니다. 사파리는 애플 서버로 보냅니다.';
   const coach = { summary: '시간은 맞췄어요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }],
     edits: [{ sec: 2, why: '한 문장이 길어 숨이 차요.', from, to }, { sec: 2, what: '둘째 구간 문장이 길어요.', how: '둘째 구간의 긴 문장을 둘로 나눠 주세요.' }] };
@@ -639,7 +665,7 @@ t('결과: AI 코칭의 대본 고칠 점은 까닭과 바뀌는 곳을 보이�
 
 t('결과: 연습 때 대본에 없던 말은 AI가 정리해 넣을 만한 것을 결과에 보이고, 누르면 대본에 넣는다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   const AD = '여기서 잠깐 제 경험을 말씀드리면 저는 발표할 때마다 대본을 자주 놓쳐서 곤란했던 적이 많았어요', add = '저도 발표할 때마다 읽던 곳을 자주 놓쳤어요.';
   await mockAi(p, b => b.system.includes('애드리브') ? { items: [{ n: 1, title: '발표자의 경험', points: ['대본을 자주 놓쳤다'], worth: true, add: [add] }] }
     : { summary: '좋아요.', tips: [{ sec: 1, what: '첫 구간이 빨랐어요.', how: '한 박자 쉬어 보세요.' }] });
@@ -762,7 +788,7 @@ t('카드: 문단마다 카드와 목록 조각이 있고 번호·예상 시간�
   const n = paraSpans(SAMPLE.text).length;
   assert.equal(await p.locator('#cList .pc').count(), n);
   assert.equal(await p.locator('#cNav a').count(), n);
-  assert.equal(await p.textContent('#cList .pc .pn'), '1 · 인사 및 서비스 소개', '예시는 발표 준비가 지은 제목');
+  assert.equal(await p.textContent('#cList .pc .pn'), '1 · 인사 및 서비스 소개', '예시는 AI 점검이 지은 제목');
   assert.match(await p.textContent('#cList .pc .pe'), /^예상 \d+:\d\d$/);
   assert.equal(await p.locator('#text').isHidden(), true, '글이 있으면 종이 칸은 숨는다');
   assert.equal(await p.locator('#cNav').isVisible(), true);
@@ -780,12 +806,31 @@ t('카드: 문단마다 카드와 목록 조각이 있고 번호·예상 시간�
   assert.equal(await p.getAttribute('#tocPin', 'aria-pressed'), 'true', '고정은 기억한다');
   await p.click('#tocPin'); await p.mouse.move(700, 400); await p.waitForTimeout(250);
   assert.ok(await navW() < 60, '고정을 풀면 다시 접힌다');
+  await p.setViewportSize({ width: 1280, height: 800 }); await p.waitForTimeout(100);
+  assert.equal(await p.locator('aside').count(), 0, '오른쪽 상자가 없다');
+  const cb = await p.locator('#cList .pc').first().boundingBox();
+  assert.ok(cb.width >= 800 && Math.abs(cb.x + cb.width / 2 - 640) < 60, `카드가 가운데 넓게 (${cb.x}, ${cb.width})`);
+  assert.equal(await p.locator('#edTools').isVisible(), true, '카드 위 도구줄');
   await p.setViewportSize({ width: 900, height: 800 });
   assert.equal(await p.locator('#cNav').isVisible(), true, '태블릿 폭에도 접힌 목차');
   assert.equal(await p.locator('#cList .pc').first().boundingBox().then(b => b.width > 700), true, '카드는 폭을 거의 다 쓴다');
   await p.setViewportSize({ width: 390, height: 800 });
   assert.equal(await p.locator('#cNav').isHidden(), true, '폰에는 목차가 없다');
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '휴대폰에서 가로로 넘치지 않는다');
+  const tb = await p.locator('#edTools').boundingBox();
+  assert.ok(tb.height <= 64, `폰에서도 도구줄은 한 줄 (${tb.height})`);
+  assert.equal(await p.locator('#edTools').evaluate(e => e.scrollWidth <= e.clientWidth), true, '도구줄이 넘치지 않는다');
+  assert.deepEqual(p.errors, []);
+});
+t('카드: 문단 수가 같으면 문장 수가 바뀌어도 .pn 제목이 남는다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  const ps = paraSpans(SAMPLE.text), t0 = SAMPLE.text, at = ps[0][1];
+  await p.evaluate(t => { const e = document.getElementById('text'); e.value = t; e.dispatchEvent(new Event('input')); }, t0.slice(0, at) + ' 문장 하나를 더했어요.' + t0.slice(at));
+  await p.waitForTimeout(400);
+  assert.equal(await p.locator('#cList .pc').count(), ps.length);
+  assert.equal(await p.textContent('#cList .pc .pn'), '1 · 인사 및 서비스 소개');
+  assert.equal(await p.textContent('#cNav a:first-child span'), '인사 및 서비스 소개', '목차도');
+  assert.match(await p.getAttribute('#prepGo', 'class'), /\bneed\b/, '점검은 다시 해야 한다고 표시');
   assert.deepEqual(p.errors, []);
 });
 t('카드: 누르면 글칸이 되고, 고치면 그 문단만 대본에 반영되며 예상 시간이 바뀐다', async () => {
@@ -809,7 +854,7 @@ t('카드: 누르면 글칸이 되고, 고치면 그 문단만 대본에 반영�
 });
 t('카드: 자료를 올리면 문단마다 슬라이드 칩이 붙고, 고른 쪽은 문단을 따라가며 내보내기·가져오기·지우기에 함께한다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn');
+  await noAuto(p);
   const picked = () => p.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('ls.paraSlide.')).map(k => [k, JSON.parse(localStorage.getItem(k))])));
   const chips = () => p.locator('#cList .pc .pslide').allTextContents().then(a => a.map(x => +x.replace('슬라이드 ', '')));
   assert.equal(await p.locator('#cList .pslide').count(), 0, '자료가 없으면 칩도 없다');
@@ -864,14 +909,14 @@ t('카드: 자료를 올리면 문단마다 슬라이드 칩이 붙고, 고른 �
 });
 t('카드: 꼭 말할 문장을 표시하면 강조되고 핵심만으로 줄여도 남는다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn');
-  // 발표 준비가 뺄 문장으로 고른 문장 하나
+  await noAuto(p);
+  // AI 점검이 뺄 문장으로 고른 문장 하나
   const text = SAMPLE.text, ps = sentSpans(text);
   let drop = null;
   SAMPLE.prep.paras.forEach((pr, i) => { if (!drop && pr.drop.length && i > 0 && i < ps.length - 1) drop = { i, s: ps[i][pr.drop[0]] }; });
   assert.ok(drop, '시험할 뺄 문장');
   const sentence = text.slice(...drop.s);
-  await p.click('#modeSeg [data-m="2"]'); await present(p);
+  await pickMode(p, 2); await present(p);
   assert.ok(!(await p.textContent('#prompt')).includes(sentence.slice(0, 15)), '핵심만에서는 이 문장이 빠진다');
   await toScript(p);
   await p.locator('#cList .pc').nth(drop.i).click();
@@ -915,21 +960,23 @@ t('카드: 더 짧게는 이 문단만 AI 지시로 열고, 문단 추가는 빈
   assert.equal(await p.locator('#cList .pc').count(), paraSpans(before).length + 1);
   assert.deepEqual(p.errors, []);
 });
-t('AI: 뒤에서 하던 일이 있으면 바로 시작하는 단추는 그 일을 멈추지 않고, 연습에 들어가도 발표 준비를 또 보내지 않는다', async () => {
+t('AI: 뒤에서 하던 일이 있으면 바로 시작하는 단추는 그 일을 멈추지 않고, 연습에 들어가도 AI 점검을 또 보내지 않는다', async () => {
   const p = await page(browser); await open(p); await sample(p);
   const sent = [], cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
   await p.route(AI, r => r.request().method() === 'OPTIONS' ? r.fulfill({ status: 204, headers: cors }) : void sent.push(JSON.parse(r.request().postData())));  // 답하지 않아서 계속 하는 중
-  await p.evaluate(() => { const t = document.getElementById('text'); t.value += ' 끝.'; t.dispatchEvent(new Event('input')); });  // 지난 발표 준비가 대본과 안 맞게
+  await p.evaluate(() => { const t = document.getElementById('text'); t.value += ' 끝.'; t.dispatchEvent(new Event('input')); });  // 지난 AI 점검이 대본과 안 맞게
   await p.click('#prepGo'); await p.waitForTimeout(300);
   assert.equal(sent.length, 1); assert.equal(await p.textContent('#aiGo'), '멈추기');
+  assert.equal(await p.locator('#ai [data-info="rubric"]').evaluate(e => e.readOnly), true, '점검 중엔 평가 기준을 못 고친다');
+  assert.equal(await p.locator('#prepFlow .pi.wait').count(), 4);
   await p.click('#aiClose');
   await p.click('[data-tab="practice"]'); await p.waitForTimeout(500);
-  assert.equal(sent.length, 1, 'AI 창의 발표 준비가 끝나지 않았으니 또 보내지 않는다');
+  assert.equal(sent.length, 1, 'AI 창의 점검이 끝나지 않았으니 또 보내지 않는다');
   await toScript(p);
   await p.locator('#cList .pc').nth(2).click();
   await p.click('#cList .pc.on .ptool >> text=더 짧게'); await p.waitForTimeout(300);
   assert.equal(sent.length, 1, '새로 보내지 않는다');
-  assert.equal(await p.textContent('#aiGo'), '멈추기', '하던 발표 준비는 계속');
+  assert.equal(await p.textContent('#aiGo'), '멈추기', '하던 점검은 계속');
   assert.match(await p.textContent('#aiMsg'), /^AI가 앞의 일을 하는 중이에요/);
   assert.deepEqual(p.errors, []);
 });
@@ -956,7 +1003,7 @@ t('카드: 빈 대본은 새 발표 만들기 화면이고, 붙여넣으면 카�
 });
 t('카드: 연습에서 두 번 바꿔 말한 낱말에 점선 밑줄이 생기고 추천으로 바꿀 수 있다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p, swapNae); await practiceRun(p, swapNae, false);
   await p.click('#checkClose'); await p.waitForTimeout(300);
   await toScript(p);
@@ -984,7 +1031,7 @@ t('카드: 연습에서 두 번 바꿔 말한 낱말에 점선 밑줄이 생기�
 // ---- 읽는 화면 ----
 t('읽는 화면: 연습은 문단 위에 지난 피드백, 실전은 피드백을 켰을 때만 보이고, 시작하면 남은 시간을 크게 보인다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p, (i, x) => x, true, 300, 300000);  // 3분 목표를 5분에 읽어 모든 문단이 시간을 넘는다
   await p.click('#checkClose');
   assert.ok(await p.locator('#prompt .fb').count() >= 1, '연습은 문단 위에 지난 피드백');
@@ -1009,7 +1056,7 @@ t('읽는 화면: 연습은 문단 위에 지난 피드백, 실전은 피드백�
 // ---- 탭 ----
 t('탭: 메뉴 없이 대본·연습·실전·Q&A 탭으로 화면이 바뀌고, 듣는 동안은 탭 줄이 숨는다', async () => {
   const p = await page(browser); await open(p); await sample(p);
-  assert.equal(await p.locator('#menuBtn, #aiBtn, #view, #menu, #viewDlg, #shrinkDlg').count(), 0, '메뉴·보기 창이 없다');
+  assert.equal(await p.locator('#menuBtn, #aiBtn, #view, #menu, #viewDlg').count(), 0, '메뉴·보기 창이 없다');
   const sel = () => p.evaluate(() => document.querySelector('#tabs [aria-selected=true]').dataset.tab);
   assert.equal(await sel(), 'script');
   await p.click('[data-tab="practice"]'); await p.waitForTimeout(500);
@@ -1168,7 +1215,7 @@ t('홈: 말랑을 누르면 발표 카드가 나오고, 카드를 누르면 그 
 });
 t('홈: 새 발표 만들기는 대본을 더하고 이름은 머리줄에서 바꾼다. 연습 기록 탭과 설정 탭이 있다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
-  await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
+  await noAuto(p); await p.fill('#target', '3');
   await practiceRun(p);
   await p.click('#checkClose'); await p.click('#homeBtn');
   assert.match(await p.locator('#hGrid .pcard.on .badge').textContent(), /^최근 3:\d\d · 0:\d\d 초과$/);

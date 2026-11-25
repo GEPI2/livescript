@@ -1,17 +1,17 @@
 // 말랑 화면. match.js(전역 norm, normMap, anchors, follow, MARK)를 먼저 불러온다.
-import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=27';
-import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=27';
-import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=27';
-import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=27';
-import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=27';
-import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=27';
-import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=27';
-import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=27';
+import { cleanPack, prepare, rank, confidence, scriptHits, packHash, toB64, fromB64, loadModel, modelCached, embed, embedAll, REV, DIM, CATS, norm as plain } from './qa.js?v=28';
+import { generatePack, parsePack, callClaude, scriptPrompt, editPrompt, prepPrompt, parsePrep, PREP_SCHEMA, suggestAlts, summarizeAdlib, coachRun, rubOf } from './claude.js?v=28';
+import { diff, paras, paraRange, paraSpans, sentSpans, around, addVersion, hashText, cleanScript, readScript, headOf, slideHead, cleanParaSlide } from './lib.js?v=28';
+import { slidesFrom, outlineLines, topicOf, pdfThumbs } from './slides.js?v=28';
+import { align, swaps, suggest, applyReplace, packSays, readSays, addSays, compareRun, hardWords, wordKey, sentSaid } from './compare.js?v=28';
+import { units, shrunk, plan, remap, unitAt, strikes, modeLevels, LABEL } from './shrink.js?v=28';
+import { loadJev, closeJev, jevCached, rerank, SIZE as JEV_SIZE, TIMEOUT as JEV_TIMEOUT } from './jev.js?v=28';
+import { collector, readSegs, summary, insertAfter, head, addText, MAX as AD_MAX, CTX } from './adlib.js?v=28';
 import { modeOf, micIdle, mixKind, secMap, sentAt, newHear, hearStep, hearReset, readHear, newAcc, tickAcc, packAcc, readAcc, ringPush, speechRate,
   newPace, paceHold, paceStep, newCue, cueStep, readSignal, frames, deviceKind, browserKey, audioDefault, newWatch, watchdog, blockOf, audioNote, W_WIN,
   buildRun, readRuns, upsertRun, saveRuns, runLabel, sumLines, statCards, secRows, tips, fixedTips, toneLines, NAME,
   newQuiet, quietStep, secPe, dwell, prePause, pauseMid, clip, keyRows, keyStates, energy, flowGap, PE, DRIFT, KEYS,
-  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=27';
+  READ_TEST, TEST_END, TEST_LO, TEST_HI, testRate, voiceSum, voiceCards, paceWord, PACE_SLOW, PACE_FAST, PACE_NEWS, RULES, tipRule, splitTip, oftenTips } from './check.js?v=28';
 
 const $ = id => document.getElementById(id);
 history.scrollRestoration = 'manual';  // 새로고침하면 브라우저가 옛 스크롤 자리로 되돌리지 않고 render()가 지금 줄을 1/3에 둔다
@@ -1984,7 +1984,7 @@ async function autoPrep() {
   let job;
   try { job = jobFor('prep'); } catch { return; }
   const ctl = prepCtl = new AbortController(), id = lib.cur;
-  tell('발표 준비를 하고 있어요. 끝나면 자동 줄이기와 강조 판정에 써요.');
+  tell('발표 준비를 하고 있어요. 끝나면 문단 제목, 자동 줄이기, 강조 판정에 써요.');
   try {
     const t = await callClaude({ ...job.prompt, schema: job.schema, signal: ctl.signal });
     if (lib.cur !== id || $('text').value !== text) return;  // 그사이 다른 대본으로 갔거나 고쳤다
@@ -2955,7 +2955,7 @@ function openDemo() {
   tell('받아 둔 예시 대본을 열었어요. 새로 받으려면 이 발표를 지우고 다시 눌러 주세요.');
   return true;
 }
-$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=27').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+$('hSample').onclick = $('eSample').onclick = () => openDemo() || fetch('sample.livescript.json?v=28').then(r => { if (!r.ok) throw new Error(); return r.text(); })
   .then(t => importScript(t, 'sample.livescript.json', true)).catch(() => tell('예시 대본을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'));
 $('ePaste').onclick = () => { document.body.classList.add('pasting'); showEmpty(); $('text').focus(); };
 // 빈 대본이면 '새 발표 만들기' 화면을 보인다. '직접 붙여넣기'를 누르면 그 자리에 붙여넣을 칸(#text)이 열린다
@@ -3001,6 +3001,7 @@ $('tocBtn').onclick = () => tocOpen(!$('cNav').classList.contains('open'));
 $('tocPin').onclick = () => { const on = !document.body.classList.contains('tocpin'); store.set('ls.tocPin', on ? '1' : '0'); tocPin(on); tocOpen(false); };
 const autosize = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
 
+const titleTried = new Set();  // 제목 없는 옛 준비를 다시 해 본 대본(이 탭에서 한 번)
 function renderCards() {
   const text = $('text').value, on = !!text.trim();
   document.body.classList.toggle('cards', on);
@@ -3058,6 +3059,7 @@ function renderCards() {
   if (ta) { autosize(ta); if (renderCards.focus) { ta.focus(); ta.setSelectionRange(...renderCards.focus); } }
   renderCards.focus = null;
   relink($('cList'));
+  if (pp && !pp.paras.some(x => x.title) && !homeOpen() && !titleTried.has(lib.cur)) { titleTried.add(lib.cur); autoPrep(); }  // 문단 제목이 없는 옛 준비(v=27 전)는 대본을 열면 한 번 다시 한다(실패해도 이 탭에서는 한 번). 준비가 아예 없는 새 대본은 연습에 들어갈 때
 }
 // 열린 카드의 '이 문단에 띄울 슬라이드'. 고르면 저장하고 칩만 바꾼다(카드를 다시 그리지 않아 포커스가 남는다). '자동'은 고른 것을 지운다
 function slidePick(ta, i, chip) {

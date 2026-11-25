@@ -592,6 +592,19 @@ t('준비: 평가 기준을 적고 발표 준비를 하면 흐름, 핵심 문장
   assert.equal(await p.getAttribute('#cList .pc:nth-child(2) mark.must', 'title'), '문제 제기 · 평가 기준: 문제를 분명히 말했나');
   assert.deepEqual(p.errors, []);
 });
+t('준비: 문단 제목이 없는 옛 발표 준비는 대본을 열면 한 번 다시 해서 카드·목차에 제목이 생긴다', async () => {
+  const p = await page(browser); await open(p); await sample(p);
+  const ps = paras(SAMPLE.text), sent = [];
+  await mockAi(p, b => (sent.push(b), { paras: ps.map((x, i) => ({ p: i + 1, imp: 2, keep: [1], drop: [], title: `새 제목 ${i + 1}`, role: '근거', tone: '또렷하게', e: 2 })), keys: [], crit: [], kw: [] }));
+  await p.evaluate(() => { const k = Object.keys(localStorage).find(k => k.startsWith('ls.prep.')), v = JSON.parse(localStorage.getItem(k)); v.paras.forEach(x => delete x.title); localStorage.setItem(k, JSON.stringify(v)); });
+  await p.reload();
+  await p.waitForFunction(() => document.querySelector('#cList .pc .pn')?.textContent === '1 · 새 제목 1');
+  assert.equal(await p.textContent('#cNav a:nth-child(2) span'), '새 제목 2', '목차도');
+  assert.equal(sent.length, 1, '한 번만 보낸다');
+  await p.locator('#cList .pc').nth(2).click(); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  assert.equal(sent.length, 1, '제목이 생긴 뒤에는 다시 보내지 않는다');
+  assert.deepEqual(p.errors, []);
+});
 t('결과: AI 코칭의 대본 고칠 점은 까닭과 바뀌는 곳을 보이고 바로 바꾼다. 옛 모양(지시)은 그 구간을 고른 채 AI로 고치기를 연다', async () => {
   const p = await page(browser); await p.clock.install(); await open(p); await sample(p);
   await p.uncheck('#shrinkOn'); await p.fill('#target', '3');
